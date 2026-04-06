@@ -423,10 +423,13 @@ function logout() {
   sessionStorage.removeItem('auth');
   location.reload();
 }
-if(sessionStorage.getItem('auth')==='1') {
-  document.getElementById('login-page').style.display='none';
-  document.getElementById('app-page').style.display='block';
-}
+loadPassword().then(() => {
+  if(sessionStorage.getItem('auth')==='1') {
+    document.getElementById('login-page').style.display='none';
+    document.getElementById('app-page').style.display='block';
+    init();
+  }
+});
 
 // ── SUPABASE ──────────────────────────────────────────────────────────────
 const SB_URL = 'https://dwjjrgjbkftejdcmwpgc.supabase.co';
