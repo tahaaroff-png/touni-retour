@@ -462,7 +462,8 @@ async function dbDelete(id) {
 }
 
 // ── INIT ──────────────────────────────────────────────────────────────────
-function init() {
+async function init() {
+  await loadPassword();
   fetch('products.json').then(r=>r.json()).then(data=>{ CAT=data; }).catch(console.error);
   dbLoad();
   setInterval(dbLoad,30000);
