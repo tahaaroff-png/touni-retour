@@ -370,9 +370,18 @@ async function loadPwd() {
   }
 }
 
-function login() {
+async function login() {
+  if (!PWD) await loadPwd();
   const val = document.getElementById('pwd-input').value;
   if (val === PWD) {
+    sessionStorage.setItem('auth', '1');
+    document.getElementById('login-page').style.display = 'none';
+    document.getElementById('app-page').style.display = 'block';
+    startApp();
+  } else {
+    document.getElementById('login-err').style.display = 'block';
+  }
+}
     sessionStorage.setItem('auth', '1');
     document.getElementById('login-page').style.display = 'none';
     document.getElementById('app-page').style.display = 'block';
