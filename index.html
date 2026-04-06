@@ -403,7 +403,12 @@ td{padding:10px 14px;vertical-align:middle}
 
 <script>
 // ── AUTH ──────────────────────────────────────────────────────────────────
-const PWD = 'touni2024';
+let PWD = '';
+async function loadPassword() {
+  const r = await fetch(`${SB_URL}/rest/v1/config?key=eq.password&select=value`, {headers: H});
+  const data = await r.json();
+  PWD = data[0]?.value || 'touni2024';
+}
 function login() {
   if(document.getElementById('pwd-input').value === PWD) {
     sessionStorage.setItem('auth','1');
