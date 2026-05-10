@@ -140,12 +140,17 @@ td{padding:10px 14px;vertical-align:middle}
 .del-btn{background:none;border:none;color:var(--muted2);cursor:pointer;font-size:16px;width:28px;height:28px;border-radius:6px;display:flex;align-items:center;justify-content:center}
 .del-btn:hover{color:var(--red);background:var(--red-bg)}
 
-/* ── Month selector ── */
-.month-bar{display:flex;align-items:center;gap:12px;margin-bottom:22px;flex-wrap:wrap}
-.month-btn{background:none;border:1.5px solid var(--border);border-radius:8px;padding:7px 14px;font-family:'Montserrat',sans-serif;font-size:11px;font-weight:700;cursor:pointer;color:var(--muted);transition:all .15s}
-.month-btn:hover{border-color:var(--border2)}
-.month-sel{font-family:'Montserrat',sans-serif;font-size:13px;font-weight:800;color:var(--text);min-width:120px;text-align:center}
+/* ── Date range bar ── */
+.dr-bar{background:var(--surface);border-bottom:1.5px solid var(--border);padding:10px 28px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;position:sticky;top:64px;z-index:99;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+.dr-btn{padding:6px 13px;border-radius:20px;border:1.5px solid var(--border);background:transparent;font-family:'Montserrat',sans-serif;font-size:10px;font-weight:700;letter-spacing:.5px;cursor:pointer;color:var(--muted);transition:all .15s;white-space:nowrap}
+.dr-btn:hover:not(.active){border-color:var(--border2);background:var(--bg)}
+.dr-btn.active{background:var(--text);color:#fff;border-color:var(--text)}
+.dr-sep{width:1px;height:20px;background:var(--border);margin:0 4px}
+.dr-label{font-family:'Montserrat',sans-serif;font-size:11px;font-weight:800;color:var(--text);margin-left:4px}
+.dr-custom{display:none;align-items:center;gap:8px;flex-wrap:wrap}
+.dr-custom input[type=date]{width:auto;padding:5px 10px;font-size:12px}
 .charges-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media(max-width:600px){.dr-bar{top:56px;padding:8px 12px;gap:6px}.dr-btn{font-size:9px;padding:5px 10px}}
 
 /* ── Responsive ── */
 @media(max-width:900px){
@@ -198,6 +203,24 @@ td{padding:10px 14px;vertical-align:middle}
 <!-- ══ APP ══════════════════════════════════════════════════════════ -->
 <div id="app-page" style="display:none">
 
+<!-- ── Date range bar (global) ── -->
+<div class="dr-bar" id="dr-bar">
+  <button class="dr-btn" id="dr-btn-day"       onclick="setFilter('day')">Aujourd'hui</button>
+  <button class="dr-btn" id="dr-btn-week"      onclick="setFilter('week')">Cette semaine</button>
+  <button class="dr-btn active" id="dr-btn-month" onclick="setFilter('month')">Ce mois</button>
+  <button class="dr-btn" id="dr-btn-prevmonth" onclick="setFilter('prevmonth')">Mois préc.</button>
+  <div class="dr-sep"></div>
+  <button class="dr-btn" id="dr-btn-custom"    onclick="setFilter('custom')">📅 Personnalisé</button>
+  <div class="dr-custom" id="dr-custom">
+    <input type="date" id="dr-from" onchange="applyCustom()">
+    <span style="color:var(--muted);font-size:12px">→</span>
+    <input type="date" id="dr-to"   onchange="applyCustom()">
+  </div>
+  <div class="dr-sep"></div>
+  <span class="dr-label" id="dr-label">—</span>
+  <span style="margin-left:auto;font-size:11px;color:var(--muted)">Dernier calcul : <span id="last-calc">—</span></span>
+</div>
+
 <header class="header">
   <img class="logo-img" src="data:image/png;base64,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" alt="Touni">
   <div class="header-sep"></div>
@@ -227,14 +250,6 @@ td{padding:10px 14px;vertical-align:middle}
 <!-- ══════════════ PAGE: VUE D'ENSEMBLE ══════════════ -->
 <div class="page active" id="page-overview">
 <div class="wrap">
-
-  <!-- Month nav -->
-  <div class="month-bar">
-    <button class="month-btn" onclick="prevMonth()">← Précédent</button>
-    <div class="month-sel" id="month-label">Mai 2026</div>
-    <button class="month-btn" onclick="nextMonth()">Suivant →</button>
-    <div style="margin-left:auto;font-size:12px;color:var(--muted)">Dernier calcul : <span id="last-calc">—</span></div>
-  </div>
 
   <!-- Result banner -->
   <div class="result-banner profit" id="result-banner">
@@ -647,10 +662,62 @@ const EGROW_ME  = 'b1561dd7a5bf51060e3ef52084b3cc5fc0e23f6b0430c4523e8cd48e8b165
 const EGROW_KEY = '11aaf7ee-c8e5-11f0-8839-9c6b003e9239';
 
 // ── State ──
-var currentYear = new Date().getFullYear();
-var currentMonth = new Date().getMonth(); // 0-indexed
+var filterFrom = null; // Date object — start of selected range
+var filterTo   = null; // Date object — end of selected range
+var filterMode = 'month';
 var fournisseurs=[], virements=[], metaDepenses=[], commandesStats=[];
 var egrowDeals=[];
+
+// ── Date range helpers ──
+function startOfDay(d){return new Date(d.getFullYear(),d.getMonth(),d.getDate(),0,0,0);}
+function endOfDay(d){return new Date(d.getFullYear(),d.getMonth(),d.getDate(),23,59,59);}
+function startOfWeek(d){var day=d.getDay();var diff=d.getDate()-day+(day===0?-6:1);return startOfDay(new Date(d.getFullYear(),d.getMonth(),diff));}
+var MONTHS_FR=['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+
+function setFilter(mode){
+  filterMode=mode;
+  var now=new Date();
+  if(mode==='day'){
+    filterFrom=startOfDay(now); filterTo=endOfDay(now);
+  } else if(mode==='week'){
+    filterFrom=startOfWeek(now); filterTo=endOfDay(now);
+  } else if(mode==='month'){
+    filterFrom=new Date(now.getFullYear(),now.getMonth(),1,0,0,0);
+    filterTo=endOfDay(now);
+  } else if(mode==='prevmonth'){
+    var pm=new Date(now.getFullYear(),now.getMonth()-1,1);
+    filterFrom=startOfDay(pm);
+    filterTo=new Date(now.getFullYear(),now.getMonth(),0,23,59,59);
+  } else if(mode==='custom'){
+    var fv=document.getElementById('dr-from').value;
+    var tv=document.getElementById('dr-to').value;
+    filterFrom=fv?new Date(fv+'T00:00:00'):startOfDay(now);
+    filterTo=tv?new Date(tv+'T23:59:59'):endOfDay(now);
+  }
+  document.querySelectorAll('.dr-btn').forEach(function(b){b.classList.remove('active');});
+  var ab=document.getElementById('dr-btn-'+mode); if(ab) ab.classList.add('active');
+  document.getElementById('dr-custom').style.display=mode==='custom'?'flex':'none';
+  updateRangeLabel();
+  renderAll();
+}
+function applyCustom(){setFilter('custom');}
+
+function updateRangeLabel(){
+  if(!filterFrom||!filterTo) return;
+  var el=document.getElementById('dr-label'); if(!el) return;
+  var opts={day:'2-digit',month:'short'};
+  var f=filterFrom.toLocaleDateString('fr-FR',opts);
+  var t=filterTo.toLocaleDateString('fr-FR',opts);
+  if(filterMode==='day') el.textContent=filterFrom.toLocaleDateString('fr-FR',{weekday:'long',day:'2-digit',month:'long'});
+  else if(filterMode==='month'||filterMode==='prevmonth') el.textContent=MONTHS_FR[filterFrom.getMonth()]+' '+filterFrom.getFullYear();
+  else el.textContent=f+' → '+t;
+}
+
+function inDateRange(dateStr){
+  if(!dateStr||!filterFrom||!filterTo) return false;
+  var d=new Date(dateStr+'T12:00:00');
+  return d>=filterFrom && d<=filterTo;
+}
 
 // ── Auth ──
 function login(){
@@ -703,11 +770,11 @@ var EGROW_EXPEDIES = new Set([
   'Mise en distribution','En cours','Expédier','Recu '
 ]);
 
-function egrowStats(year,month){
+function egrowStats(){
   var deals=egrowDeals.filter(function(d){
-    if(!d.time) return false;
+    if(!d.time||!filterFrom||!filterTo) return false;
     var dt=new Date(d.time*1000);
-    return dt.getFullYear()===year && dt.getMonth()===month;
+    return dt>=filterFrom && dt<=filterTo;
   });
   var s={
     total:deals.length, livrees:0, retours:0, confirmes:0,
@@ -767,7 +834,7 @@ async function initApp(){
   setDefaultDates();
   loadConfig();
   loadMetaConfig();
-  updateMonthLabel();
+  setFilter('month'); // initialise filterFrom/filterTo + label
   try{
     [fournisseurs,virements,metaDepenses,commandesStats]=await Promise.all([
       sbGet('depenses_fournisseurs'),
@@ -833,17 +900,6 @@ function getConfig(){
   }));
 }
 
-// ── Month navigation ──
-var MONTHS=['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
-function updateMonthLabel(){document.getElementById('month-label').textContent=MONTHS[currentMonth]+' '+currentYear;}
-function prevMonth(){currentMonth--;if(currentMonth<0){currentMonth=11;currentYear--;}updateMonthLabel();renderAll();}
-function nextMonth(){currentMonth++;if(currentMonth>11){currentMonth=0;currentYear++;}updateMonthLabel();renderAll();}
-function inCurrentMonth(dateStr){
-  if(!dateStr) return false;
-  var d=new Date(dateStr);
-  return d.getFullYear()===currentYear && d.getMonth()===currentMonth;
-}
-
 // ── Render all ──
 function renderAll(){
   renderOverview();
@@ -858,10 +914,10 @@ function fmt(n){return Math.round(n).toLocaleString('fr-FR')+' MAD';}
 function renderOverview(){
   var cfg=getConfig();
   // Filter by current month
-  var mFourn=fournisseurs.filter(function(r){return inCurrentMonth(r.date);});
-  var mVir=virements.filter(function(r){return inCurrentMonth(r.date_virement);});
-  var mMeta=metaDepenses.filter(function(r){return inCurrentMonth(r.date);});
-  var eg=egrowStats(currentYear,currentMonth);
+  var mFourn=fournisseurs.filter(function(r){return inDateRange(r.date);});
+  var mVir=virements.filter(function(r){return inDateRange(r.date_virement);});
+  var mMeta=metaDepenses.filter(function(r){return inDateRange(r.date);});
+  var eg=egrowStats();
 
   var totalVirements=mVir.reduce(function(s,r){return s+(+r.montant_mad||0);},0);
   var totalFourn=mFourn.reduce(function(s,r){return s+(+r.montant_mad||0);},0);
@@ -869,8 +925,8 @@ function renderOverview(){
   var totalMeta=mMeta.length>0
     ? mMeta.reduce(function(s,r){return s+(+r.montant_mad||0);},0)
     : (metaApiSpend ? metaApiSpend.mad : 0);
-  var totalLivrees=egrowDeals.length>0?eg.livrees:commandesStats.filter(function(r){return inCurrentMonth(r.date);}).reduce(function(s,r){return s+(+r.nb_livrees||0);},0);
-  var totalRetours=egrowDeals.length>0?eg.retours:commandesStats.filter(function(r){return inCurrentMonth(r.date);}).reduce(function(s,r){return s+(+r.nb_retours||0);},0);
+  var totalLivrees=egrowDeals.length>0?eg.livrees:commandesStats.filter(function(r){return inDateRange(r.date);}).reduce(function(s,r){return s+(+r.nb_livrees||0);},0);
+  var totalRetours=egrowDeals.length>0?eg.retours:commandesStats.filter(function(r){return inDateRange(r.date);}).reduce(function(s,r){return s+(+r.nb_retours||0);},0);
 
   // Frais Ozone = informatif seulement (déjà déduits par Ozone avant virement)
   var fraisOzoneInfo=egrowDeals.length>0 ? eg.fraisOzone : 0;
@@ -939,7 +995,7 @@ async function addFournisseur(){
 }
 function renderFournisseurs(){
   var tb=document.getElementById('tb-fournisseurs');
-  var mRows=fournisseurs.filter(function(r){return inCurrentMonth(r.date);});
+  var mRows=fournisseurs.filter(function(r){return inDateRange(r.date);});
   if(!mRows.length){tb.innerHTML='<tr><td colspan="6" style="text-align:center;padding:30px;color:var(--muted)">Aucune saisie ce mois</td></tr>';return;}
   tb.innerHTML=mRows.map(function(r){
     var cpCmd=r.nb_commandes>0?(r.montant_mad/r.nb_commandes).toFixed(0)+' MAD':'—';
@@ -971,7 +1027,7 @@ async function addVirement(){
 }
 function renderVirements(){
   var tb=document.getElementById('tb-virements');
-  var mRows=virements.filter(function(r){return inCurrentMonth(r.date_virement);});
+  var mRows=virements.filter(function(r){return inDateRange(r.date_virement);});
   if(!mRows.length){tb.innerHTML='<tr><td colspan="6" style="text-align:center;padding:30px;color:var(--muted)">Aucun virement ce mois</td></tr>';return;}
   tb.innerHTML=mRows.map(function(r){
     var moy=r.nb_livraisons>0?(r.montant_mad/r.nb_livraisons).toFixed(0)+' MAD':'—';
@@ -1020,11 +1076,12 @@ async function fetchMetaAPI(manual){
     if(manual){msg.textContent='⚠️ Entrez votre Ad Account ID et Access Token ci-dessus.';}
     return;
   }
-  // Compute month date range
-  var y=currentYear, mo=currentMonth;
-  var since=y+'-'+String(mo+1).padStart(2,'0')+'-01';
-  var lastDay=new Date(y,mo+1,0).getDate();
-  var until=y+'-'+String(mo+1).padStart(2,'0')+'-'+String(lastDay).padStart(2,'0');
+  // Use active date range filter
+  var from=filterFrom||new Date(new Date().getFullYear(),new Date().getMonth(),1);
+  var to=filterTo||new Date();
+  function pad(n){return String(n).padStart(2,'0');}
+  var since=from.getFullYear()+'-'+pad(from.getMonth()+1)+'-'+pad(from.getDate());
+  var until=to.getFullYear()+'-'+pad(to.getMonth()+1)+'-'+pad(to.getDate());
   var acctId=cfg.accountId.replace(/^act_/,'');
   var url='https://graph.facebook.com/v19.0/act_'+acctId+'/insights'
     +'?fields=spend'
@@ -1057,7 +1114,7 @@ async function fetchMetaAPI(manual){
       var today=new Date().toISOString().split('T')[0];
       // Check if an API entry already exists for this month to avoid duplicates
       var existingApi=metaDepenses.find(function(r){
-        return r.source==='api' && inCurrentMonth(r.date);
+        return r.source==='api' && inDateRange(r.date);
       });
       if(existingApi){
         // Update existing entry by deleting and re-inserting
@@ -1101,7 +1158,7 @@ async function addMeta(){
 }
 function renderMeta(){
   var tb=document.getElementById('tb-meta');
-  var mRows=metaDepenses.filter(function(r){return inCurrentMonth(r.date);});
+  var mRows=metaDepenses.filter(function(r){return inDateRange(r.date);});
   if(!mRows.length){tb.innerHTML='<tr><td colspan="4" style="text-align:center;padding:30px;color:var(--muted)">Aucune dépense ce mois</td></tr>';return;}
   tb.innerHTML=mRows.map(function(r){
     return '<tr>'
@@ -1132,7 +1189,7 @@ async function addCommandeStats(){
   }catch(e){console.error(e);}
 }
 function renderCommandes(){
-  var eg=egrowStats(currentYear,currentMonth);
+  var eg=egrowStats();
   var cfg=getConfig();
   var comm=cfg.confirmation+(eg.livrees*cfg.commHigh);
 
