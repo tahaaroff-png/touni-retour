@@ -699,7 +699,9 @@ function setFilter(mode){
   var ab=document.getElementById('dr-btn-'+mode); if(ab) ab.classList.add('active');
   document.getElementById('dr-custom').style.display=mode==='custom'?'flex':'none';
   updateRangeLabel();
+  metaApiSpend=null; // reset cache, will re-fetch for new date range
   renderAll();
+  fetchMetaAPI(false).then(function(){ renderOverview(); }).catch(function(){});
 }
 function applyCustom(){setFilter('custom');}
 
