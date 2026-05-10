@@ -126,6 +126,8 @@ export default async function handler(req, res) {
   }
 
   try {
+    // Wait 15s for Shopify to index the new/updated product in the public feed
+    await new Promise(resolve => setTimeout(resolve, 15000));
     const products = await fetchAllProducts();
     const entries = products.map(shopifyProductToEntry);
     await commitProductsJson(entries);
