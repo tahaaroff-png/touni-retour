@@ -393,26 +393,60 @@ td{padding:10px 14px;vertical-align:middle}
 
   <!-- Tab: Meta -->
   <div id="tab-meta" style="display:none">
+
+    <!-- Connexion API Meta -->
     <div class="card" style="margin-bottom:16px">
-      <div class="section-title">Dépense Meta Ads</div>
+      <div class="section-title">Connexion Meta Ads API</div>
+      <div id="meta-api-status" style="display:flex;align-items:center;gap:10px;margin-bottom:16px;padding:12px 14px;border-radius:10px;background:var(--bg);font-size:13px">
+        <span id="meta-api-dot" style="width:9px;height:9px;border-radius:50%;background:#ccc;flex-shrink:0"></span>
+        <span id="meta-api-msg">Non configuré — entrez vos identifiants ci-dessous</span>
+        <button onclick="fetchMetaAPI(true)" style="margin-left:auto;background:none;border:1.5px solid var(--border);border-radius:8px;padding:5px 12px;font-size:11px;font-family:Montserrat,sans-serif;font-weight:700;cursor:pointer">🔄 Tester</button>
+      </div>
+      <div class="form-grid">
+        <div class="fg">
+          <label>Ad Account ID</label>
+          <input type="text" id="meta-account-id" placeholder="Ex: act_123456789" oninput="saveMetaConfig()">
+          <div style="font-size:10px;color:var(--muted);margin-top:3px">Business Manager → Comptes publicitaires → ID</div>
+        </div>
+        <div class="fg">
+          <label>Access Token</label>
+          <input type="password" id="meta-token" placeholder="EAAj..." oninput="saveMetaConfig()">
+          <div style="font-size:10px;color:var(--muted);margin-top:3px">Business Manager → Utilisateurs système → Générer token (ads_read)</div>
+        </div>
+        <div class="fg">
+          <label>Taux USD → MAD</label>
+          <input type="number" id="m-rate" value="10.0" step="0.1" min="1" oninput="updateMadPreview();saveMetaConfig()">
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:4px">
+        <button class="btn-primary" onclick="fetchMetaAPI(true)">📡 Importer dépenses Meta (mois en cours)</button>
+        <a href="https://developers.facebook.com/tools/explorer/" target="_blank" style="text-decoration:none">
+          <button style="background:none;border:1.5px solid var(--border);border-radius:8px;padding:9px 16px;font-family:Montserrat,sans-serif;font-size:11px;font-weight:700;cursor:pointer">🔑 Obtenir un token</button>
+        </a>
+      </div>
+      <div id="meta-api-result" style="margin-top:10px;font-size:12px;color:var(--muted);display:none"></div>
+    </div>
+
+    <!-- Saisie manuelle (fallback) -->
+    <div class="card" style="margin-bottom:16px">
+      <div class="section-title">Saisie manuelle (si API non connectée)</div>
       <div class="alert warn" style="margin-bottom:16px">
         <span>⚠️</span>
-        <span>Taux de conversion utilisé : <b>1 USD = <span id="usd-rate-display">10.0</span> MAD</b>. Vous pouvez le modifier ci-dessous.</span>
+        <span>Taux de conversion : <b>1 USD = <span id="usd-rate-display">10.0</span> MAD</b>.</span>
       </div>
       <div class="form-grid">
         <div class="fg"><label>Date</label><input type="date" id="m-date"></div>
         <div class="fg"><label>Dépense (USD)</label><input type="number" id="m-usd" placeholder="Ex: 100" min="0" step="0.01" oninput="updateMadPreview()"></div>
-        <div class="fg"><label>Taux USD→MAD</label><input type="number" id="m-rate" value="10.0" step="0.1" min="1" oninput="updateMadPreview()"></div>
         <div class="fg"><label>= Montant MAD (auto)</label><input type="number" id="m-mad" placeholder="0" readonly style="background:var(--green-bg);border-color:var(--green-border)"></div>
       </div>
-      <button class="btn-primary" onclick="addMeta()">+ Enregistrer</button>
+      <button class="btn-primary" onclick="addMeta()">+ Enregistrer manuellement</button>
     </div>
 
     <div class="section-title">Historique Meta Ads</div>
     <div class="tbl-wrap">
       <table>
-        <thead><tr><th>Date</th><th>USD</th><th>MAD</th><th></th></tr></thead>
-        <tbody id="tb-meta"><tr><td colspan="4" style="text-align:center;padding:30px;color:var(--muted)">Aucune dépense enregistrée</td></tr></tbody>
+        <thead><tr><th>Date</th><th>USD</th><th>MAD</th><th>Source</th><th></th></tr></thead>
+        <tbody id="tb-meta"><tr><td colspan="5" style="text-align:center;padding:30px;color:var(--muted)">Aucune dépense enregistrée</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -732,6 +766,7 @@ async function initApp(){
   dot('loading');
   setDefaultDates();
   loadConfig();
+  loadMetaConfig();
   updateMonthLabel();
   try{
     [fournisseurs,virements,metaDepenses,commandesStats]=await Promise.all([
@@ -745,15 +780,18 @@ async function initApp(){
     console.warn('Supabase error:', e.message);
     dot('err');
   }
-  try{
-    await fetchEgrow();
-    document.getElementById('egrow-status').textContent='🟢 eGrow connecté';
-    document.getElementById('egrow-status').style.color='var(--green)';
-  }catch(e){
-    console.warn('eGrow error:', e.message);
-    document.getElementById('egrow-status').textContent='🔴 eGrow hors ligne';
-    document.getElementById('egrow-status').style.color='var(--red)';
-  }
+  // eGrow + Meta en parallèle
+  await Promise.allSettled([
+    fetchEgrow().then(function(){
+      document.getElementById('egrow-status').textContent='🟢 eGrow connecté';
+      document.getElementById('egrow-status').style.color='var(--green)';
+    }).catch(function(e){
+      console.warn('eGrow:', e.message);
+      document.getElementById('egrow-status').textContent='🔴 eGrow hors ligne';
+      document.getElementById('egrow-status').style.color='var(--red)';
+    }),
+    fetchMetaAPI(false) // auto-fetch silencieux, pas de sauvegarde
+  ]);
   renderAll();
   document.getElementById('last-calc').textContent=new Date().toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
 }
@@ -827,7 +865,10 @@ function renderOverview(){
 
   var totalVirements=mVir.reduce(function(s,r){return s+(+r.montant_mad||0);},0);
   var totalFourn=mFourn.reduce(function(s,r){return s+(+r.montant_mad||0);},0);
-  var totalMeta=mMeta.reduce(function(s,r){return s+(+r.montant_mad||0);},0);
+  // Meta: use Supabase entries; if none this month and API has a live figure, use that
+  var totalMeta=mMeta.length>0
+    ? mMeta.reduce(function(s,r){return s+(+r.montant_mad||0);},0)
+    : (metaApiSpend ? metaApiSpend.mad : 0);
   var totalLivrees=egrowDeals.length>0?eg.livrees:commandesStats.filter(function(r){return inCurrentMonth(r.date);}).reduce(function(s,r){return s+(+r.nb_livrees||0);},0);
   var totalRetours=egrowDeals.length>0?eg.retours:commandesStats.filter(function(r){return inCurrentMonth(r.date);}).reduce(function(s,r){return s+(+r.nb_retours||0);},0);
 
@@ -945,6 +986,99 @@ function renderVirements(){
   }).join('');
 }
 
+// ── META — Config ──
+function saveMetaConfig(){
+  var cfg={
+    accountId:(document.getElementById('meta-account-id').value||'').trim(),
+    token:(document.getElementById('meta-token').value||'').trim(),
+    rate:parseFloat(document.getElementById('m-rate').value)||10
+  };
+  localStorage.setItem('touni_meta_cfg',JSON.stringify(cfg));
+  document.getElementById('usd-rate-display').textContent=cfg.rate.toFixed(1);
+}
+function loadMetaConfig(){
+  var cfg=JSON.parse(localStorage.getItem('touni_meta_cfg')||'{}');
+  if(cfg.accountId) document.getElementById('meta-account-id').value=cfg.accountId;
+  if(cfg.token)     document.getElementById('meta-token').value=cfg.token;
+  if(cfg.rate){
+    document.getElementById('m-rate').value=cfg.rate;
+    document.getElementById('usd-rate-display').textContent=(+cfg.rate).toFixed(1);
+  }
+}
+function getMetaConfig(){
+  return JSON.parse(localStorage.getItem('touni_meta_cfg')||'{"rate":10}');
+}
+
+// ── META — API Graph ──
+async function fetchMetaAPI(manual){
+  var cfg=getMetaConfig();
+  var dot=document.getElementById('meta-api-dot');
+  var msg=document.getElementById('meta-api-msg');
+  var resultEl=document.getElementById('meta-api-result');
+  if(!cfg.accountId||!cfg.token){
+    if(manual){msg.textContent='⚠️ Entrez votre Ad Account ID et Access Token ci-dessus.';}
+    return;
+  }
+  // Compute month date range
+  var y=currentYear, mo=currentMonth;
+  var since=y+'-'+String(mo+1).padStart(2,'0')+'-01';
+  var lastDay=new Date(y,mo+1,0).getDate();
+  var until=y+'-'+String(mo+1).padStart(2,'0')+'-'+String(lastDay).padStart(2,'0');
+  var acctId=cfg.accountId.replace(/^act_/,'');
+  var url='https://graph.facebook.com/v19.0/act_'+acctId+'/insights'
+    +'?fields=spend'
+    +'&time_range={"since":"'+since+'","until":"'+until+'"}'
+    +'&level=account'
+    +'&access_token='+encodeURIComponent(cfg.token);
+  if(dot) dot.style.background='#f59e0b';
+  if(msg) msg.textContent='⏳ Récupération dépenses Meta…';
+  try{
+    var r=await fetch(url);
+    var data=await r.json();
+    if(data.error){
+      if(dot) dot.style.background='var(--red)';
+      if(msg) msg.textContent='❌ Erreur Meta : '+data.error.message;
+      if(resultEl){resultEl.style.display='block';resultEl.textContent=data.error.message;}
+      return;
+    }
+    var spend=parseFloat((data.data&&data.data[0]?data.data[0].spend:0)||0);
+    var rate=cfg.rate||10;
+    var mad=spend*rate;
+    if(dot) dot.style.background='var(--green)';
+    if(msg) msg.textContent='🟢 Meta connecté — '+spend.toFixed(2)+' USD dépensés ('+since+' → '+until+')';
+    if(resultEl){
+      resultEl.style.display='block';
+      resultEl.style.color='var(--green)';
+      resultEl.textContent='✅ Dépense importée : '+spend.toFixed(2)+' USD = '+Math.round(mad).toLocaleString('fr-FR')+' MAD';
+    }
+    if(manual && spend>0){
+      // Save to Supabase with today's date (monthly entry)
+      var today=new Date().toISOString().split('T')[0];
+      // Check if an API entry already exists for this month to avoid duplicates
+      var existingApi=metaDepenses.find(function(r){
+        return r.source==='api' && inCurrentMonth(r.date);
+      });
+      if(existingApi){
+        // Update existing entry by deleting and re-inserting
+        await sbDelete('meta_depenses',existingApi.id);
+        metaDepenses=metaDepenses.filter(function(r){return r.id!==existingApi.id;});
+      }
+      var row=await sbInsert('meta_depenses',{date:today,montant_usd:spend,montant_mad:mad,source:'api'});
+      metaDepenses.unshift(row);
+      renderMeta(); renderOverview();
+    }
+    // Always update overview with live figure even without saving
+    if(!manual){
+      metaApiSpend={usd:spend,mad:mad};
+      renderOverview();
+    }
+  }catch(e){
+    if(dot) dot.style.background='var(--red)';
+    if(msg) msg.textContent='❌ Erreur réseau : '+e.message;
+  }
+}
+var metaApiSpend=null; // live figure from API (not yet saved)
+
 // ── META ──
 function updateMadPreview(){
   var usd=parseFloat(document.getElementById('m-usd').value)||0;
@@ -959,7 +1093,7 @@ async function addMeta(){
   var mad=usd*rate;
   if(!d||!usd){return;}
   try{
-    var row=await sbInsert('meta_depenses',{date:d,montant_usd:usd,montant_mad:mad});
+    var row=await sbInsert('meta_depenses',{date:d,montant_usd:usd,montant_mad:mad,source:'manual'});
     metaDepenses.unshift(row); renderMeta(); renderOverview();
     document.getElementById('m-usd').value=''; document.getElementById('m-mad').value='';
   }catch(e){console.error(e);}
@@ -967,12 +1101,16 @@ async function addMeta(){
 function renderMeta(){
   var tb=document.getElementById('tb-meta');
   var mRows=metaDepenses.filter(function(r){return inCurrentMonth(r.date);});
-  if(!mRows.length){tb.innerHTML='<tr><td colspan="4" style="text-align:center;padding:30px;color:var(--muted)">Aucune dépense ce mois</td></tr>';return;}
+  if(!mRows.length){tb.innerHTML='<tr><td colspan="5" style="text-align:center;padding:30px;color:var(--muted)">Aucune dépense ce mois</td></tr>';return;}
   tb.innerHTML=mRows.map(function(r){
+    var src=r.source==='api'
+      ?'<span style="background:var(--green-bg);color:var(--green);border-radius:4px;padding:2px 6px;font-size:10px;font-weight:700">API</span>'
+      :'<span style="background:var(--bg);color:var(--muted);border-radius:4px;padding:2px 6px;font-size:10px">Manuel</span>';
     return '<tr>'
       +'<td data-label="Date">'+fmtDate(r.date)+'</td>'
       +'<td data-label="USD"><b>'+parseFloat(r.montant_usd).toFixed(2)+' $</b></td>'
       +'<td data-label="MAD" style="color:var(--red)">'+Math.round(r.montant_mad).toLocaleString('fr-FR')+' MAD</td>'
+      +'<td>'+src+'</td>'
       +'<td><button class="del-btn" onclick="delRow(\'meta_depenses\',\''+r.id+'\',\'meta\')">×</button></td>'
       +'</tr>';
   }).join('');
