@@ -269,7 +269,7 @@ td{padding:10px 14px;vertical-align:middle}
       <div class="kpi-icon">🚚</div>
       <div class="kpi-val" id="kpi-ozone">—</div>
       <div class="kpi-lbl">Frais Ozone</div>
-      <div class="kpi-sub" id="kpi-ozone-sub">Livraisons + retours</div>
+      <div class="kpi-sub" id="kpi-ozone-sub">Déduits avant virement</div>
     </div>
   </div>
 
@@ -294,10 +294,6 @@ td{padding:10px 14px;vertical-align:middle}
         <span class="pl-amt neg" id="pl-fourn">0 MAD</span>
       </div>
       <div class="pl-row">
-        <span class="pl-lbl">Frais livraison Ozone</span>
-        <span class="pl-amt neg" id="pl-ozone-frais">0 MAD</span>
-      </div>
-      <div class="pl-row">
         <span class="pl-lbl">Meta Ads</span>
         <span class="pl-amt neg" id="pl-meta">0 MAD</span>
       </div>
@@ -320,6 +316,10 @@ td{padding:10px 14px;vertical-align:middle}
       <div class="pl-row total">
         <span>Total dépenses</span>
         <span class="pl-amt neg" id="pl-dep-total">0 MAD</span>
+      </div>
+      <!-- Info row: frais Ozone already deducted before virement -->
+      <div style="margin-top:12px;padding:10px 12px;background:var(--blue-bg);border:1px solid var(--blue-border);border-radius:8px;font-size:11px;color:var(--blue)">
+        <b>ℹ️ Frais Ozone :</b> <span id="pl-ozone-frais" style="font-weight:700">—</span> — déjà déduits par Ozone avant virement (non recomptés ici)
       </div>
     </div>
   </div>
@@ -370,7 +370,7 @@ td{padding:10px 14px;vertical-align:middle}
       <div class="section-title">Virement reçu d'Ozone Express</div>
       <div class="alert info" style="margin-bottom:16px">
         <span>💡</span>
-        <span>Chaque semaine (lundi), entrez le virement COD reçu d'Ozone. Ce montant est votre chiffre d'affaires réel encaissé.</span>
+        <span>Chaque semaine (lundi), entrez le virement reçu d'Ozone. <b>Ce montant est déjà net</b> : Ozone a déduit leurs frais de livraison avant de vous envoyer le virement. C'est donc directement votre CA encaissé réel — aucune déduction Ozone supplémentaire dans le P&L.</span>
       </div>
       <div class="form-grid">
         <div class="fg"><label>Date du virement</label><input type="date" id="v-date"></div>
@@ -831,20 +831,22 @@ function renderOverview(){
   var totalLivrees=egrowDeals.length>0?eg.livrees:commandesStats.filter(function(r){return inCurrentMonth(r.date);}).reduce(function(s,r){return s+(+r.nb_livrees||0);},0);
   var totalRetours=egrowDeals.length>0?eg.retours:commandesStats.filter(function(r){return inCurrentMonth(r.date);}).reduce(function(s,r){return s+(+r.nb_retours||0);},0);
 
-  // Frais Ozone réels issus de deal_shipping_price (données Ozone synchronisées via eGrow)
-  var totalOzone=egrowDeals.length>0 ? eg.fraisOzone : 0;
+  // Frais Ozone = informatif seulement (déjà déduits par Ozone avant virement)
+  var fraisOzoneInfo=egrowDeals.length>0 ? eg.fraisOzone : 0;
 
   // Commission confirmation
-  var commission=totalLivrees*cfg.commHigh; // simplified — full split when eGrow connected
+  var commission=totalLivrees*cfg.commHigh;
 
   // Charges fixes
   var shopify=cfg.shopify;
   var livreur=cfg.livreur;
   var confFix=cfg.confirmation;
 
-  // P&L
+  // P&L CORRECT :
+  // Le virement Ozone = COD collecté − frais livraison déjà déduits par Ozone
+  // → on ne retranche PAS les frais Ozone (ils ne sont PLUS dans les dépenses)
   var revenus=totalVirements;
-  var depenses=totalFourn+totalMeta+totalOzone+livreur+confFix+commission+shopify;
+  var depenses=totalFourn+totalMeta+livreur+confFix+commission+shopify;
   var net=revenus-depenses;
   var marge=revenus>0?((net/revenus)*100):0;
 
@@ -852,13 +854,15 @@ function renderOverview(){
   document.getElementById('kpi-ca').textContent=Math.round(totalVirements).toLocaleString('fr-FR');
   document.getElementById('kpi-fournisseurs').textContent=Math.round(totalFourn).toLocaleString('fr-FR');
   document.getElementById('kpi-meta').textContent=Math.round(totalMeta).toLocaleString('fr-FR');
-  document.getElementById('kpi-ozone').textContent=Math.round(totalOzone).toLocaleString('fr-FR');
+  // KPI Ozone = frais déduits (informatif)
+  document.getElementById('kpi-ozone').textContent=Math.round(fraisOzoneInfo).toLocaleString('fr-FR');
 
   // P&L rows
   document.getElementById('pl-ozone-vir').textContent=fmt(totalVirements);
   document.getElementById('pl-rev-total').textContent=fmt(revenus);
   document.getElementById('pl-fourn').textContent='−'+fmt(totalFourn);
-  document.getElementById('pl-ozone-frais').textContent='−'+fmt(totalOzone);
+  // Frais Ozone ligne = informatif (déjà dans le virement)
+  document.getElementById('pl-ozone-frais').textContent=fmt(fraisOzoneInfo)+' (déduit par Ozone)';
   document.getElementById('pl-meta').textContent='−'+fmt(totalMeta);
   document.getElementById('pl-livreur').textContent='−'+fmt(livreur);
   document.getElementById('pl-confirmation').textContent='−'+fmt(confFix);
@@ -874,7 +878,7 @@ function renderOverview(){
   document.getElementById('result-label').textContent=isProfit?'BÉNÉFICE NET DU MOIS':'PERTE NETTE DU MOIS';
   document.getElementById('result-val').className='rb-val '+(isProfit?'profit':'loss');
   document.getElementById('result-val').textContent=(isProfit?'+':'')+Math.round(net).toLocaleString('fr-FR')+' MAD';
-  document.getElementById('result-margin').textContent='Marge : '+marge.toFixed(1)+'% | Revenus : '+fmt(revenus)+' | Dépenses : '+fmt(depenses);
+  document.getElementById('result-margin').textContent='Marge : '+marge.toFixed(1)+'% | Revenus (virements nets) : '+fmt(revenus)+' | Dépenses : '+fmt(depenses);
 }
 
 // ── FOURNISSEURS ──
