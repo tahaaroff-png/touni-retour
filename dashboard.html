@@ -621,8 +621,8 @@ function logout(){sessionStorage.removeItem('role');location.reload();}
 document.getElementById('pwd-input').addEventListener('keydown',function(e){if(e.key==='Enter')login();});
 
 // ── eGrow — Mapping stages business ──────────────────────────────────────────
-// Livrer = livré + facturé. Success Ozone = importé auto depuis Ozone (aussi livré).
-var EGROW_LIVRES          = new Set(['Livrer','Success Ozone','Recu ','Facturé']);
+// Livrer = livré et facturé (UNIQUEMENT ce stage).
+var EGROW_LIVRES          = new Set(['Livrer']);
 // Retourner = retour en stock via Ozone. Retour agence/recu = variations.
 var EGROW_RETOURS         = new Set(['Retourner','Retour recu','Retour agence ']);
 // Confirmer Appelle = SEULE vraie confirmation (opératrice a appelé, client a dit oui).
@@ -632,17 +632,17 @@ var EGROW_WTSP_AUTO       = new Set(['Confirmer Wtsp']);
 // En attente = commande vient d'arriver, pas encore traitée.
 var EGROW_EN_ATTENTE      = new Set(['En attente','A contacter','Nouveau Colis']);
 // En cours de relance = tentatives d'appel multiples.
-var EGROW_RELANCE         = new Set(['J1 Appel N 2 Aprem','J2 Appel Wtsp + message','J3 Relance finale','Pas de réponse','Reporté','rappeler le stock','Autres','A livrer']);
+var EGROW_RELANCE         = new Set(['J1 Appel N 2 Aprem','J2 Appel Wtsp + message','J3 Relance finale','Pas de réponse','Reporté','Autres','A livrer']);
 // En transit Ozone = commande expédiée, en cours de livraison.
-var EGROW_TRANSIT         = new Set(['Traiter','Ramassé','Attente de ramassage','Mise en distribution','En cours','Expédier']);
+var EGROW_TRANSIT         = new Set(['Traiter','Ramassé','Attente de ramassage','Mise en distribution','En cours','Expédier','Success Ozone','Recu ']);
 // Annulé précoce = annulé dès le 1er contact (WhatsApp auto ou appel).
 var EGROW_ANN_PRECOCE     = new Set(['Annuler Wtsp','Annuler autres']);
 // Annulé NR = annulé après plusieurs tentatives sans réponse.
 var EGROW_ANN_NR          = new Set(['Annuler pas de reponse']);
-// Annulé Ozone = livreur ou Ozone a annulé (problème livraison).
+// Annulé après expédition = commande partie, client a refusé/pas répondu au livreur.
 var EGROW_ANN_OZONE       = new Set(['Annuler Ozone']);
-// Rupture de stock
-var EGROW_RUPTURE         = new Set(['Rupture']);
+// Rupture de stock = produit indispo ou à rappeler.
+var EGROW_RUPTURE         = new Set(['Rupture','rappeler le stock']);
 
 async function fetchEgrow(){
   var r=await fetch('https://api.egrow.com/deal/getStageDeals.php?me='+EGROW_ME+'&dev=0&limit=1000',{headers:{'Account-Key':EGROW_KEY}});
@@ -1003,15 +1003,15 @@ function renderCommandes(){
   tb.innerHTML=''
     +row('✅ Confirmées (appel)',        eg.confirmes,  'var(--green)')
     +row('💬 En attente confirmation',   eg.wtspAuto,   '#64748b')
-    +row('📬 Livrées',                   eg.livrees,    'var(--blue)')
-    +row('🚚 En transit Ozone',          eg.transit,    '#0891b2')
-    +row('↩️ Retours stock',             eg.retours,    'var(--orange)')
-    +row('📞 En relance appel',          eg.relance,    '#7c3aed')
-    +row('⏳ En attente traitement',     eg.enAttente,  'var(--muted)')
-    +row('❌ Annulées (1er contact)',     eg.annPrecoce, 'var(--red)')
-    +row('🔇 Annulées (sans réponse)',   eg.annNR,      '#dc2626')
-    +row('🚫 Annulées par Ozone',        eg.annOzone,   '#991b1b')
-    +row('📦 Rupture de stock',          eg.rupture,    '#92400e');
+    +row('📬 Livrées & facturées',              eg.livrees,    'var(--blue)')
+    +row('🚚 En transit / En cours Ozone',      eg.transit,    '#0891b2')
+    +row('↩️ Retours en stock',                 eg.retours,    'var(--orange)')
+    +row('📞 En relance appel',                  eg.relance,    '#7c3aed')
+    +row('⏳ En attente traitement',             eg.enAttente,  'var(--muted)')
+    +row('❌ Annulées (1er contact)',             eg.annPrecoce, 'var(--red)')
+    +row('🔇 Annulées (sans réponse)',           eg.annNR,      '#dc2626')
+    +row('🙅 Annulées après expédition (client)',eg.annOzone,   '#991b1b')
+    +row('📦 Rupture / Rappel stock',            eg.rupture,    '#92400e');
 }
 
 // ── Delete ──
