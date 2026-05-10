@@ -142,7 +142,61 @@ td{padding:10px 14px;vertical-align:middle}
 .empty{text-align:center;padding:50px 20px;color:var(--muted)}
 .empty .ic{font-size:38px;margin-bottom:10px}
 .empty p{font-size:14px}
-@media(max-width:900px){.fgrid{grid-template-columns:1fr 1fr}.stats-grid{grid-template-columns:1fr 1fr}.header-label,.header-sep{display:none}}
+/* ── Mobile nav bar ── */
+.mobile-nav{display:none;position:fixed;bottom:0;left:0;right:0;background:var(--surface);border-top:1.5px solid var(--border);z-index:200;padding:8px 0 max(8px,env(safe-area-inset-bottom))}
+.mobile-nav-inner{display:flex;justify-content:space-around}
+.mnb{display:flex;flex-direction:column;align-items:center;gap:3px;background:none;border:none;cursor:pointer;padding:4px 12px;border-radius:8px;color:var(--muted);font-family:'Montserrat',sans-serif;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;transition:color .15s}
+.mnb .mni{font-size:20px;line-height:1}
+.mnb.active{color:var(--text)}
+
+/* ── Tablet ── */
+@media(max-width:960px){
+  .stats-grid{grid-template-columns:repeat(2,1fr)}
+  .header-label,.header-sep{display:none}
+  .fgrid{grid-template-columns:1fr 1fr}
+}
+
+/* ── Mobile ── */
+@media(max-width:600px){
+  body{padding-bottom:70px}
+  .header{padding:0 14px;height:56px;gap:10px}
+  .header-nav{display:none}
+  .logo-img{height:42px}
+  .header-right .chip{display:none}
+  .wrap{padding:14px 12px}
+  .panel{padding:14px 14px}
+  .panel-ttl{margin-bottom:12px}
+  .fgrid{grid-template-columns:1fr;gap:10px}
+  .fbar{gap:8px;padding:10px 12px}
+  .fsw{min-width:0;flex:1 1 100%}
+  .fg-row{flex:0 0 auto}
+  .fbtns{flex-wrap:wrap}
+  .fb{padding:4px 10px;font-size:9px}
+  .mobile-nav{display:block}
+  /* Table → cards */
+  .tbl-wrap{border:none;background:transparent;box-shadow:none}
+  table{width:100%}
+  table thead{display:none}
+  table tbody tr{display:block;background:var(--surface);border:1.5px solid var(--border);border-radius:12px;margin-bottom:12px;padding:12px 14px;box-shadow:var(--shadow)}
+  table tbody tr:hover{background:var(--surface)}
+  table td{display:flex;align-items:center;padding:5px 0;border-bottom:1px solid var(--border);font-size:13px}
+  table td:last-child{border-bottom:none}
+  table td.nnum{display:none}
+  table td::before{content:attr(data-label);font-family:'Montserrat',sans-serif;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);width:76px;flex-shrink:0}
+  .prod-cell{gap:8px}
+  .prod-thumb,.prod-ph{width:32px;height:32px;font-size:14px}
+  .pname{max-width:none;font-size:13px}
+  .act-cell{justify-content:flex-end;width:100%}
+  .stats-grid{grid-template-columns:repeat(2,1fr);gap:10px}
+  .stat-card{padding:14px 16px}
+  .sc-val{font-size:26px}
+  .chart-wrap{padding:16px}
+  .bar-chart{height:120px}
+  .modal{padding:20px 16px;max-height:90vh;overflow-y:auto}
+  .modal-grid{grid-template-columns:1fr}
+  .mf.full{grid-column:auto}
+  .header-right .btn-logout{font-size:10px;padding:4px 10px}
+}
 </style>
 </head>
 <body>
@@ -178,6 +232,18 @@ td{padding:10px 14px;vertical-align:middle}
     <button class="btn-logout" onclick="logout()">Déconnexion</button>
   </div>
 </header>
+
+<!-- Mobile bottom navigation -->
+<nav class="mobile-nav" id="mobile-nav">
+  <div class="mobile-nav-inner">
+    <button class="mnb active" id="mnb-stock" onclick="showPage('stock',document.querySelector('.nav-btn'));mnbActive('mnb-stock')">
+      <span class="mni">📦</span>Stock
+    </button>
+    <button class="mnb" id="mnb-stats" onclick="showPage('stats',document.querySelectorAll('.nav-btn')[1]);mnbActive('mnb-stats')">
+      <span class="mni">📊</span>Stats
+    </button>
+  </div>
+</nav>
 
 <div class="page active" id="page-stock">
 <div class="wrap">
@@ -552,16 +618,18 @@ function render() {
     var ok=it.qty>0;
     var badge=ok?'<span class="badge b-ok"><span class="dot dg"></span>Dispo</span>':'<span class="badge b-ko"><span class="dot dr"></span>Rupture</span>';
     var imgHtml=it.image?'<img class="prod-thumb" src="'+it.image+'" alt="" onerror="this.style.display=\'none\'">':'<div class="prod-ph">👕</div>';
-    return '<tr><td class="nnum">'+(i+1)+'</td>'
-      +'<td><div class="prod-cell">'+imgHtml+'<span class="pname" title="'+it.product+'">'+it.product+'</span></div></td>'
-      +'<td><b>'+(normalizeSize(parseSizePart(it.size))||parseSizePart(it.size)||'—')+'</b>'+(parseColorPart(it.size)?'<br><span style="font-size:11px;color:var(--muted)">'+parseColorPart(it.size)+'</span>':'')+'</td>'
-      +'<td><b style="font-size:15px;font-family:Montserrat,sans-serif">'+it.qty+'</b></td>'
-      +'<td>'+badge+'</td>'
-      +'<td>'+statusBadge(it.status)+'</td>'
-      +'<td class="date-cell">'+fmtDate(it.created_at)+'</td>'
-      +'<td class="date-cell">'+fmtDate(it.exit_date)+'</td>'
-      +'<td><span style="font-size:12px;color:var(--muted)">'+(it.notes||'—')+'</span></td>'
-      +'<td><div class="act-cell"><button class="btn-edit" onclick="openModal(\'' + it.id + '\')" title="Modifier">✏️</button>'
+    var szDisplay='<b>'+(normalizeSize(parseSizePart(it.size))||parseSizePart(it.size)||'—')+'</b>'+(parseColorPart(it.size)?'<span style="font-size:11px;color:var(--muted);margin-left:6px">'+parseColorPart(it.size)+'</span>':'');
+    return '<tr>'
+      +'<td class="nnum">'+(i+1)+'</td>'
+      +'<td data-label="Produit"><div class="prod-cell">'+imgHtml+'<span class="pname" title="'+it.product+'">'+it.product+'</span></div></td>'
+      +'<td data-label="Taille">'+szDisplay+'</td>'
+      +'<td data-label="Qté"><b style="font-size:15px;font-family:Montserrat,sans-serif">'+it.qty+'</b></td>'
+      +'<td data-label="Stock">'+badge+'</td>'
+      +'<td data-label="Statut">'+statusBadge(it.status)+'</td>'
+      +'<td class="date-cell" data-label="Entrée">'+fmtDate(it.created_at)+'</td>'
+      +'<td class="date-cell" data-label="Sortie">'+fmtDate(it.exit_date)+'</td>'
+      +'<td data-label="Notes"><span style="font-size:12px;color:var(--muted)">'+(it.notes||'—')+'</span></td>'
+      +'<td data-label=""><div class="act-cell"><button class="btn-edit" onclick="openModal(\'' + it.id + '\')" title="Modifier">✏️</button>'
       +'<button class="del" onclick="del(\'' + it.id + '\')" title="Supprimer">×</button></div></td></tr>';
   }).join('');
 }
@@ -621,11 +689,15 @@ function buildBreakdown() {
       +'<div style="font-size:11px;color:var(--muted);margin-top:4px">'+pct+'%</div></div>';
   }).join('');
 }
+function mnbActive(id) {
+  document.querySelectorAll('.mnb').forEach(function(b){ b.classList.remove('active'); });
+  var el=document.getElementById(id); if(el) el.classList.add('active');
+}
 function showPage(name,btn) {
   document.querySelectorAll('.page').forEach(function(p){ p.classList.remove('active'); });
   document.querySelectorAll('.nav-btn').forEach(function(b){ b.classList.remove('active'); });
   document.getElementById('page-'+name).classList.add('active');
-  btn.classList.add('active');
+  if(btn) btn.classList.add('active');
   if(name==='stats'){ buildChart(); buildBreakdown(); }
 }
 

@@ -21,17 +21,30 @@ const SIZE_MAP = {
   'xxl':'2XL','xxl (188-193 cm)':'2XL','xxl (188-193cm)':'2XL',
   '2xl':'2XL','3xl':'3XL','4xl':'4XL','xs':'XS',
 };
+// Values that look like colors but appear as option1 — filter them out of sizes
 const SIZE_COLORS = new Set([
   'black','blanc','rouge','beige','gray','noir','yellow','halo ivory',
   'gris-clair','gris-fonces','with','without','light brown',
   'black/field silver/field silver','thunder blue/safety orange/safety orange',
+  'bleu marine','jaune','vert','violet','orange','rose','marron','turquoise',
+  'bleu','bleu ciel','bleu nuit','bleu roi','bleu canard','bleu gris',
+  'gris','gris clair','gris foncé','blanc cassé','crème','camel',
+  'kaki','kaki foncé','olive','burgundy','bordeaux','corail','saumon',
+  'lavande','lilas','menthe','emeraude','anthracite','charcoal','taupe',
+  'slate','army','sand','stone','cobalt','indigo','navy','khaki',
+  'cream','ivory','chocolate','tan','rust','coral','teal','mint',
+  'mustard','gold','silver','bronze','copper','white','red','blue','green',
+  'purple','pink','brown','orange','grey','multicolor','multicolore',
 ]);
+const SIZE_OPTION_NAMES = new Set(['taille','size','pointure','pointures','sizes','tailles']);
+const COLOR_OPTION_NAMES = new Set(['couleur','color','coloris','couleurs','colors']);
 const SIZE_ORDER = ['XS','S','M','L','XL','2XL','3XL','4XL'];
 
 function normalizeSize(s) {
   if (!s) return null;
   const k = s.trim().toLowerCase();
   if (SIZE_COLORS.has(k)) return null;
+  if (k === 'default title') return null;
   return SIZE_MAP[k] || s.trim();
 }
 function sortSizes(arr) {
@@ -42,6 +55,11 @@ function sortSizes(arr) {
     if (ib >= 0) return 1;
     return a.localeCompare(b);
   });
+}
+
+function isColor(val) {
+  if (!val) return false;
+  return SIZE_COLORS.has(val.trim().toLowerCase());
 }
 
 // ── Fetch ALL products via public storefront JSON (no token needed) ──────────
@@ -62,13 +80,66 @@ async function fetchAllProducts() {
 }
 
 function shopifyProductToEntry(p) {
-  const rawSizes = p.variants.map(v => v.option1).filter(Boolean);
+  // Use Shopify option names to determine which option is size vs color
+  const opts = (p.options || []).map(o => ({ name: (o.name || '').trim().toLowerCase(), pos: o.position - 1 }));
+
+  const sizeOpt = opts.find(o => SIZE_OPTION_NAMES.has(o.name));
+  const colorOpt = opts.find(o => COLOR_OPTION_NAMES.has(o.name));
+
+  const getVariantOpt = (v, pos) => {
+    if (pos === 0) return v.option1;
+    if (pos === 1) return v.option2;
+    return v.option3;
+  };
+
+  let rawSizes = [];
+  let rawColors = [];
+
+  if (sizeOpt !== undefined) {
+    rawSizes = p.variants.map(v => getVariantOpt(v, sizeOpt.pos)).filter(Boolean);
+  }
+  if (colorOpt !== undefined) {
+    rawColors = p.variants.map(v => getVariantOpt(v, colorOpt.pos)).filter(Boolean);
+  }
+
+  // Fallback: if no named options, try to infer from values
+  if (sizeOpt === undefined && colorOpt === undefined) {
+    const opt1vals = p.variants.map(v => v.option1).filter(Boolean);
+    const opt2vals = p.variants.flatMap(v => [v.option2, v.option3]).filter(Boolean);
+    // If all option1 values look like colors, treat them as colors
+    const allOpt1AreColors = opt1vals.length > 0 && opt1vals.every(v => isColor(v));
+    if (allOpt1AreColors) {
+      rawColors = opt1vals;
+    } else {
+      rawSizes = opt1vals;
+      rawColors = opt2vals;
+    }
+  } else if (sizeOpt === undefined) {
+    // Has color but no explicit size option — check other options for sizes
+    const usedPositions = new Set([colorOpt.pos]);
+    for (let i = 0; i < 3; i++) {
+      if (!usedPositions.has(i)) {
+        const vals = p.variants.map(v => getVariantOpt(v, i)).filter(Boolean);
+        rawSizes.push(...vals);
+      }
+    }
+  } else if (colorOpt === undefined) {
+    // Has size but no explicit color option — check other options for colors
+    const usedPositions = new Set([sizeOpt.pos]);
+    for (let i = 0; i < 3; i++) {
+      if (!usedPositions.has(i)) {
+        const vals = p.variants.map(v => getVariantOpt(v, i)).filter(Boolean);
+        rawColors.push(...vals);
+      }
+    }
+  }
+
   const sizes = sortSizes([...new Set(rawSizes.map(normalizeSize).filter(Boolean))]);
-  const rawColors = p.variants.flatMap(v => [v.option2, v.option3]).filter(Boolean);
   const colors = [...new Set(rawColors.filter(c => {
     const k = c.trim().toLowerCase();
-    return !SIZE_MAP[k] && !SIZE_COLORS.has(k);
+    return k !== 'default title' && !SIZE_MAP[k] && k !== 'standard';
   }))];
+
   const image = p.images && p.images[0] ? p.images[0].src : '';
   return { title: p.title, sizes, colors, image };
 }
