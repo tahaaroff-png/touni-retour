@@ -486,7 +486,7 @@ td{padding:10px 14px;vertical-align:middle}
   <div class="section-title" style="margin-bottom:12px">Répartition par statut eGrow</div>
   <div class="tbl-wrap">
     <table>
-      <thead><tr><th>Statut eGrow</th><th>Nb commandes</th><th>% du total</th></tr></thead>
+      <thead><tr><th>Catégorie business</th><th>Nb commandes</th><th>% du total</th></tr></thead>
       <tbody id="tb-commandes"><tr><td colspan="3" style="text-align:center;padding:30px;color:var(--muted)">Chargement…</td></tr></tbody>
     </table>
   </div>
@@ -620,12 +620,29 @@ function login(){
 function logout(){sessionStorage.removeItem('role');location.reload();}
 document.getElementById('pwd-input').addEventListener('keydown',function(e){if(e.key==='Enter')login();});
 
-// ── eGrow ──
-var EGROW_LIVRES   = new Set(['Livrer','Success Ozone','Recu ']);
-var EGROW_RETOURS  = new Set(['Retourner','Retour recu','Retour agence ']);
-var EGROW_CONFIRMES= new Set(['Confirmer Appelle','Confirmer Wtsp']);
-var EGROW_ENCOURS  = new Set(['Traiter','Ramassé','Mise en distribution','En cours','Expédier','Nouveau Colis','Attente de ramassage']);
-var EGROW_ANNULES  = new Set(['Annuler Wtsp','Annuler autres','Annuler pas de reponse','Annuler Ozone']);
+// ── eGrow — Mapping stages business ──────────────────────────────────────────
+// Livrer = livré + facturé. Success Ozone = importé auto depuis Ozone (aussi livré).
+var EGROW_LIVRES          = new Set(['Livrer','Success Ozone','Recu ','Facturé']);
+// Retourner = retour en stock via Ozone. Retour agence/recu = variations.
+var EGROW_RETOURS         = new Set(['Retourner','Retour recu','Retour agence ']);
+// Confirmer Appelle = SEULE vraie confirmation (opératrice a appelé, client a dit oui).
+var EGROW_CONFIRMES       = new Set(['Confirmer Appelle']);
+// Confirmer Wtsp = client a cliqué "confirmer" sur message auto — PAS encore confirmé.
+var EGROW_WTSP_AUTO       = new Set(['Confirmer Wtsp']);
+// En attente = commande vient d'arriver, pas encore traitée.
+var EGROW_EN_ATTENTE      = new Set(['En attente','A contacter','Nouveau Colis']);
+// En cours de relance = tentatives d'appel multiples.
+var EGROW_RELANCE         = new Set(['J1 Appel N 2 Aprem','J2 Appel Wtsp + message','J3 Relance finale','Pas de réponse','Reporté','rappeler le stock','Autres','A livrer']);
+// En transit Ozone = commande expédiée, en cours de livraison.
+var EGROW_TRANSIT         = new Set(['Traiter','Ramassé','Attente de ramassage','Mise en distribution','En cours','Expédier']);
+// Annulé précoce = annulé dès le 1er contact (WhatsApp auto ou appel).
+var EGROW_ANN_PRECOCE     = new Set(['Annuler Wtsp','Annuler autres']);
+// Annulé NR = annulé après plusieurs tentatives sans réponse.
+var EGROW_ANN_NR          = new Set(['Annuler pas de reponse']);
+// Annulé Ozone = livreur ou Ozone a annulé (problème livraison).
+var EGROW_ANN_OZONE       = new Set(['Annuler Ozone']);
+// Rupture de stock
+var EGROW_RUPTURE         = new Set(['Rupture']);
 
 async function fetchEgrow(){
   var r=await fetch('https://api.egrow.com/deal/getStageDeals.php?me='+EGROW_ME+'&dev=0&limit=1000',{headers:{'Account-Key':EGROW_KEY}});
@@ -639,17 +656,34 @@ function egrowStats(year,month){
     var dt=new Date(d.time*1000);
     return dt.getFullYear()===year && dt.getMonth()===month;
   });
-  var s={total:deals.length,livrees:0,retours:0,confirmes:0,enCours:0,annules:0,ca:0,stages:{}};
+  var s={
+    total:deals.length, livrees:0, retours:0, confirmes:0,
+    wtspAuto:0, enAttente:0, relance:0, transit:0,
+    annPrecoce:0, annNR:0, annOzone:0, rupture:0,
+    ca:0, stages:{}
+  };
   deals.forEach(function(d){
     var name=d.stage&&d.stage.name?d.stage.name:'Autre';
     s.stages[name]=(s.stages[name]||0)+1;
     var v=parseFloat(d.value||0);
-    if(EGROW_LIVRES.has(name)){s.livrees++;s.ca+=v;}
-    else if(EGROW_RETOURS.has(name)) s.retours++;
-    else if(EGROW_CONFIRMES.has(name)) s.confirmes++;
-    else if(EGROW_ENCOURS.has(name)) s.enCours++;
-    else if(EGROW_ANNULES.has(name)) s.annules++;
+    if(EGROW_LIVRES.has(name))       { s.livrees++;  s.ca+=v; }
+    else if(EGROW_RETOURS.has(name))      s.retours++;
+    else if(EGROW_CONFIRMES.has(name))    s.confirmes++;
+    else if(EGROW_WTSP_AUTO.has(name))    s.wtspAuto++;
+    else if(EGROW_EN_ATTENTE.has(name))   s.enAttente++;
+    else if(EGROW_RELANCE.has(name))      s.relance++;
+    else if(EGROW_TRANSIT.has(name))      s.transit++;
+    else if(EGROW_ANN_PRECOCE.has(name))  s.annPrecoce++;
+    else if(EGROW_ANN_NR.has(name))       s.annNR++;
+    else if(EGROW_ANN_OZONE.has(name))    s.annOzone++;
+    else if(EGROW_RUPTURE.has(name))      s.rupture++;
   });
+  // Total annulées = toutes catégories d'annulation
+  s.annules = s.annPrecoce + s.annNR + s.annOzone;
+  // Taux de livraison = livrées / (livrées + retours + annOzone) — commandes qui ont été expédiées
+  var expedies = s.livrees + s.retours + s.annOzone;
+  s.tauxLiv = expedies > 0 ? ((s.livrees / expedies)*100).toFixed(1) : '—';
+  s.tauxRet = expedies > 0 ? ((s.retours / expedies)*100).toFixed(1) : '—';
   return s;
 }
 
@@ -940,9 +974,6 @@ async function addCommandeStats(){
 }
 function renderCommandes(){
   var eg=egrowStats(currentYear,currentMonth);
-  var totEnv=eg.livrees+eg.retours+eg.enCours;
-  var tauxLiv=totEnv>0?((eg.livrees/totEnv)*100).toFixed(1):'—';
-  var tauxRet=totEnv>0?((eg.retours/totEnv)*100).toFixed(1):'—';
   var cfg=getConfig();
   var comm=cfg.confirmation+(eg.livrees*cfg.commHigh);
 
@@ -952,21 +983,35 @@ function renderCommandes(){
   document.getElementById('c-retours').textContent=eg.retours;
   document.getElementById('c-annules').textContent=eg.annules;
   document.getElementById('c-ca').textContent=Math.round(eg.ca).toLocaleString('fr-FR')+' MAD';
-  document.getElementById('taux-livraison').textContent=tauxLiv+'%';
-  document.getElementById('taux-retour').textContent=tauxRet+'%';
+  document.getElementById('taux-livraison').textContent=(eg.tauxLiv==='—'?'—':eg.tauxLiv+'%');
+  document.getElementById('taux-retour').textContent=(eg.tauxRet==='—'?'—':eg.tauxRet+'%');
   document.getElementById('commission-calc').textContent=Math.round(comm).toLocaleString('fr-FR')+' MAD';
 
+  // Tableau récap groupé par catégorie business
   var tb=document.getElementById('tb-commandes');
-  var sorted=Object.entries(eg.stages).sort(function(a,b){return b[1]-a[1];});
-  if(!sorted.length){tb.innerHTML='<tr><td colspan="3" style="text-align:center;padding:30px;color:var(--muted)">Aucune commande ce mois</td></tr>';return;}
-  tb.innerHTML=sorted.map(function(e){
-    var pct=eg.total>0?((e[1]/eg.total)*100).toFixed(0):'0';
+  if(!eg.total){tb.innerHTML='<tr><td colspan="3" style="text-align:center;padding:30px;color:var(--muted)">Aucune commande ce mois</td></tr>';return;}
+
+  function row(label,count,color){
+    if(!count) return '';
+    var pct=((count/eg.total)*100).toFixed(0);
     return '<tr>'
-      +'<td data-label="Statut"><b>'+e[0]+'</b></td>'
-      +'<td data-label="Nb"><b style="font-family:Montserrat,sans-serif">'+e[1]+'</b></td>'
-      +'<td data-label="%"><div style="display:flex;align-items:center;gap:8px"><div style="background:var(--border);border-radius:4px;height:8px;flex:1"><div style="background:var(--blue);height:8px;border-radius:4px;width:'+pct+'%"></div></div>'+pct+'%</div></td>'
+      +'<td data-label="Catégorie"><b style="color:'+color+'">'+label+'</b></td>'
+      +'<td data-label="Nb"><b style="font-family:Montserrat,sans-serif;font-size:15px">'+count+'</b></td>'
+      +'<td data-label="%"><div style="display:flex;align-items:center;gap:8px"><div style="background:var(--border);border-radius:4px;height:8px;flex:1;min-width:60px"><div style="background:'+color+';height:8px;border-radius:4px;width:'+pct+'%"></div></div>'+pct+'%</div></td>'
       +'</tr>';
-  }).join('');
+  }
+  tb.innerHTML=''
+    +row('✅ Confirmées (appel)',        eg.confirmes,  'var(--green)')
+    +row('💬 En attente confirmation',   eg.wtspAuto,   '#64748b')
+    +row('📬 Livrées',                   eg.livrees,    'var(--blue)')
+    +row('🚚 En transit Ozone',          eg.transit,    '#0891b2')
+    +row('↩️ Retours stock',             eg.retours,    'var(--orange)')
+    +row('📞 En relance appel',          eg.relance,    '#7c3aed')
+    +row('⏳ En attente traitement',     eg.enAttente,  'var(--muted)')
+    +row('❌ Annulées (1er contact)',     eg.annPrecoce, 'var(--red)')
+    +row('🔇 Annulées (sans réponse)',   eg.annNR,      '#dc2626')
+    +row('🚫 Annulées par Ozone',        eg.annOzone,   '#991b1b')
+    +row('📦 Rupture de stock',          eg.rupture,    '#92400e');
 }
 
 // ── Delete ──
