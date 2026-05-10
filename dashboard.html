@@ -445,8 +445,8 @@ td{padding:10px 14px;vertical-align:middle}
     <div class="section-title">Historique Meta Ads</div>
     <div class="tbl-wrap">
       <table>
-        <thead><tr><th>Date</th><th>USD</th><th>MAD</th><th>Source</th><th></th></tr></thead>
-        <tbody id="tb-meta"><tr><td colspan="5" style="text-align:center;padding:30px;color:var(--muted)">Aucune dépense enregistrée</td></tr></tbody>
+        <thead><tr><th>Date</th><th>USD</th><th>MAD</th><th></th></tr></thead>
+        <tbody id="tb-meta"><tr><td colspan="4" style="text-align:center;padding:30px;color:var(--muted)">Aucune dépense enregistrée</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -1064,7 +1064,7 @@ async function fetchMetaAPI(manual){
         await sbDelete('meta_depenses',existingApi.id);
         metaDepenses=metaDepenses.filter(function(r){return r.id!==existingApi.id;});
       }
-      var row=await sbInsert('meta_depenses',{date:today,montant_usd:spend,montant_mad:mad,source:'api'});
+      var row=await sbInsert('meta_depenses',{date:today,montant_usd:spend,montant_mad:mad});
       metaDepenses.unshift(row);
       renderMeta(); renderOverview();
     }
@@ -1094,7 +1094,7 @@ async function addMeta(){
   var mad=usd*rate;
   if(!d||!usd){return;}
   try{
-    var row=await sbInsert('meta_depenses',{date:d,montant_usd:usd,montant_mad:mad,source:'manual'});
+    var row=await sbInsert('meta_depenses',{date:d,montant_usd:usd,montant_mad:mad});
     metaDepenses.unshift(row); renderMeta(); renderOverview();
     document.getElementById('m-usd').value=''; document.getElementById('m-mad').value='';
   }catch(e){console.error(e);}
@@ -1102,16 +1102,12 @@ async function addMeta(){
 function renderMeta(){
   var tb=document.getElementById('tb-meta');
   var mRows=metaDepenses.filter(function(r){return inCurrentMonth(r.date);});
-  if(!mRows.length){tb.innerHTML='<tr><td colspan="5" style="text-align:center;padding:30px;color:var(--muted)">Aucune dépense ce mois</td></tr>';return;}
+  if(!mRows.length){tb.innerHTML='<tr><td colspan="4" style="text-align:center;padding:30px;color:var(--muted)">Aucune dépense ce mois</td></tr>';return;}
   tb.innerHTML=mRows.map(function(r){
-    var src=r.source==='api'
-      ?'<span style="background:var(--green-bg);color:var(--green);border-radius:4px;padding:2px 6px;font-size:10px;font-weight:700">API</span>'
-      :'<span style="background:var(--bg);color:var(--muted);border-radius:4px;padding:2px 6px;font-size:10px">Manuel</span>';
     return '<tr>'
       +'<td data-label="Date">'+fmtDate(r.date)+'</td>'
       +'<td data-label="USD"><b>'+parseFloat(r.montant_usd).toFixed(2)+' $</b></td>'
       +'<td data-label="MAD" style="color:var(--red)">'+Math.round(r.montant_mad).toLocaleString('fr-FR')+' MAD</td>'
-      +'<td>'+src+'</td>'
       +'<td><button class="del-btn" onclick="delRow(\'meta_depenses\',\''+r.id+'\',\'meta\')">×</button></td>'
       +'</tr>';
   }).join('');
