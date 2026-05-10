@@ -297,6 +297,33 @@ const H = {'Content-Type':'application/json','apikey':SB_KEY,'Authorization':'Be
 
 var stock=[], CAT=[], filter='all', editId=null;
 
+// SIZE NORMALIZATION
+var SIZE_MAP = {
+  's':'S','s (168-173 cm)':'S','s (168-173cm)':'S',
+  'm':'M','m (173-178 cm)':'M','m (173-178cm)':'M',
+  'l':'L','l (178-183 cm)':'L','l (178-183cm)':'L',
+  'xl':'XL','xl (183-188 cm)':'XL','xl (183-188cm)':'XL',
+  'xxl':'2XL','xxl (188-193 cm)':'2XL','xxl (188-193cm)':'2XL',
+  '2xl':'2XL','3xl':'3XL','4xl':'4XL','xs':'XS'
+};
+var SIZE_COLORS = new Set(['black','blanc','blanc','rouge','light brown','beige','gray','noir','yellow','halo ivory','gris-clair','gris-fonces','with','without']);
+var SIZE_ORDER = ['XS','S','M','L','XL','2XL','3XL','4XL'];
+function normalizeSize(s){
+  if(!s) return s;
+  var k = s.trim().toLowerCase();
+  if(SIZE_COLORS.has(k)) return null;
+  return SIZE_MAP[k] || s.trim();
+}
+function sortSizes(arr){
+  return arr.slice().sort(function(a,b){
+    var ia=SIZE_ORDER.indexOf(a), ib=SIZE_ORDER.indexOf(b);
+    if(ia>=0 && ib>=0) return ia-ib;
+    if(ia>=0) return -1;
+    if(ib>=0) return 1;
+    return a.localeCompare(b);
+  });
+}
+
 // AUTH
 function login() {
   var val = document.getElementById('pwd-input').value;
@@ -372,7 +399,10 @@ pi.addEventListener('input', function() {
 function pick(t,img,szStr) {
   pi.value=t; pv.value=t; pimg.value=img||''; dd.classList.remove('open');
   ss.innerHTML='<option value="">— Taille —</option>';
-  if(szStr) szStr.split(',').filter(Boolean).forEach(function(s){ ss.innerHTML+='<option>'+s.toUpperCase()+'</option>'; });
+  if(szStr){
+    var norm=[...new Set(szStr.split(',').filter(Boolean).map(normalizeSize).filter(Boolean))];
+    sortSizes(norm).forEach(function(s){ ss.innerHTML+='<option>'+s+'</option>'; });
+  }
 }
 document.addEventListener('click', function(e){ if(!e.target.closest('.sw')) dd.classList.remove('open'); });
 pi.addEventListener('focus', function(){ if(pi.value.length>=2) dd.classList.add('open'); });
@@ -450,7 +480,9 @@ function setF(f,btn) {
   render();
 }
 function buildSizeFilter() {
-  var sizes=[...new Set(stock.map(function(i){ return i.size; }).filter(Boolean))].sort();
+  var rawSizes = stock.map(function(i){ return i.size; }).filter(Boolean);
+  var normalized = rawSizes.map(normalizeSize).filter(Boolean);
+  var sizes = sortSizes([...new Set(normalized)]);
   var sel=document.getElementById('f-size'); var cur=sel.value;
   sel.innerHTML='<option value="">Toutes</option>';
   sizes.forEach(function(s){ sel.innerHTML+='<option'+(s===cur?' selected':'')+'>'+s+'</option>'; });
@@ -476,7 +508,7 @@ function render() {
     if(filter==='rupture') return i.qty<=0;
     return true;
   });
-  if(fSz) rows=rows.filter(function(i){ return i.size===fSz; });
+  if(fSz) rows=rows.filter(function(i){ return normalizeSize(i.size)===fSz; });
   if(fSt) rows=rows.filter(function(i){ return i.status===fSt; });
   rows.sort(function(a,b){ var da=new Date(a.created_at||0),db=new Date(b.created_at||0); return fSort==='asc'?da-db:db-da; });
   var tb=document.getElementById('tb');
@@ -487,7 +519,7 @@ function render() {
     var imgHtml=it.image?'<img class="prod-thumb" src="'+it.image+'" alt="" onerror="this.style.display=\'none\'">':'<div class="prod-ph">👕</div>';
     return '<tr><td class="nnum">'+(i+1)+'</td>'
       +'<td><div class="prod-cell">'+imgHtml+'<span class="pname" title="'+it.product+'">'+it.product+'</span></div></td>'
-      +'<td><b>'+(it.size||'—')+'</b></td>'
+      +'<td><b>'+(normalizeSize(it.size)||it.size||'—')+'</b></td>'
       +'<td><b style="font-size:15px;font-family:Montserrat,sans-serif">'+it.qty+'</b></td>'
       +'<td>'+badge+'</td>'
       +'<td>'+statusBadge(it.status)+'</td>'
