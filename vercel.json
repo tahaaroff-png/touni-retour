@@ -4,6 +4,9 @@
       "maxDuration": 30
     }
   },
+  "rewrites": [
+    { "source": "/dashboard", "destination": "/dashboard.html" }
+  ],
   "headers": [
     {
       "source": "/api/(.*)",

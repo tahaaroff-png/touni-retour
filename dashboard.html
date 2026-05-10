@@ -1,0 +1,988 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Touni Dashboard — Gestion Business</title>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800;900&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#f5f5f5;--surface:#fff;--border:#e4e4e4;--border2:#ccc;
+  --text:#0a0a0a;--muted:#777;--muted2:#bbb;
+  --green:#16a34a;--green-bg:#f0fdf4;--green-border:#86efac;
+  --red:#dc2626;--red-bg:#fef2f2;--red-border:#fca5a5;
+  --blue:#2563eb;--blue-bg:#eff6ff;--blue-border:#bfdbfe;
+  --orange:#ea580c;--orange-bg:#fff7ed;--orange-border:#fed7aa;
+  --purple:#7c3aed;--purple-bg:#f5f3ff;--purple-border:#ddd6fe;
+  --radius:12px;--shadow:0 1px 4px rgba(0,0,0,.06);
+}
+body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+
+/* ── Login ── */
+.login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+.login-box{background:var(--surface);border:1.5px solid var(--border);border-radius:20px;padding:40px 36px;width:100%;max-width:380px;box-shadow:0 8px 32px rgba(0,0,0,.08)}
+.login-logo{display:flex;justify-content:center;margin-bottom:24px}
+.login-logo img{height:70px}
+.login-title{font-family:'Montserrat',sans-serif;font-size:17px;font-weight:800;text-align:center;margin-bottom:4px}
+.login-sub{font-size:13px;color:var(--muted);text-align:center;margin-bottom:28px}
+.lf label{display:block;font-size:10px;font-weight:700;font-family:'Montserrat',sans-serif;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:6px}
+.lf input{width:100%;padding:11px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;outline:none}
+.lf input:focus{border-color:#999}
+.btn-login{width:100%;background:var(--text);color:#fff;border:none;border-radius:8px;padding:12px;font-family:'Montserrat',sans-serif;font-size:13px;font-weight:800;cursor:pointer;margin-top:14px}
+.login-err{color:var(--red);font-size:12px;text-align:center;margin-top:10px;display:none}
+
+/* ── Header ── */
+.header{background:var(--surface);border-bottom:1.5px solid var(--border);padding:0 28px;height:64px;display:flex;align-items:center;gap:14px;position:sticky;top:0;z-index:100;box-shadow:var(--shadow)}
+.logo-img{height:52px;width:auto;object-fit:contain;flex-shrink:0}
+.header-sep{width:1px;height:28px;background:var(--border)}
+.header-label{font-family:'Montserrat',sans-serif;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:2px;color:var(--muted)}
+.nav{display:flex;gap:4px;margin-left:12px}
+.nav-btn{padding:7px 14px;border-radius:20px;border:1.5px solid transparent;background:transparent;font-family:'Montserrat',sans-serif;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;cursor:pointer;color:var(--muted);transition:all .15s;white-space:nowrap}
+.nav-btn.active{background:var(--text);color:#fff}
+.nav-btn:hover:not(.active){background:var(--bg);border-color:var(--border2)}
+.header-right{margin-left:auto;display:flex;gap:8px;align-items:center}
+.sync-dot{width:8px;height:8px;border-radius:50%;background:#ccc;flex-shrink:0}
+.sync-dot.ok{background:var(--green)}.sync-dot.err{background:var(--red)}.sync-dot.loading{background:#f59e0b;animation:pulse 1s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+.btn-logout{background:none;border:1.5px solid var(--border);border-radius:20px;padding:5px 12px;font-family:'Montserrat',sans-serif;font-size:10px;font-weight:700;cursor:pointer;color:var(--muted)}
+
+/* ── Layout ── */
+.page{display:none}.page.active{display:block}
+.wrap{max-width:1100px;margin:0 auto;padding:24px 20px}
+.section-title{font-family:'Montserrat',sans-serif;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:2px;color:var(--muted);margin-bottom:14px}
+
+/* ── Cards ── */
+.card{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--radius);padding:22px 24px;box-shadow:var(--shadow)}
+.card-sm{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--radius);padding:18px 20px;box-shadow:var(--shadow)}
+
+/* ── KPI Grid ── */
+.kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:22px}
+.kpi{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--radius);padding:20px;box-shadow:var(--shadow);position:relative;overflow:hidden}
+.kpi-val{font-family:'Montserrat',sans-serif;font-size:28px;font-weight:900;line-height:1;color:var(--text)}
+.kpi-lbl{font-family:'Montserrat',sans-serif;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted);margin-top:8px}
+.kpi-sub{font-size:11px;color:var(--muted);margin-top:4px}
+.kpi.green .kpi-val{color:var(--green)}
+.kpi.red .kpi-val{color:var(--red)}
+.kpi.blue .kpi-val{color:var(--blue)}
+.kpi.orange .kpi-val{color:var(--orange)}
+.kpi-icon{position:absolute;right:16px;top:16px;font-size:28px;opacity:.15}
+
+/* ── P&L ── */
+.pl-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:22px}
+.pl-section{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--radius);padding:20px;box-shadow:var(--shadow)}
+.pl-title{font-family:'Montserrat',sans-serif;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted);margin-bottom:14px}
+.pl-row{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--border);font-size:13px}
+.pl-row:last-child{border-bottom:none}
+.pl-row.total{font-weight:700;font-size:14px;padding-top:12px;border-top:2px solid var(--border);border-bottom:none;margin-top:4px}
+.pl-row.total .pl-amt{font-family:'Montserrat',sans-serif;font-size:16px;font-weight:900}
+.pl-lbl{color:var(--text)}
+.pl-lbl-muted{color:var(--muted);font-size:12px}
+.pl-amt{font-weight:600;font-family:'Montserrat',sans-serif}
+.pl-amt.pos{color:var(--green)}
+.pl-amt.neg{color:var(--red)}
+
+/* ── Result Banner ── */
+.result-banner{border-radius:var(--radius);padding:24px 28px;display:flex;justify-content:space-between;align-items:center;margin-bottom:22px}
+.result-banner.profit{background:var(--green-bg);border:1.5px solid var(--green-border)}
+.result-banner.loss{background:var(--red-bg);border:1.5px solid var(--red-border)}
+.rb-label{font-family:'Montserrat',sans-serif;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:1.5px}
+.rb-label.profit{color:var(--green)}
+.rb-label.loss{color:var(--red)}
+.rb-val{font-family:'Montserrat',sans-serif;font-size:36px;font-weight:900}
+.rb-val.profit{color:var(--green)}
+.rb-val.loss{color:var(--red)}
+.rb-margin{font-size:13px;color:var(--muted);margin-top:4px}
+
+/* ── Forms ── */
+.form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:14px}
+.fg label{display:block;font-family:'Montserrat',sans-serif;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:5px}
+input,select,textarea{width:100%;padding:9px 12px;background:var(--bg);border:1.5px solid var(--border);border-radius:8px;color:var(--text);font-family:'Inter',sans-serif;font-size:13px;outline:none;transition:border-color .15s}
+input:focus,select:focus{border-color:#999;background:var(--surface)}
+input::placeholder{color:var(--muted2)}
+.btn-primary{background:var(--text);color:#fff;border:none;border-radius:8px;padding:10px 22px;font-family:'Montserrat',sans-serif;font-size:12px;font-weight:800;cursor:pointer;transition:opacity .15s;white-space:nowrap}
+.btn-primary:hover{opacity:.82}
+.btn-secondary{background:none;border:1.5px solid var(--border2);border-radius:8px;padding:10px 18px;font-family:'Montserrat',sans-serif;font-size:12px;font-weight:700;cursor:pointer;color:var(--muted)}
+.btn-danger{background:var(--red-bg);color:var(--red);border:1.5px solid var(--red-border);border-radius:8px;padding:6px 12px;font-family:'Montserrat',sans-serif;font-size:11px;font-weight:700;cursor:pointer}
+
+/* ── Table ── */
+.tbl-wrap{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--radius);overflow:hidden;box-shadow:var(--shadow)}
+table{width:100%;border-collapse:collapse;font-size:13px}
+thead th{background:var(--bg);padding:10px 14px;text-align:left;font-family:'Montserrat',sans-serif;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted);border-bottom:1.5px solid var(--border);white-space:nowrap}
+tbody tr{border-bottom:1px solid var(--border);transition:background .1s}
+tbody tr:last-child{border-bottom:none}
+tbody tr:hover{background:#fafafa}
+td{padding:10px 14px;vertical-align:middle}
+
+/* ── Badge ── */
+.badge{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:20px;font-family:'Montserrat',sans-serif;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;white-space:nowrap}
+.b-livre{background:var(--green-bg);color:var(--green);border:1.5px solid var(--green-border)}
+.b-retour{background:var(--red-bg);color:var(--red);border:1.5px solid var(--red-border)}
+.b-envoye{background:var(--blue-bg);color:var(--blue);border:1.5px solid var(--blue-border)}
+.b-annule{background:var(--bg);color:var(--muted);border:1.5px solid var(--border2)}
+
+/* ── Tabs ── */
+.tabs{display:flex;gap:4px;border-bottom:1.5px solid var(--border);margin-bottom:22px}
+.tab{padding:10px 18px;border:none;background:none;font-family:'Montserrat',sans-serif;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);cursor:pointer;border-bottom:2.5px solid transparent;margin-bottom:-1.5px;transition:all .15s}
+.tab.active{color:var(--text);border-bottom-color:var(--text)}
+
+/* ── Alert ── */
+.alert{border-radius:10px;padding:14px 18px;font-size:13px;display:flex;gap:10px;align-items:flex-start;margin-bottom:14px}
+.alert.info{background:var(--blue-bg);border:1.5px solid var(--blue-border);color:var(--blue)}
+.alert.warn{background:var(--orange-bg);border:1.5px solid var(--orange-border);color:var(--orange)}
+
+/* ── Mobile nav ── */
+.mobile-nav{display:none;position:fixed;bottom:0;left:0;right:0;background:var(--surface);border-top:1.5px solid var(--border);z-index:200;padding:8px 0 max(8px,env(safe-area-inset-bottom))}
+.mobile-nav-inner{display:flex;justify-content:space-around}
+.mnb{display:flex;flex-direction:column;align-items:center;gap:3px;background:none;border:none;cursor:pointer;padding:4px 8px;color:var(--muted);font-family:'Montserrat',sans-serif;font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:.5px}
+.mnb .mni{font-size:22px;line-height:1}
+.mnb.active{color:var(--text)}
+.del-btn{background:none;border:none;color:var(--muted2);cursor:pointer;font-size:16px;width:28px;height:28px;border-radius:6px;display:flex;align-items:center;justify-content:center}
+.del-btn:hover{color:var(--red);background:var(--red-bg)}
+
+/* ── Month selector ── */
+.month-bar{display:flex;align-items:center;gap:12px;margin-bottom:22px;flex-wrap:wrap}
+.month-btn{background:none;border:1.5px solid var(--border);border-radius:8px;padding:7px 14px;font-family:'Montserrat',sans-serif;font-size:11px;font-weight:700;cursor:pointer;color:var(--muted);transition:all .15s}
+.month-btn:hover{border-color:var(--border2)}
+.month-sel{font-family:'Montserrat',sans-serif;font-size:13px;font-weight:800;color:var(--text);min-width:120px;text-align:center}
+.charges-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+
+/* ── Responsive ── */
+@media(max-width:900px){
+  .kpi-grid{grid-template-columns:repeat(2,1fr)}
+  .pl-grid{grid-template-columns:1fr}
+  .header-label,.header-sep{display:none}
+  .charges-grid{grid-template-columns:1fr}
+}
+@media(max-width:600px){
+  body{padding-bottom:72px}
+  .header{padding:0 14px;height:56px}
+  .logo-img{height:40px}
+  .nav{display:none}
+  .mobile-nav{display:block}
+  .wrap{padding:14px 12px}
+  .card,.card-sm{padding:14px 14px}
+  .kpi-grid{grid-template-columns:1fr 1fr;gap:10px}
+  .kpi-val{font-size:22px}
+  .rb-val{font-size:28px}
+  .result-banner{flex-direction:column;gap:8px;text-align:center}
+  .form-grid{grid-template-columns:1fr}
+  table thead{display:none}
+  table tbody tr{display:block;background:var(--surface);border:1.5px solid var(--border);border-radius:10px;margin-bottom:10px;padding:12px}
+  table td{display:flex;align-items:center;padding:5px 0;border-bottom:1px solid var(--border);font-size:13px}
+  table td:last-child{border-bottom:none}
+  table td::before{content:attr(data-label);font-family:'Montserrat',sans-serif;font-size:9px;font-weight:700;text-transform:uppercase;color:var(--muted);width:80px;flex-shrink:0}
+  .tbl-wrap{border:none;background:transparent;box-shadow:none}
+}
+</style>
+</head>
+<body>
+
+<!-- ══ LOGIN ══════════════════════════════════════════════════════ -->
+<div class="login-wrap" id="login-page">
+  <div class="login-box">
+    <div class="login-logo">
+      <img src="data:image/png;base64,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" alt="Touni">
+    </div>
+    <div class="login-title">Touni Business Dashboard</div>
+    <div class="login-sub">Gestion interne — accès réservé</div>
+    <div class="lf" style="margin-bottom:14px">
+      <label>Mot de passe</label>
+      <input type="password" id="pwd-input" placeholder="••••••••" onkeydown="if(event.key==='Enter')login()">
+    </div>
+    <button class="btn-login" onclick="login()">Accéder au dashboard</button>
+    <div class="login-err" id="login-err">Mot de passe incorrect</div>
+  </div>
+</div>
+
+<!-- ══ APP ══════════════════════════════════════════════════════════ -->
+<div id="app-page" style="display:none">
+
+<header class="header">
+  <img class="logo-img" src="data:image/png;base64,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" alt="Touni">
+  <div class="header-sep"></div>
+  <span class="header-label">Dashboard</span>
+  <nav class="nav">
+    <button class="nav-btn active" onclick="showPage('overview',this)">🏠 Vue d'ensemble</button>
+    <button class="nav-btn" onclick="showPage('finances',this)">💰 Finances</button>
+    <button class="nav-btn" onclick="showPage('commandes',this)">📦 Commandes</button>
+    <button class="nav-btn" onclick="showPage('charges',this)">⚙️ Charges</button>
+  </nav>
+  <div class="header-right">
+    <div class="sync-dot" id="sync-dot"></div>
+    <a href="/" style="text-decoration:none"><button class="btn-secondary" style="font-size:10px;padding:5px 12px;border-radius:20px">🔄 Stock Retours</button></a>
+    <button class="btn-logout" onclick="logout()">Déconnexion</button>
+  </div>
+</header>
+
+<nav class="mobile-nav">
+  <div class="mobile-nav-inner">
+    <button class="mnb active" id="mnb-overview" onclick="showPage('overview',document.querySelectorAll('.nav-btn')[0]);mnbA('mnb-overview')"><span class="mni">🏠</span>Home</button>
+    <button class="mnb" id="mnb-finances" onclick="showPage('finances',document.querySelectorAll('.nav-btn')[1]);mnbA('mnb-finances')"><span class="mni">💰</span>Finances</button>
+    <button class="mnb" id="mnb-commandes" onclick="showPage('commandes',document.querySelectorAll('.nav-btn')[2]);mnbA('mnb-commandes')"><span class="mni">📦</span>Commandes</button>
+    <button class="mnb" id="mnb-charges" onclick="showPage('charges',document.querySelectorAll('.nav-btn')[3]);mnbA('mnb-charges')"><span class="mni">⚙️</span>Charges</button>
+  </div>
+</nav>
+
+<!-- ══════════════ PAGE: VUE D'ENSEMBLE ══════════════ -->
+<div class="page active" id="page-overview">
+<div class="wrap">
+
+  <!-- Month nav -->
+  <div class="month-bar">
+    <button class="month-btn" onclick="prevMonth()">← Précédent</button>
+    <div class="month-sel" id="month-label">Mai 2026</div>
+    <button class="month-btn" onclick="nextMonth()">Suivant →</button>
+    <div style="margin-left:auto;font-size:12px;color:var(--muted)">Dernier calcul : <span id="last-calc">—</span></div>
+  </div>
+
+  <!-- Result banner -->
+  <div class="result-banner profit" id="result-banner">
+    <div>
+      <div class="rb-label profit" id="result-label">BÉNÉFICE NET DU MOIS</div>
+      <div class="rb-margin" id="result-margin">Marge : —%</div>
+    </div>
+    <div class="rb-val profit" id="result-val">— MAD</div>
+  </div>
+
+  <!-- KPIs -->
+  <div class="kpi-grid">
+    <div class="kpi">
+      <div class="kpi-icon">💰</div>
+      <div class="kpi-val" id="kpi-ca">—</div>
+      <div class="kpi-lbl">CA (virements Ozone)</div>
+      <div class="kpi-sub" id="kpi-ca-sub">MAD reçus ce mois</div>
+    </div>
+    <div class="kpi red">
+      <div class="kpi-icon">🛒</div>
+      <div class="kpi-val" id="kpi-fournisseurs">—</div>
+      <div class="kpi-lbl">Coût fournisseurs</div>
+      <div class="kpi-sub" id="kpi-fourn-sub">MAD payés aux fournisseurs</div>
+    </div>
+    <div class="kpi orange">
+      <div class="kpi-icon">📣</div>
+      <div class="kpi-val" id="kpi-meta">—</div>
+      <div class="kpi-lbl">Budget Meta Ads</div>
+      <div class="kpi-sub" id="kpi-meta-sub">MAD dépensés en pub</div>
+    </div>
+    <div class="kpi blue">
+      <div class="kpi-icon">🚚</div>
+      <div class="kpi-val" id="kpi-ozone">—</div>
+      <div class="kpi-lbl">Frais Ozone</div>
+      <div class="kpi-sub" id="kpi-ozone-sub">Livraisons + retours</div>
+    </div>
+  </div>
+
+  <!-- P&L detail -->
+  <div class="pl-grid">
+    <div class="pl-section">
+      <div class="pl-title">+ Revenus</div>
+      <div class="pl-row">
+        <span class="pl-lbl">Virements Ozone (COD)</span>
+        <span class="pl-amt pos" id="pl-ozone-vir">0 MAD</span>
+      </div>
+      <div class="pl-row total">
+        <span>Total revenus</span>
+        <span class="pl-amt pos" id="pl-rev-total">0 MAD</span>
+      </div>
+    </div>
+
+    <div class="pl-section">
+      <div class="pl-title">− Dépenses</div>
+      <div class="pl-row">
+        <span class="pl-lbl">Fournisseurs</span>
+        <span class="pl-amt neg" id="pl-fourn">0 MAD</span>
+      </div>
+      <div class="pl-row">
+        <span class="pl-lbl">Frais livraison Ozone</span>
+        <span class="pl-amt neg" id="pl-ozone-frais">0 MAD</span>
+      </div>
+      <div class="pl-row">
+        <span class="pl-lbl">Meta Ads</span>
+        <span class="pl-amt neg" id="pl-meta">0 MAD</span>
+      </div>
+      <div class="pl-row">
+        <span class="pl-lbl">Livreur acheteur</span>
+        <span class="pl-amt neg" id="pl-livreur">3 000 MAD</span>
+      </div>
+      <div class="pl-row">
+        <span class="pl-lbl">Place de confirmation</span>
+        <span class="pl-amt neg" id="pl-confirmation">2 500 MAD</span>
+      </div>
+      <div class="pl-row">
+        <span class="pl-lbl pl-lbl-muted">↳ Commission (livraisons)</span>
+        <span class="pl-amt neg" id="pl-commission">0 MAD</span>
+      </div>
+      <div class="pl-row">
+        <span class="pl-lbl">Shopify</span>
+        <span class="pl-amt neg" id="pl-shopify">850 MAD</span>
+      </div>
+      <div class="pl-row total">
+        <span>Total dépenses</span>
+        <span class="pl-amt neg" id="pl-dep-total">0 MAD</span>
+      </div>
+    </div>
+  </div>
+
+</div>
+</div>
+
+<!-- ══════════════ PAGE: FINANCES ══════════════ -->
+<div class="page" id="page-finances">
+<div class="wrap">
+
+  <div class="tabs">
+    <button class="tab active" onclick="finTab('fournisseurs',this)">🛒 Fournisseurs</button>
+    <button class="tab" onclick="finTab('virements',this)">💳 Virements Ozone</button>
+    <button class="tab" onclick="finTab('meta',this)">📣 Meta Ads</button>
+  </div>
+
+  <!-- Tab: Fournisseurs -->
+  <div id="tab-fournisseurs">
+    <div class="card" style="margin-bottom:16px">
+      <div class="section-title">Saisie journalière — Coût fournisseurs</div>
+      <div class="alert info" style="margin-bottom:16px">
+        <span>💡</span>
+        <span>Entrez ici le montant total que vous avez envoyé à votre livreur pour payer les fournisseurs aujourd'hui.</span>
+      </div>
+      <div class="form-grid">
+        <div class="fg"><label>Date</label><input type="date" id="f-date" value=""></div>
+        <div class="fg"><label>Montant payé (MAD)</label><input type="number" id="f-montant" placeholder="Ex: 4500" min="0"></div>
+        <div class="fg"><label>Nb commandes achetées</label><input type="number" id="f-nb" placeholder="Ex: 18" min="0"></div>
+        <div class="fg"><label>Notes</label><input type="text" id="f-notes" placeholder="Fournisseur A + B..."></div>
+      </div>
+      <button class="btn-primary" onclick="addFournisseur()">+ Enregistrer</button>
+      <div id="f-err" style="color:var(--red);font-size:12px;margin-top:8px;display:none"></div>
+    </div>
+
+    <div class="section-title">Historique fournisseurs</div>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>Date</th><th>Montant (MAD)</th><th>Nb Cdes</th><th>Coût/Cde</th><th>Notes</th><th></th></tr></thead>
+        <tbody id="tb-fournisseurs"><tr><td colspan="6" style="text-align:center;padding:30px;color:var(--muted)">Aucune saisie</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Tab: Virements Ozone -->
+  <div id="tab-virements" style="display:none">
+    <div class="card" style="margin-bottom:16px">
+      <div class="section-title">Virement reçu d'Ozone Express</div>
+      <div class="alert info" style="margin-bottom:16px">
+        <span>💡</span>
+        <span>Chaque semaine (lundi), entrez le virement COD reçu d'Ozone. Ce montant est votre chiffre d'affaires réel encaissé.</span>
+      </div>
+      <div class="form-grid">
+        <div class="fg"><label>Date du virement</label><input type="date" id="v-date"></div>
+        <div class="fg"><label>Montant reçu (MAD)</label><input type="number" id="v-montant" placeholder="Ex: 28500" min="0"></div>
+        <div class="fg"><label>Nb livraisons facturées</label><input type="number" id="v-nb" placeholder="Ex: 180" min="0"></div>
+        <div class="fg"><label>Notes</label><input type="text" id="v-notes" placeholder="Semaine du ..."></div>
+      </div>
+      <button class="btn-primary" onclick="addVirement()">+ Enregistrer</button>
+      <div id="v-err" style="color:var(--red);font-size:12px;margin-top:8px;display:none"></div>
+    </div>
+
+    <div class="section-title">Historique virements</div>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>Date</th><th>Montant (MAD)</th><th>Nb Livraisons</th><th>Moy/Livraison</th><th>Notes</th><th></th></tr></thead>
+        <tbody id="tb-virements"><tr><td colspan="6" style="text-align:center;padding:30px;color:var(--muted)">Aucun virement enregistré</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Tab: Meta -->
+  <div id="tab-meta" style="display:none">
+    <div class="card" style="margin-bottom:16px">
+      <div class="section-title">Dépense Meta Ads</div>
+      <div class="alert warn" style="margin-bottom:16px">
+        <span>⚠️</span>
+        <span>Taux de conversion utilisé : <b>1 USD = <span id="usd-rate-display">10.0</span> MAD</b>. Vous pouvez le modifier ci-dessous.</span>
+      </div>
+      <div class="form-grid">
+        <div class="fg"><label>Date</label><input type="date" id="m-date"></div>
+        <div class="fg"><label>Dépense (USD)</label><input type="number" id="m-usd" placeholder="Ex: 100" min="0" step="0.01" oninput="updateMadPreview()"></div>
+        <div class="fg"><label>Taux USD→MAD</label><input type="number" id="m-rate" value="10.0" step="0.1" min="1" oninput="updateMadPreview()"></div>
+        <div class="fg"><label>= Montant MAD (auto)</label><input type="number" id="m-mad" placeholder="0" readonly style="background:var(--green-bg);border-color:var(--green-border)"></div>
+      </div>
+      <button class="btn-primary" onclick="addMeta()">+ Enregistrer</button>
+    </div>
+
+    <div class="section-title">Historique Meta Ads</div>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>Date</th><th>USD</th><th>MAD</th><th></th></tr></thead>
+        <tbody id="tb-meta"><tr><td colspan="4" style="text-align:center;padding:30px;color:var(--muted)">Aucune dépense enregistrée</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+</div>
+
+<!-- ══════════════ PAGE: COMMANDES ══════════════ -->
+<div class="page" id="page-commandes">
+<div class="wrap">
+  <div class="alert info" style="margin-bottom:20px">
+    <span>🔗</span>
+    <div>
+      <b>Connexion eGrow en attente.</b> Une fois connectée, vos commandes se synchronisent automatiquement ici.
+      <br>En attendant, entrez vos statistiques journalières manuellement ci-dessous.
+    </div>
+  </div>
+
+  <!-- KPIs commandes du mois -->
+  <div class="kpi-grid" style="margin-bottom:22px">
+    <div class="kpi">
+      <div class="kpi-icon">✅</div>
+      <div class="kpi-val" id="c-confirmees">—</div>
+      <div class="kpi-lbl">Confirmées</div>
+    </div>
+    <div class="kpi blue">
+      <div class="kpi-icon">🚚</div>
+      <div class="kpi-val" id="c-envoyees">—</div>
+      <div class="kpi-lbl">Envoyées</div>
+    </div>
+    <div class="kpi green">
+      <div class="kpi-icon">📬</div>
+      <div class="kpi-val" id="c-livrees">—</div>
+      <div class="kpi-lbl">Livrées</div>
+    </div>
+    <div class="kpi red">
+      <div class="kpi-icon">↩️</div>
+      <div class="kpi-val" id="c-retours">—</div>
+      <div class="kpi-lbl">Retours</div>
+    </div>
+  </div>
+
+  <!-- Taux -->
+  <div class="card" style="margin-bottom:20px;display:flex;gap:32px;flex-wrap:wrap">
+    <div>
+      <div class="section-title" style="margin-bottom:4px">Taux de livraison</div>
+      <div style="font-family:Montserrat,sans-serif;font-size:32px;font-weight:900;color:var(--green)" id="taux-livraison">—%</div>
+      <div style="font-size:12px;color:var(--muted)">Livrées / Envoyées</div>
+    </div>
+    <div>
+      <div class="section-title" style="margin-bottom:4px">Taux de retour</div>
+      <div style="font-family:Montserrat,sans-serif;font-size:32px;font-weight:900;color:var(--orange)" id="taux-retour">—%</div>
+      <div style="font-size:12px;color:var(--muted)">Retours / Envoyées</div>
+    </div>
+    <div>
+      <div class="section-title" style="margin-bottom:4px">Commission confirmation</div>
+      <div style="font-family:Montserrat,sans-serif;font-size:32px;font-weight:900;color:var(--purple)" id="commission-calc">— MAD</div>
+      <div style="font-size:12px;color:var(--muted)">2500 fixe + commissions</div>
+    </div>
+  </div>
+
+  <!-- Saisie manuelle stats journalières -->
+  <div class="card" style="margin-bottom:16px">
+    <div class="section-title">Saisie stats journalières</div>
+    <div class="form-grid">
+      <div class="fg"><label>Date</label><input type="date" id="cs-date"></div>
+      <div class="fg"><label>Confirmées</label><input type="number" id="cs-confirmees" min="0" placeholder="0"></div>
+      <div class="fg"><label>Envoyées</label><input type="number" id="cs-envoyees" min="0" placeholder="0"></div>
+      <div class="fg"><label>Livrées</label><input type="number" id="cs-livrees" min="0" placeholder="0"></div>
+      <div class="fg"><label>Retours</label><input type="number" id="cs-retours" min="0" placeholder="0"></div>
+      <div class="fg"><label>Annulées</label><input type="number" id="cs-annulees" min="0" placeholder="0"></div>
+      <div class="fg"><label>CA livré (MAD)</label><input type="number" id="cs-ca" min="0" placeholder="0"></div>
+    </div>
+    <button class="btn-primary" onclick="addCommandeStats()">+ Enregistrer</button>
+  </div>
+
+  <!-- Historique -->
+  <div class="section-title">Historique par jour</div>
+  <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>Date</th><th>Confirmées</th><th>Envoyées</th><th>Livrées</th><th>Retours</th><th>Annulées</th><th>CA (MAD)</th><th>Tx Livr.</th><th></th></tr></thead>
+      <tbody id="tb-commandes"><tr><td colspan="9" style="text-align:center;padding:30px;color:var(--muted)">Aucune donnée</td></tr></tbody>
+    </table>
+  </div>
+</div>
+</div>
+
+<!-- ══════════════ PAGE: CHARGES ══════════════ -->
+<div class="page" id="page-charges">
+<div class="wrap">
+  <div class="alert info" style="margin-bottom:20px">
+    <span>ℹ️</span>
+    <span>Ces charges sont automatiquement incluses dans le calcul P&L chaque mois. Modifiez les valeurs si elles changent.</span>
+  </div>
+
+  <div class="card" style="margin-bottom:20px">
+    <div class="section-title">Charges fixes mensuelles</div>
+    <div style="display:flex;flex-direction:column;gap:16px">
+
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:14px;background:var(--bg);border-radius:10px;flex-wrap:wrap;gap:10px">
+        <div>
+          <div style="font-weight:600;font-size:14px">🚗 Livreur acheteur</div>
+          <div style="font-size:12px;color:var(--muted)">Salaire fixe mensuel</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <input type="number" id="cfg-livreur" value="3000" style="width:110px;text-align:right;font-weight:700;font-family:Montserrat,sans-serif" onchange="saveConfig()">
+          <span style="color:var(--muted);font-size:13px">MAD</span>
+        </div>
+      </div>
+
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:14px;background:var(--bg);border-radius:10px;flex-wrap:wrap;gap:10px">
+        <div>
+          <div style="font-weight:600;font-size:14px">👩 Place de confirmation (fixe)</div>
+          <div style="font-size:12px;color:var(--muted)">Salaire fixe mensuel</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <input type="number" id="cfg-confirmation" value="2500" style="width:110px;text-align:right;font-weight:700;font-family:Montserrat,sans-serif" onchange="saveConfig()">
+          <span style="color:var(--muted);font-size:13px">MAD</span>
+        </div>
+      </div>
+
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:14px;background:var(--bg);border-radius:10px;flex-wrap:wrap;gap:10px">
+        <div>
+          <div style="font-weight:600;font-size:14px">📣 Commission confirmation (par livraison ≥300 MAD)</div>
+          <div style="font-size:12px;color:var(--muted)">MAD par commande livrée (prix ≥ 300 MAD)</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <input type="number" id="cfg-comm-high" value="5" style="width:80px;text-align:right;font-weight:700;font-family:Montserrat,sans-serif" onchange="saveConfig()">
+          <span style="color:var(--muted);font-size:13px">MAD/cde</span>
+        </div>
+      </div>
+
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:14px;background:var(--bg);border-radius:10px;flex-wrap:wrap;gap:10px">
+        <div>
+          <div style="font-weight:600;font-size:14px">📣 Commission confirmation (par livraison &lt;300 MAD)</div>
+          <div style="font-size:12px;color:var(--muted)">MAD par commande livrée (prix &lt; 300 MAD)</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <input type="number" id="cfg-comm-low" value="2" style="width:80px;text-align:right;font-weight:700;font-family:Montserrat,sans-serif" onchange="saveConfig()">
+          <span style="color:var(--muted);font-size:13px">MAD/cde</span>
+        </div>
+      </div>
+
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:14px;background:var(--bg);border-radius:10px;flex-wrap:wrap;gap:10px">
+        <div>
+          <div style="font-weight:600;font-size:14px">🛒 Shopify</div>
+          <div style="font-size:12px;color:var(--muted)">Abonnement mensuel</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <input type="number" id="cfg-shopify" value="850" style="width:110px;text-align:right;font-weight:700;font-family:Montserrat,sans-serif" onchange="saveConfig()">
+          <span style="color:var(--muted);font-size:13px">MAD</span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="section-title">Tarifs Ozone Express (pour estimation)</div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:12px;background:var(--bg);border-radius:10px;flex-wrap:wrap;gap:10px">
+        <div>
+          <div style="font-weight:600;font-size:14px">🚚 Tarif moyen livraison</div>
+          <div style="font-size:12px;color:var(--muted)">Utilisé si les frais Ozone ne sont pas renseignés directement</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <input type="number" id="cfg-tarif-livraison" value="30" style="width:80px;text-align:right;font-weight:700;font-family:Montserrat,sans-serif" onchange="saveConfig()">
+          <span style="color:var(--muted);font-size:13px">MAD/colis</span>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:12px;background:var(--bg);border-radius:10px;flex-wrap:wrap;gap:10px">
+        <div>
+          <div style="font-weight:600;font-size:14px">↩️ Tarif retour</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <input type="number" id="cfg-tarif-retour" value="10" style="width:80px;text-align:right;font-weight:700;font-family:Montserrat,sans-serif" onchange="saveConfig()">
+          <span style="color:var(--muted);font-size:13px">MAD/retour</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+</div><!-- /app-page -->
+
+<script>
+const SB_URL = 'https://dwjjrgjbkftejdcmwpgc.supabase.co';
+const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR3ampyZ2pia2Z0ZWpkY213cGdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU0NzI2MDYsImV4cCI6MjA5MTA0ODYwNn0.6GxM9u1Om7zP-_MEYVhdtHBESyGLDZGFofxSKGwixPo';
+const PWD = 'touni2024';
+const H = {'Content-Type':'application/json','apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Prefer':'return=representation'};
+
+// ── State ──
+var currentYear = new Date().getFullYear();
+var currentMonth = new Date().getMonth(); // 0-indexed
+var fournisseurs=[], virements=[], metaDepenses=[], commandesStats=[];
+
+// ── Auth ──
+function login(){
+  if(document.getElementById('pwd-input').value===PWD){
+    sessionStorage.setItem('auth','1');
+    document.getElementById('login-page').style.display='none';
+    document.getElementById('app-page').style.display='block';
+    initApp();
+  } else {
+    document.getElementById('login-err').style.display='block';
+  }
+}
+function logout(){sessionStorage.removeItem('auth');location.reload();}
+document.getElementById('pwd-input').addEventListener('keydown',function(e){if(e.key==='Enter')login();});
+
+// ── Supabase ──
+function dot(s){document.getElementById('sync-dot').className='sync-dot '+s;}
+async function sbGet(table){
+  var r=await fetch(SB_URL+'/rest/v1/'+table+'?select=*&order=created_at.desc',{headers:H});
+  if(!r.ok) throw new Error(table+': '+await r.text());
+  return r.json();
+}
+async function sbInsert(table,data){
+  var r=await fetch(SB_URL+'/rest/v1/'+table,{method:'POST',headers:H,body:JSON.stringify(data)});
+  if(!r.ok) throw new Error(await r.text());
+  return (await r.json())[0];
+}
+async function sbDelete(table,id){
+  var r=await fetch(SB_URL+'/rest/v1/'+table+'?id=eq.'+id,{method:'DELETE',headers:H});
+  if(!r.ok) throw new Error(await r.text());
+}
+
+// ── Init ──
+async function initApp(){
+  dot('loading');
+  setDefaultDates();
+  loadConfig();
+  updateMonthLabel();
+  try{
+    [fournisseurs,virements,metaDepenses,commandesStats]=await Promise.all([
+      sbGet('depenses_fournisseurs'),
+      sbGet('ozone_virements'),
+      sbGet('meta_depenses'),
+      sbGet('commandes_stats')
+    ]);
+    dot('ok');
+    renderAll();
+  }catch(e){
+    console.warn('Supabase error (tables may not exist yet):', e.message);
+    dot('err');
+    renderAll();
+  }
+  document.getElementById('last-calc').textContent=new Date().toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+}
+
+function setDefaultDates(){
+  var today=new Date().toISOString().split('T')[0];
+  ['f-date','v-date','m-date','cs-date'].forEach(function(id){
+    var el=document.getElementById(id); if(el) el.value=today;
+  });
+}
+
+// ── Config (localStorage) ──
+function saveConfig(){
+  var cfg={
+    livreur:+document.getElementById('cfg-livreur').value||3000,
+    confirmation:+document.getElementById('cfg-confirmation').value||2500,
+    commHigh:+document.getElementById('cfg-comm-high').value||5,
+    commLow:+document.getElementById('cfg-comm-low').value||2,
+    shopify:+document.getElementById('cfg-shopify').value||850,
+    tarifLivraison:+document.getElementById('cfg-tarif-livraison').value||30,
+    tarifRetour:+document.getElementById('cfg-tarif-retour').value||10,
+  };
+  localStorage.setItem('touni_cfg',JSON.stringify(cfg));
+  renderAll();
+}
+function loadConfig(){
+  var cfg=JSON.parse(localStorage.getItem('touni_cfg')||'{}');
+  if(cfg.livreur) document.getElementById('cfg-livreur').value=cfg.livreur;
+  if(cfg.confirmation) document.getElementById('cfg-confirmation').value=cfg.confirmation;
+  if(cfg.commHigh) document.getElementById('cfg-comm-high').value=cfg.commHigh;
+  if(cfg.commLow) document.getElementById('cfg-comm-low').value=cfg.commLow;
+  if(cfg.shopify) document.getElementById('cfg-shopify').value=cfg.shopify;
+  if(cfg.tarifLivraison) document.getElementById('cfg-tarif-livraison').value=cfg.tarifLivraison;
+  if(cfg.tarifRetour) document.getElementById('cfg-tarif-retour').value=cfg.tarifRetour;
+}
+function getConfig(){
+  return JSON.parse(localStorage.getItem('touni_cfg')||JSON.stringify({
+    livreur:3000,confirmation:2500,commHigh:5,commLow:2,shopify:850,tarifLivraison:30,tarifRetour:10
+  }));
+}
+
+// ── Month navigation ──
+var MONTHS=['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+function updateMonthLabel(){document.getElementById('month-label').textContent=MONTHS[currentMonth]+' '+currentYear;}
+function prevMonth(){currentMonth--;if(currentMonth<0){currentMonth=11;currentYear--;}updateMonthLabel();renderAll();}
+function nextMonth(){currentMonth++;if(currentMonth>11){currentMonth=0;currentYear++;}updateMonthLabel();renderAll();}
+function inCurrentMonth(dateStr){
+  if(!dateStr) return false;
+  var d=new Date(dateStr);
+  return d.getFullYear()===currentYear && d.getMonth()===currentMonth;
+}
+
+// ── Render all ──
+function renderAll(){
+  renderOverview();
+  renderFournisseurs();
+  renderVirements();
+  renderMeta();
+  renderCommandes();
+}
+
+// ── OVERVIEW ──
+function fmt(n){return Math.round(n).toLocaleString('fr-FR')+' MAD';}
+function renderOverview(){
+  var cfg=getConfig();
+  // Filter by current month
+  var mFourn=fournisseurs.filter(function(r){return inCurrentMonth(r.date);});
+  var mVir=virements.filter(function(r){return inCurrentMonth(r.date_virement);});
+  var mMeta=metaDepenses.filter(function(r){return inCurrentMonth(r.date);});
+  var mCmds=commandesStats.filter(function(r){return inCurrentMonth(r.date);});
+
+  var totalVirements=mVir.reduce(function(s,r){return s+(+r.montant_mad||0);},0);
+  var totalFourn=mFourn.reduce(function(s,r){return s+(+r.montant_mad||0);},0);
+  var totalMeta=mMeta.reduce(function(s,r){return s+(+r.montant_mad||0);},0);
+  var totalLivrees=mCmds.reduce(function(s,r){return s+(+r.nb_livrees||0);},0);
+  var totalRetours=mCmds.reduce(function(s,r){return s+(+r.nb_retours||0);},0);
+  var totalEnvoyees=mCmds.reduce(function(s,r){return s+(+r.nb_envoyees||0);},0);
+
+  // Frais Ozone estimés (à remplacer par API Ozone quand connectée)
+  var fraisLivraison=totalEnvoyees*cfg.tarifLivraison;
+  var fraisRetour=totalRetours*cfg.tarifRetour;
+  var totalOzone=fraisLivraison+fraisRetour;
+
+  // Commission confirmation
+  var commission=totalLivrees*cfg.commHigh; // simplified — full split when eGrow connected
+
+  // Charges fixes
+  var shopify=cfg.shopify;
+  var livreur=cfg.livreur;
+  var confFix=cfg.confirmation;
+
+  // P&L
+  var revenus=totalVirements;
+  var depenses=totalFourn+totalMeta+totalOzone+livreur+confFix+commission+shopify;
+  var net=revenus-depenses;
+  var marge=revenus>0?((net/revenus)*100):0;
+
+  // KPIs
+  document.getElementById('kpi-ca').textContent=Math.round(totalVirements).toLocaleString('fr-FR');
+  document.getElementById('kpi-fournisseurs').textContent=Math.round(totalFourn).toLocaleString('fr-FR');
+  document.getElementById('kpi-meta').textContent=Math.round(totalMeta).toLocaleString('fr-FR');
+  document.getElementById('kpi-ozone').textContent=Math.round(totalOzone).toLocaleString('fr-FR');
+
+  // P&L rows
+  document.getElementById('pl-ozone-vir').textContent=fmt(totalVirements);
+  document.getElementById('pl-rev-total').textContent=fmt(revenus);
+  document.getElementById('pl-fourn').textContent='−'+fmt(totalFourn);
+  document.getElementById('pl-ozone-frais').textContent='−'+fmt(totalOzone);
+  document.getElementById('pl-meta').textContent='−'+fmt(totalMeta);
+  document.getElementById('pl-livreur').textContent='−'+fmt(livreur);
+  document.getElementById('pl-confirmation').textContent='−'+fmt(confFix);
+  document.getElementById('pl-commission').textContent='−'+fmt(commission);
+  document.getElementById('pl-shopify').textContent='−'+fmt(shopify);
+  document.getElementById('pl-dep-total').textContent='−'+fmt(depenses);
+
+  // Result banner
+  var banner=document.getElementById('result-banner');
+  var isProfit=net>=0;
+  banner.className='result-banner '+(isProfit?'profit':'loss');
+  document.getElementById('result-label').className='rb-label '+(isProfit?'profit':'loss');
+  document.getElementById('result-label').textContent=isProfit?'BÉNÉFICE NET DU MOIS':'PERTE NETTE DU MOIS';
+  document.getElementById('result-val').className='rb-val '+(isProfit?'profit':'loss');
+  document.getElementById('result-val').textContent=(isProfit?'+':'')+Math.round(net).toLocaleString('fr-FR')+' MAD';
+  document.getElementById('result-margin').textContent='Marge : '+marge.toFixed(1)+'% | Revenus : '+fmt(revenus)+' | Dépenses : '+fmt(depenses);
+}
+
+// ── FOURNISSEURS ──
+async function addFournisseur(){
+  var d=document.getElementById('f-date').value;
+  var m=parseFloat(document.getElementById('f-montant').value);
+  var n=parseInt(document.getElementById('f-nb').value)||0;
+  var notes=document.getElementById('f-notes').value.trim();
+  var err=document.getElementById('f-err');
+  if(!d||!m){err.textContent='Date et montant requis.';err.style.display='block';return;}
+  err.style.display='none';
+  try{
+    var row=await sbInsert('depenses_fournisseurs',{date:d,montant_mad:m,nb_commandes:n,notes:notes});
+    fournisseurs.unshift(row); renderFournisseurs(); renderOverview();
+    document.getElementById('f-montant').value=''; document.getElementById('f-nb').value=''; document.getElementById('f-notes').value='';
+  }catch(e){err.textContent='Erreur: '+e.message;err.style.display='block';}
+}
+function renderFournisseurs(){
+  var tb=document.getElementById('tb-fournisseurs');
+  var mRows=fournisseurs.filter(function(r){return inCurrentMonth(r.date);});
+  if(!mRows.length){tb.innerHTML='<tr><td colspan="6" style="text-align:center;padding:30px;color:var(--muted)">Aucune saisie ce mois</td></tr>';return;}
+  tb.innerHTML=mRows.map(function(r){
+    var cpCmd=r.nb_commandes>0?(r.montant_mad/r.nb_commandes).toFixed(0)+' MAD':'—';
+    return '<tr>'
+      +'<td data-label="Date">'+fmtDate(r.date)+'</td>'
+      +'<td data-label="Montant"><b>'+Math.round(r.montant_mad).toLocaleString('fr-FR')+' MAD</b></td>'
+      +'<td data-label="Nb Cdes">'+r.nb_commandes+'</td>'
+      +'<td data-label="Coût/Cde">'+cpCmd+'</td>'
+      +'<td data-label="Notes" style="color:var(--muted);font-size:12px">'+(r.notes||'—')+'</td>'
+      +'<td><button class="del-btn" onclick="delRow(\'depenses_fournisseurs\',\''+r.id+'\',\'fournisseurs\')">×</button></td>'
+      +'</tr>';
+  }).join('');
+}
+
+// ── VIREMENTS ──
+async function addVirement(){
+  var d=document.getElementById('v-date').value;
+  var m=parseFloat(document.getElementById('v-montant').value);
+  var n=parseInt(document.getElementById('v-nb').value)||0;
+  var notes=document.getElementById('v-notes').value.trim();
+  var err=document.getElementById('v-err');
+  if(!d||!m){err.textContent='Date et montant requis.';err.style.display='block';return;}
+  err.style.display='none';
+  try{
+    var row=await sbInsert('ozone_virements',{date_virement:d,montant_mad:m,nb_livraisons:n,notes:notes});
+    virements.unshift(row); renderVirements(); renderOverview();
+    document.getElementById('v-montant').value=''; document.getElementById('v-nb').value=''; document.getElementById('v-notes').value='';
+  }catch(e){err.textContent='Erreur: '+e.message;err.style.display='block';}
+}
+function renderVirements(){
+  var tb=document.getElementById('tb-virements');
+  var mRows=virements.filter(function(r){return inCurrentMonth(r.date_virement);});
+  if(!mRows.length){tb.innerHTML='<tr><td colspan="6" style="text-align:center;padding:30px;color:var(--muted)">Aucun virement ce mois</td></tr>';return;}
+  tb.innerHTML=mRows.map(function(r){
+    var moy=r.nb_livraisons>0?(r.montant_mad/r.nb_livraisons).toFixed(0)+' MAD':'—';
+    return '<tr>'
+      +'<td data-label="Date">'+fmtDate(r.date_virement)+'</td>'
+      +'<td data-label="Montant"><b style="color:var(--green)">+'+Math.round(r.montant_mad).toLocaleString('fr-FR')+' MAD</b></td>'
+      +'<td data-label="Livraisons">'+r.nb_livraisons+'</td>'
+      +'<td data-label="Moy/Livr">'+moy+'</td>'
+      +'<td data-label="Notes" style="color:var(--muted);font-size:12px">'+(r.notes||'—')+'</td>'
+      +'<td><button class="del-btn" onclick="delRow(\'ozone_virements\',\''+r.id+'\',\'virements\')">×</button></td>'
+      +'</tr>';
+  }).join('');
+}
+
+// ── META ──
+function updateMadPreview(){
+  var usd=parseFloat(document.getElementById('m-usd').value)||0;
+  var rate=parseFloat(document.getElementById('m-rate').value)||10;
+  document.getElementById('m-mad').value=(usd*rate).toFixed(2);
+  document.getElementById('usd-rate-display').textContent=rate.toFixed(1);
+}
+async function addMeta(){
+  var d=document.getElementById('m-date').value;
+  var usd=parseFloat(document.getElementById('m-usd').value)||0;
+  var rate=parseFloat(document.getElementById('m-rate').value)||10;
+  var mad=usd*rate;
+  if(!d||!usd){return;}
+  try{
+    var row=await sbInsert('meta_depenses',{date:d,montant_usd:usd,montant_mad:mad});
+    metaDepenses.unshift(row); renderMeta(); renderOverview();
+    document.getElementById('m-usd').value=''; document.getElementById('m-mad').value='';
+  }catch(e){console.error(e);}
+}
+function renderMeta(){
+  var tb=document.getElementById('tb-meta');
+  var mRows=metaDepenses.filter(function(r){return inCurrentMonth(r.date);});
+  if(!mRows.length){tb.innerHTML='<tr><td colspan="4" style="text-align:center;padding:30px;color:var(--muted)">Aucune dépense ce mois</td></tr>';return;}
+  tb.innerHTML=mRows.map(function(r){
+    return '<tr>'
+      +'<td data-label="Date">'+fmtDate(r.date)+'</td>'
+      +'<td data-label="USD"><b>'+parseFloat(r.montant_usd).toFixed(2)+' $</b></td>'
+      +'<td data-label="MAD" style="color:var(--red)">'+Math.round(r.montant_mad).toLocaleString('fr-FR')+' MAD</td>'
+      +'<td><button class="del-btn" onclick="delRow(\'meta_depenses\',\''+r.id+'\',\'meta\')">×</button></td>'
+      +'</tr>';
+  }).join('');
+}
+
+// ── COMMANDES ──
+async function addCommandeStats(){
+  var d=document.getElementById('cs-date').value; if(!d) return;
+  var row={
+    date:d,
+    nb_confirmees:parseInt(document.getElementById('cs-confirmees').value)||0,
+    nb_envoyees:parseInt(document.getElementById('cs-envoyees').value)||0,
+    nb_livrees:parseInt(document.getElementById('cs-livrees').value)||0,
+    nb_retours:parseInt(document.getElementById('cs-retours').value)||0,
+    nb_annulees:parseInt(document.getElementById('cs-annulees').value)||0,
+    ca_livre:parseFloat(document.getElementById('cs-ca').value)||0,
+  };
+  try{
+    var saved=await sbInsert('commandes_stats',row);
+    commandesStats.unshift(saved); renderCommandes(); renderOverview();
+    ['cs-confirmees','cs-envoyees','cs-livrees','cs-retours','cs-annulees','cs-ca'].forEach(function(id){document.getElementById(id).value='';});
+  }catch(e){console.error(e);}
+}
+function renderCommandes(){
+  var mRows=commandesStats.filter(function(r){return inCurrentMonth(r.date);});
+  var totConf=0,totEnv=0,totLiv=0,totRet=0,totAnn=0;
+  mRows.forEach(function(r){
+    totConf+=(+r.nb_confirmees||0);
+    totEnv+=(+r.nb_envoyees||0);
+    totLiv+=(+r.nb_livrees||0);
+    totRet+=(+r.nb_retours||0);
+    totAnn+=(+r.nb_annulees||0);
+  });
+  document.getElementById('c-confirmees').textContent=totConf;
+  document.getElementById('c-envoyees').textContent=totEnv;
+  document.getElementById('c-livrees').textContent=totLiv;
+  document.getElementById('c-retours').textContent=totRet;
+  var tauxLiv=totEnv>0?((totLiv/totEnv)*100).toFixed(1):'—';
+  var tauxRet=totEnv>0?((totRet/totEnv)*100).toFixed(1):'—';
+  document.getElementById('taux-livraison').textContent=tauxLiv+'%';
+  document.getElementById('taux-retour').textContent=tauxRet+'%';
+  // Commission calc
+  var cfg=getConfig();
+  var comm=2500+(totLiv*cfg.commHigh);
+  document.getElementById('commission-calc').textContent=Math.round(comm).toLocaleString('fr-FR')+' MAD';
+
+  var tb=document.getElementById('tb-commandes');
+  if(!mRows.length){tb.innerHTML='<tr><td colspan="9" style="text-align:center;padding:30px;color:var(--muted)">Aucune donnée ce mois</td></tr>';return;}
+  tb.innerHTML=mRows.map(function(r){
+    var tl=r.nb_envoyees>0?((r.nb_livrees/r.nb_envoyees)*100).toFixed(0)+'%':'—';
+    return '<tr>'
+      +'<td data-label="Date">'+fmtDate(r.date)+'</td>'
+      +'<td data-label="Confirmées">'+r.nb_confirmees+'</td>'
+      +'<td data-label="Envoyées">'+r.nb_envoyees+'</td>'
+      +'<td data-label="Livrées"><b style="color:var(--green)">'+r.nb_livrees+'</b></td>'
+      +'<td data-label="Retours"><b style="color:var(--red)">'+r.nb_retours+'</b></td>'
+      +'<td data-label="Annulées">'+r.nb_annulees+'</td>'
+      +'<td data-label="CA">'+Math.round(r.ca_livre).toLocaleString('fr-FR')+'</td>'
+      +'<td data-label="Tx Livr"><b>'+tl+'</b></td>'
+      +'<td><button class="del-btn" onclick="delRow(\'commandes_stats\',\''+r.id+'\',\'commandes\')">×</button></td>'
+      +'</tr>';
+  }).join('');
+}
+
+// ── Delete ──
+async function delRow(table,id,type){
+  if(!confirm('Supprimer cette entrée ?')) return;
+  try{
+    await sbDelete(table,id);
+    if(type==='fournisseurs') fournisseurs=fournisseurs.filter(function(r){return r.id!==id;});
+    if(type==='virements') virements=virements.filter(function(r){return r.id!==id;});
+    if(type==='meta') metaDepenses=metaDepenses.filter(function(r){return r.id!==id;});
+    if(type==='commandes') commandesStats=commandesStats.filter(function(r){return r.id!==id;});
+    renderAll();
+  }catch(e){console.error(e);}
+}
+
+// ── Navigation ──
+function showPage(name,btn){
+  document.querySelectorAll('.page').forEach(function(p){p.classList.remove('active');});
+  document.querySelectorAll('.nav-btn').forEach(function(b){b.classList.remove('active');});
+  document.getElementById('page-'+name).classList.add('active');
+  if(btn) btn.classList.add('active');
+}
+function mnbA(id){
+  document.querySelectorAll('.mnb').forEach(function(b){b.classList.remove('active');});
+  var el=document.getElementById(id); if(el) el.classList.add('active');
+}
+function finTab(name,btn){
+  ['fournisseurs','virements','meta'].forEach(function(t){
+    document.getElementById('tab-'+t).style.display=t===name?'block':'none';
+  });
+  document.querySelectorAll('.tab').forEach(function(b){b.classList.remove('active');});
+  btn.classList.add('active');
+}
+
+// ── Utils ──
+function fmtDate(d){if(!d) return '—';return new Date(d+'T12:00:00').toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'2-digit'});}
+
+// ── Start ──
+if(sessionStorage.getItem('auth')==='1'){
+  document.getElementById('login-page').style.display='none';
+  document.getElementById('app-page').style.display='block';
+  initApp();
+}
+</script>
+</body>
+</html>
