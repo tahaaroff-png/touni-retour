@@ -997,8 +997,9 @@ function saveMetaConfig(){
   document.getElementById('usd-rate-display').textContent=cfg.rate.toFixed(1);
 }
 function loadMetaConfig(){
-  var cfg=JSON.parse(localStorage.getItem('touni_meta_cfg')||'{}');
-  if(cfg.accountId) document.getElementById('meta-account-id').value=cfg.accountId;
+  var defaults={accountId:'act_178386983599000',rate:10};
+  var cfg=Object.assign(defaults,JSON.parse(localStorage.getItem('touni_meta_cfg')||'{}'));
+  document.getElementById('meta-account-id').value=cfg.accountId;
   if(cfg.token)     document.getElementById('meta-token').value=cfg.token;
   if(cfg.rate){
     document.getElementById('m-rate').value=cfg.rate;
