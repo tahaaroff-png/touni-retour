@@ -249,6 +249,8 @@ td{padding:10px 14px;vertical-align:middle}
     <div class="chip chip-total">Total : <b id="s-tot">—</b></div>
     <div class="chip chip-dispo">✓ <b id="s-dispo">—</b></div>
     <div class="chip chip-rupture">✗ <b id="s-rup">—</b></div>
+    <span id="role-badge" style="display:none;align-items:center;gap:5px;background:#fef9c3;border:1.5px solid #fde047;border-radius:20px;padding:4px 12px;font-family:Montserrat,sans-serif;font-size:10px;font-weight:700;color:#854d0e;text-transform:uppercase;letter-spacing:.8px">👤 Confirmation</span>
+    <a id="admin-dashboard-btn" href="/dashboard" style="display:none;background:var(--text);color:#fff;border-radius:20px;padding:5px 14px;font-family:Montserrat,sans-serif;font-size:10px;font-weight:700;text-decoration:none;letter-spacing:.8px">📊 Dashboard</a>
     <button class="btn-logout" onclick="logout()">Déconnexion</button>
   </div>
 </header>
@@ -393,7 +395,8 @@ td{padding:10px 14px;vertical-align:middle}
 <script>
 const SB_URL = 'https://dwjjrgjbkftejdcmwpgc.supabase.co';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR3ampyZ2pia2Z0ZWpkY213cGdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU0NzI2MDYsImV4cCI6MjA5MTA0ODYwNn0.6GxM9u1Om7zP-_MEYVhdtHBESyGLDZGFofxSKGwixPo';
-const PWD    = 'touni2024';
+const PWD_ADMIN = 'touni2024';
+const PWD_STAFF = 'conf2024';
 const H = {'Content-Type':'application/json','apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Prefer':'return=representation'};
 
 var stock=[], CAT=[], filter='all', editId=null;
@@ -445,16 +448,30 @@ function sortSizes(arr){
 // AUTH
 function login() {
   var val = document.getElementById('pwd-input').value;
-  if (val === PWD) {
-    sessionStorage.setItem('auth','1');
-    document.getElementById('login-page').style.display = 'none';
-    document.getElementById('app-page').style.display = 'block';
-    startApp();
+  if (val === PWD_ADMIN) {
+    sessionStorage.setItem('role','admin');
+  } else if (val === PWD_STAFF) {
+    sessionStorage.setItem('role','staff');
   } else {
     document.getElementById('login-err').style.display = 'block';
+    return;
+  }
+  document.getElementById('login-page').style.display = 'none';
+  document.getElementById('app-page').style.display = 'block';
+  applyRole();
+  startApp();
+}
+function logout() { sessionStorage.removeItem('role'); location.reload(); }
+function applyRole() {
+  var role = sessionStorage.getItem('role');
+  if (role === 'staff') {
+    document.getElementById('role-badge').style.display = 'inline-flex';
+    document.getElementById('admin-dashboard-btn').style.display = 'none';
+  } else {
+    document.getElementById('role-badge').style.display = 'none';
+    document.getElementById('admin-dashboard-btn').style.display = 'inline-block';
   }
 }
-function logout() { sessionStorage.removeItem('auth'); location.reload(); }
 
 // SUPABASE
 function dot(s) { document.getElementById('sync-dot').className = 'sync-dot '+s; }
@@ -567,6 +584,7 @@ async function addItem() {
 
 // DELETE
 async function del(id) {
+  if(sessionStorage.getItem('role') !== 'admin') return;
   if(!confirm('Supprimer ?')) return;
   try { await dbDelete(id); stock=stock.filter(function(i){ return i.id!==id; }); render(); updateStats(); }
   catch(e){ dot('err'); }
@@ -674,7 +692,7 @@ function render() {
       +'<td data-label="Notes"><span style="font-size:12px;color:var(--muted)">'+(it.notes||'—')+'</span></td>'
       +'<td data-label="Actions"><div class="act-cell" onclick="event.stopPropagation()">'
       +'<button class="btn-edit" onclick="openModal(\''+id+'\')" title="Modifier">✏️</button>'
-      +'<button class="del" onclick="del(\''+id+'\')" title="Supprimer">×</button></div></td></tr>';
+      +(sessionStorage.getItem('role')==='admin' ? '<button class="del" onclick="del(\''+id+'\')" title="Supprimer">×</button>' : '')+'</div></td></tr>';
   }).join('');
 }
 
@@ -753,9 +771,11 @@ async function startApp() {
 }
 
 // CHECK SESSION AU CHARGEMENT
-if (sessionStorage.getItem('auth') === '1') {
+var _role = sessionStorage.getItem('role');
+if (_role === 'admin' || _role === 'staff') {
   document.getElementById('login-page').style.display = 'none';
   document.getElementById('app-page').style.display = 'block';
+  applyRole();
   startApp();
 }
 </script>

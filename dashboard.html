@@ -602,7 +602,7 @@ td{padding:10px 14px;vertical-align:middle}
 <script>
 const SB_URL = 'https://dwjjrgjbkftejdcmwpgc.supabase.co';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR3ampyZ2pia2Z0ZWpkY213cGdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU0NzI2MDYsImV4cCI6MjA5MTA0ODYwNn0.6GxM9u1Om7zP-_MEYVhdtHBESyGLDZGFofxSKGwixPo';
-const PWD = 'touni2024';
+const PWD_ADMIN = 'touni2024';
 const H = {'Content-Type':'application/json','apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Prefer':'return=representation'};
 
 // ── State ──
@@ -612,8 +612,8 @@ var fournisseurs=[], virements=[], metaDepenses=[], commandesStats=[];
 
 // ── Auth ──
 function login(){
-  if(document.getElementById('pwd-input').value===PWD){
-    sessionStorage.setItem('auth','1');
+  if(document.getElementById('pwd-input').value===PWD_ADMIN){
+    sessionStorage.setItem('role','admin');
     document.getElementById('login-page').style.display='none';
     document.getElementById('app-page').style.display='block';
     initApp();
@@ -621,7 +621,7 @@ function login(){
     document.getElementById('login-err').style.display='block';
   }
 }
-function logout(){sessionStorage.removeItem('auth');location.reload();}
+function logout(){sessionStorage.removeItem('role');location.reload();}
 document.getElementById('pwd-input').addEventListener('keydown',function(e){if(e.key==='Enter')login();});
 
 // ── Supabase ──
@@ -978,10 +978,13 @@ function finTab(name,btn){
 function fmtDate(d){if(!d) return '—';return new Date(d+'T12:00:00').toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'2-digit'});}
 
 // ── Start ──
-if(sessionStorage.getItem('auth')==='1'){
+if(sessionStorage.getItem('role')==='admin'){
   document.getElementById('login-page').style.display='none';
   document.getElementById('app-page').style.display='block';
   initApp();
+} else if(sessionStorage.getItem('role')==='staff'){
+  // Staff n'a pas accès au dashboard
+  window.location.href='/';
 }
 </script>
 </body>
