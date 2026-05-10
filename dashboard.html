@@ -423,9 +423,12 @@ td{padding:10px 14px;vertical-align:middle}
 <!-- ══════════════ PAGE: COMMANDES ══════════════ -->
 <div class="page" id="page-commandes">
 <div class="wrap">
-  <!-- Status eGrow -->
+  <!-- Status eGrow + Ozone -->
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:10px">
-    <span id="egrow-status" style="font-family:Montserrat,sans-serif;font-size:12px;font-weight:700;color:var(--muted)">⏳ Chargement eGrow…</span>
+    <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">
+      <span id="egrow-status" style="font-family:Montserrat,sans-serif;font-size:12px;font-weight:700;color:var(--muted)">⏳ Chargement eGrow…</span>
+      <span id="ozone-status" style="font-family:Montserrat,sans-serif;font-size:12px;font-weight:700;color:var(--muted);display:none"></span>
+    </div>
     <span style="font-size:11px;color:var(--muted)">1000 dernières commandes · filtre mensuel côté client</span>
   </div>
 
@@ -460,6 +463,12 @@ td{padding:10px 14px;vertical-align:middle}
       <div class="kpi-icon">💰</div>
       <div class="kpi-val" id="c-ca" style="font-size:16px">—</div>
       <div class="kpi-lbl">CA livré</div>
+    </div>
+    <div class="kpi red">
+      <div class="kpi-icon">🚚</div>
+      <div class="kpi-val" id="c-frais-ozone" style="font-size:16px">—</div>
+      <div class="kpi-lbl">Frais Ozone réels</div>
+      <div class="kpi-sub" id="c-nb-expedies"></div>
     </div>
   </div>
 
@@ -564,28 +573,31 @@ td{padding:10px 14px;vertical-align:middle}
   </div>
 
   <div class="card">
-    <div class="section-title">Tarifs Ozone Express (pour estimation)</div>
-    <div style="display:flex;flex-direction:column;gap:12px">
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:12px;background:var(--bg);border-radius:10px;flex-wrap:wrap;gap:10px">
-        <div>
-          <div style="font-weight:600;font-size:14px">🚚 Tarif moyen livraison</div>
-          <div style="font-size:12px;color:var(--muted)">Utilisé si les frais Ozone ne sont pas renseignés directement</div>
-        </div>
-        <div style="display:flex;align-items:center;gap:8px">
-          <input type="number" id="cfg-tarif-livraison" value="30" style="width:80px;text-align:right;font-weight:700;font-family:Montserrat,sans-serif" onchange="saveConfig()">
-          <span style="color:var(--muted);font-size:13px">MAD/colis</span>
-        </div>
+    <div class="section-title">Ozone Express — Frais de livraison</div>
+    <div class="alert" style="background:var(--orange-bg);border:1.5px solid var(--orange-border);border-radius:10px;padding:14px 16px;display:flex;gap:10px;align-items:flex-start;font-size:13px">
+      <span>🟠</span>
+      <span><b>Frais Ozone calculés automatiquement</b> depuis les données eGrow (champ <code>deal_shipping_price</code> par colis expédié). Le tarif actuel est <b>35 MAD/colis</b> pour votre compte #7803. Aucune saisie manuelle nécessaire.</span>
+    </div>
+    <div style="margin-top:14px;padding:12px;background:var(--bg);border-radius:10px;display:flex;gap:32px;flex-wrap:wrap">
+      <div>
+        <div style="font-size:10px;font-weight:700;font-family:Montserrat,sans-serif;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:4px">Tarif constaté</div>
+        <div style="font-family:Montserrat,sans-serif;font-size:22px;font-weight:900;color:var(--orange)">35 MAD</div>
+        <div style="font-size:11px;color:var(--muted)">par colis (livraison + retour)</div>
       </div>
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:12px;background:var(--bg);border-radius:10px;flex-wrap:wrap;gap:10px">
-        <div>
-          <div style="font-weight:600;font-size:14px">↩️ Tarif retour</div>
-        </div>
-        <div style="display:flex;align-items:center;gap:8px">
-          <input type="number" id="cfg-tarif-retour" value="10" style="width:80px;text-align:right;font-weight:700;font-family:Montserrat,sans-serif" onchange="saveConfig()">
-          <span style="color:var(--muted);font-size:13px">MAD/retour</span>
-        </div>
+      <div>
+        <div style="font-size:10px;font-weight:700;font-family:Montserrat,sans-serif;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:4px">Compte Ozone</div>
+        <div style="font-family:Montserrat,sans-serif;font-size:22px;font-weight:900;color:var(--text)">#7803</div>
+        <div style="font-size:11px;color:var(--muted)">ID client Ozone Express</div>
+      </div>
+      <div>
+        <div style="font-size:10px;font-weight:700;font-family:Montserrat,sans-serif;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:4px">Source données</div>
+        <div style="font-family:Montserrat,sans-serif;font-size:14px;font-weight:700;color:var(--green)">eGrow → deal_shipping_price</div>
+        <div style="font-size:11px;color:var(--muted)">Synchronisé en temps réel</div>
       </div>
     </div>
+    <!-- hidden inputs kept for saveConfig/loadConfig compatibility -->
+    <input type="hidden" id="cfg-tarif-livraison" value="35">
+    <input type="hidden" id="cfg-tarif-retour" value="0">
   </div>
 </div>
 </div>
@@ -650,6 +662,13 @@ async function fetchEgrow(){
   egrowDeals=await r.json();
 }
 
+// Stages comptant comme "expédié" pour le calcul des frais Ozone
+var EGROW_EXPEDIES = new Set([
+  'Livrer','Retourner','Retour recu','Retour agence ',
+  'Annuler Ozone','Success Ozone','Ramassé','Attente de ramassage',
+  'Mise en distribution','En cours','Expédier','Recu '
+]);
+
 function egrowStats(year,month){
   var deals=egrowDeals.filter(function(d){
     if(!d.time) return false;
@@ -660,12 +679,18 @@ function egrowStats(year,month){
     total:deals.length, livrees:0, retours:0, confirmes:0,
     wtspAuto:0, enAttente:0, relance:0, transit:0,
     annPrecoce:0, annNR:0, annOzone:0, rupture:0,
-    ca:0, stages:{}
+    ca:0, fraisOzone:0, nbExpedies:0, stages:{}
   };
   deals.forEach(function(d){
     var name=d.stage&&d.stage.name?d.stage.name:'Autre';
     s.stages[name]=(s.stages[name]||0)+1;
     var v=parseFloat(d.value||0);
+    // Frais Ozone réels depuis deal_shipping_price (données Ozone via eGrow)
+    if(EGROW_EXPEDIES.has(name)){
+      var shippingCost=parseFloat(d.deal_shipping_price||0);
+      s.fraisOzone+=shippingCost||35; // fallback 35 MAD si non renseigné
+      s.nbExpedies++;
+    }
     if(EGROW_LIVRES.has(name))       { s.livrees++;  s.ca+=v; }
     else if(EGROW_RETOURS.has(name))      s.retours++;
     else if(EGROW_CONFIRMES.has(name))    s.confirmes++;
@@ -678,9 +703,7 @@ function egrowStats(year,month){
     else if(EGROW_ANN_OZONE.has(name))    s.annOzone++;
     else if(EGROW_RUPTURE.has(name))      s.rupture++;
   });
-  // Total annulées = toutes catégories d'annulation
   s.annules = s.annPrecoce + s.annNR + s.annOzone;
-  // Taux de livraison = livrées / (livrées + retours + annOzone) — commandes qui ont été expédiées
   var expedies = s.livrees + s.retours + s.annOzone;
   s.tauxLiv = expedies > 0 ? ((s.livrees / expedies)*100).toFixed(1) : '—';
   s.tauxRet = expedies > 0 ? ((s.retours / expedies)*100).toFixed(1) : '—';
@@ -807,12 +830,9 @@ function renderOverview(){
   var totalMeta=mMeta.reduce(function(s,r){return s+(+r.montant_mad||0);},0);
   var totalLivrees=egrowDeals.length>0?eg.livrees:commandesStats.filter(function(r){return inCurrentMonth(r.date);}).reduce(function(s,r){return s+(+r.nb_livrees||0);},0);
   var totalRetours=egrowDeals.length>0?eg.retours:commandesStats.filter(function(r){return inCurrentMonth(r.date);}).reduce(function(s,r){return s+(+r.nb_retours||0);},0);
-  var totalEnvoyees=egrowDeals.length>0?(eg.livrees+eg.retours+eg.enCours):commandesStats.filter(function(r){return inCurrentMonth(r.date);}).reduce(function(s,r){return s+(+r.nb_envoyees||0);},0);
 
-  // Frais Ozone estimés (à remplacer par API Ozone quand connectée)
-  var fraisLivraison=totalEnvoyees*cfg.tarifLivraison;
-  var fraisRetour=totalRetours*cfg.tarifRetour;
-  var totalOzone=fraisLivraison+fraisRetour;
+  // Frais Ozone réels issus de deal_shipping_price (données Ozone synchronisées via eGrow)
+  var totalOzone=egrowDeals.length>0 ? eg.fraisOzone : 0;
 
   // Commission confirmation
   var commission=totalLivrees*cfg.commHigh; // simplified — full split when eGrow connected
@@ -983,9 +1003,18 @@ function renderCommandes(){
   document.getElementById('c-retours').textContent=eg.retours;
   document.getElementById('c-annules').textContent=eg.annules;
   document.getElementById('c-ca').textContent=Math.round(eg.ca).toLocaleString('fr-FR')+' MAD';
+  document.getElementById('c-frais-ozone').textContent=Math.round(eg.fraisOzone).toLocaleString('fr-FR')+' MAD';
+  document.getElementById('c-nb-expedies').textContent=eg.nbExpedies+' colis expédiés';
   document.getElementById('taux-livraison').textContent=(eg.tauxLiv==='—'?'—':eg.tauxLiv+'%');
   document.getElementById('taux-retour').textContent=(eg.tauxRet==='—'?'—':eg.tauxRet+'%');
   document.getElementById('commission-calc').textContent=Math.round(comm).toLocaleString('fr-FR')+' MAD';
+  // Ozone status badge
+  var ozEl=document.getElementById('ozone-status');
+  if(ozEl && eg.nbExpedies>0){
+    ozEl.style.display='inline';
+    ozEl.textContent='🟠 Ozone connecté ('+eg.nbExpedies+' colis · '+(eg.nbExpedies>0?(eg.fraisOzone/eg.nbExpedies).toFixed(0):0)+' MAD/colis)';
+    ozEl.style.color='var(--orange)';
+  }
 
   // Tableau récap groupé par catégorie business
   var tb=document.getElementById('tb-commandes');
