@@ -141,16 +141,17 @@ td{padding:10px 14px;vertical-align:middle}
 .del-btn:hover{color:var(--red);background:var(--red-bg)}
 
 /* ── Date range bar ── */
-.dr-bar{background:var(--surface);border-bottom:1.5px solid var(--border);padding:10px 28px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;position:sticky;top:64px;z-index:99;box-shadow:0 1px 3px rgba(0,0,0,.04)}
-.dr-btn{padding:6px 13px;border-radius:20px;border:1.5px solid var(--border);background:transparent;font-family:'Montserrat',sans-serif;font-size:10px;font-weight:700;letter-spacing:.5px;cursor:pointer;color:var(--muted);transition:all .15s;white-space:nowrap}
-.dr-btn:hover:not(.active){border-color:var(--border2);background:var(--bg)}
-.dr-btn.active{background:var(--text);color:#fff;border-color:var(--text)}
-.dr-sep{width:1px;height:20px;background:var(--border);margin:0 4px}
-.dr-label{font-family:'Montserrat',sans-serif;font-size:11px;font-weight:800;color:var(--text);margin-left:4px}
+.dr-bar{background:linear-gradient(135deg,#1a1a2e 0%,#16213e 100%);border-bottom:2px solid #0f3460;padding:14px 28px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;position:sticky;top:64px;z-index:99;box-shadow:0 3px 12px rgba(0,0,0,.25)}
+.dr-btn{padding:9px 18px;border-radius:8px;border:1.5px solid rgba(255,255,255,.15);background:rgba(255,255,255,.07);font-family:'Montserrat',sans-serif;font-size:12px;font-weight:700;letter-spacing:.4px;cursor:pointer;color:rgba(255,255,255,.7);transition:all .15s;white-space:nowrap}
+.dr-btn:hover:not(.active){border-color:rgba(255,255,255,.35);background:rgba(255,255,255,.14);color:#fff}
+.dr-btn.active{background:#e63946;color:#fff;border-color:#e63946;box-shadow:0 2px 8px rgba(230,57,70,.45)}
+.dr-sep{width:1px;height:28px;background:rgba(255,255,255,.15);margin:0 4px}
+.dr-label{font-family:'Montserrat',sans-serif;font-size:12px;font-weight:800;color:#fff;margin-left:4px;background:rgba(255,255,255,.1);padding:6px 14px;border-radius:6px;border:1px solid rgba(255,255,255,.15)}
 .dr-custom{display:none;align-items:center;gap:8px;flex-wrap:wrap}
-.dr-custom input[type=date]{width:auto;padding:5px 10px;font-size:12px}
+.dr-custom input[type=date]{width:auto;padding:7px 12px;font-size:12px;background:rgba(255,255,255,.1);border:1.5px solid rgba(255,255,255,.25);border-radius:7px;color:#fff;font-family:'Montserrat',sans-serif;font-weight:600}
+.dr-custom input[type=date]::-webkit-calendar-picker-indicator{filter:invert(1);opacity:.7}
 .charges-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-@media(max-width:600px){.dr-bar{top:56px;padding:8px 12px;gap:6px}.dr-btn{font-size:9px;padding:5px 10px}}
+@media(max-width:600px){.dr-bar{top:56px;padding:10px 12px;gap:7px}.dr-btn{font-size:11px;padding:7px 13px}}
 
 /* ── Responsive ── */
 @media(max-width:900px){
@@ -934,10 +935,15 @@ function renderOverview(){
   // Commission confirmation
   var commission=totalLivrees*cfg.commHigh;
 
-  // Charges fixes
-  var shopify=cfg.shopify;
-  var livreur=cfg.livreur;
-  var confFix=cfg.confirmation;
+  // Prorata charges fixes selon durée de la période (base 30 jours)
+  var periodDays=1;
+  if(filterFrom&&filterTo){
+    periodDays=Math.round((filterTo-filterFrom)/(1000*60*60*24))+1;
+  }
+  var daysRatio=Math.min(periodDays,30)/30;
+  var shopify=Math.round(cfg.shopify*daysRatio);
+  var livreur=Math.round(cfg.livreur*daysRatio);
+  var confFix=Math.round(cfg.confirmation*daysRatio);
 
   // P&L CORRECT :
   // Le virement Ozone = COD collecté − frais livraison déjà déduits par Ozone
@@ -972,10 +978,11 @@ function renderOverview(){
   var isProfit=net>=0;
   banner.className='result-banner '+(isProfit?'profit':'loss');
   document.getElementById('result-label').className='rb-label '+(isProfit?'profit':'loss');
-  document.getElementById('result-label').textContent=isProfit?'BÉNÉFICE NET DU MOIS':'PERTE NETTE DU MOIS';
+  var periodLabel=document.getElementById('dr-label')?document.getElementById('dr-label').textContent:'';
+  document.getElementById('result-label').textContent=isProfit?'BÉNÉFICE NET':'PERTE NETTE';
   document.getElementById('result-val').className='rb-val '+(isProfit?'profit':'loss');
   document.getElementById('result-val').textContent=(isProfit?'+':'')+Math.round(net).toLocaleString('fr-FR')+' MAD';
-  document.getElementById('result-margin').textContent='Marge : '+marge.toFixed(1)+'% | Revenus (virements nets) : '+fmt(revenus)+' | Dépenses : '+fmt(depenses);
+  document.getElementById('result-margin').textContent='Marge : '+marge.toFixed(1)+'% | Revenus : '+fmt(revenus)+' | Dépenses : '+fmt(depenses)+' | Charges fixes sur '+periodDays+' j (÷30)';
 }
 
 // ── FOURNISSEURS ──
