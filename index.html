@@ -109,6 +109,20 @@ td{padding:10px 14px;vertical-align:middle}
 .modal{background:var(--surface);border-radius:14px;padding:28px;width:100%;max-width:520px;box-shadow:0 24px 64px rgba(0,0,0,.2)}
 .modal-title{font-family:'Montserrat',sans-serif;font-size:14px;font-weight:800;margin-bottom:20px;display:flex;justify-content:space-between;align-items:center}
 .modal-close{background:none;border:none;font-size:20px;cursor:pointer;color:var(--muted)}
+.modal-drag{width:36px;height:4px;background:var(--border2);border-radius:2px;margin:0 auto 16px;display:none}
+.quick-btns{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:18px}
+.qb{padding:10px 6px;border-radius:10px;border:1.5px solid var(--border);background:var(--bg);font-family:'Montserrat',sans-serif;font-size:10px;font-weight:700;cursor:pointer;text-align:center;transition:all .15s;line-height:1.4}
+.qb span{display:block;font-size:18px;margin-bottom:3px}
+.qb.qb-retour.active{background:var(--green-bg);border-color:var(--green);color:var(--green)}
+.qb.qb-vendu.active{background:#f0f9ff;border-color:#bae6fd;color:#0369a1}
+.qb.qb-mystere.active{background:#fdf4ff;border-color:#e9d5ff;color:#7e22ce}
+.qb.qb-offert.active{background:#fff7ed;border-color:#fed7aa;color:#c2410c}
+.qty-ctrl{display:flex;align-items:center;gap:0;border:1.5px solid var(--border);border-radius:8px;overflow:hidden}
+.qty-btn{background:var(--bg);border:none;width:40px;height:40px;font-size:20px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--text);transition:background .1s;flex-shrink:0}
+.qty-btn:hover{background:var(--border)}
+.qty-inp{border:none;text-align:center;font-size:16px;font-weight:700;font-family:'Montserrat',sans-serif;width:60px;background:var(--surface);color:var(--text);outline:none;padding:0}
+.mob-card{cursor:pointer}
+.mob-card:active{background:#f8f8f8}
 .modal-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
 .mf{display:flex;flex-direction:column;gap:6px}
 .mf.full{grid-column:1/-1}
@@ -192,9 +206,15 @@ td{padding:10px 14px;vertical-align:middle}
   .sc-val{font-size:26px}
   .chart-wrap{padding:16px}
   .bar-chart{height:120px}
-  .modal{padding:20px 16px;max-height:90vh;overflow-y:auto}
+  .modal-bg{align-items:flex-end;padding:0}
+  .modal{border-radius:20px 20px 0 0;max-height:92vh;overflow-y:auto;padding:0 16px 24px;padding-bottom:max(24px,env(safe-area-inset-bottom))}
+  .modal-drag{display:block}
+  .modal-title{padding:16px 0 4px;font-size:15px}
   .modal-grid{grid-template-columns:1fr}
   .mf.full{grid-column:auto}
+  .quick-btns{grid-template-columns:repeat(4,1fr)}
+  .qty-ctrl{width:100%}
+  .qty-inp{flex:1;width:auto}
   .header-right .btn-logout{font-size:10px;padding:4px 10px}
 }
 </style>
@@ -336,12 +356,25 @@ td{padding:10px 14px;vertical-align:middle}
 
 <div class="modal-bg" id="modal">
   <div class="modal">
+    <div class="modal-drag"></div>
     <div class="modal-title">Modifier l'article <button class="modal-close" onclick="closeModal()">×</button></div>
+    <div class="quick-btns">
+      <button class="qb qb-retour" onclick="qbPick('retour')"><span>🔄</span>Retour</button>
+      <button class="qb qb-vendu" onclick="qbPick('vendu')"><span>💰</span>Vendu</button>
+      <button class="qb qb-mystere" onclick="qbPick('mystere')"><span>🎁</span>Mystère</button>
+      <button class="qb qb-offert" onclick="qbPick('offert')"><span>🎀</span>Offert</button>
+    </div>
     <div class="modal-grid">
       <div class="mf full"><label>Produit</label><input type="text" id="m-product"></div>
-      <div class="mf"><label>Taille</label><input type="text" id="m-size"></div>
-      <div class="mf"><label>Quantité</label><input type="number" id="m-qty" min="0"></div>
-      <div class="mf"><label>Statut</label>
+      <div class="mf full"><label>Taille / Couleur</label><input type="text" id="m-size"></div>
+      <div class="mf full"><label>Quantité</label>
+        <div class="qty-ctrl">
+          <button class="qty-btn" onclick="adjQty(-1)">−</button>
+          <input class="qty-inp" type="number" id="m-qty" min="0">
+          <button class="qty-btn" onclick="adjQty(1)">+</button>
+        </div>
+      </div>
+      <div class="mf full" style="display:none"><label>Statut</label>
         <select id="m-status">
           <option value="retour">🔄 Retour</option><option value="vendu">💰 Vendu</option>
           <option value="mystere">🎁 Maillot mystère</option><option value="offert">🎀 Offert</option>
@@ -540,15 +573,24 @@ async function del(id) {
 }
 
 // MODAL
+function qbPick(status) {
+  document.getElementById('m-status').value=status;
+  document.querySelectorAll('.qb').forEach(function(b){ b.classList.remove('active'); });
+  var el=document.querySelector('.qb-'+status); if(el) el.classList.add('active');
+}
+function adjQty(d) {
+  var el=document.getElementById('m-qty');
+  el.value=Math.max(0,(parseInt(el.value)||0)+d);
+}
 function openModal(id) {
   var it=stock.find(function(i){ return i.id===id; });
   if(!it) return; editId=id;
   document.getElementById('m-product').value=it.product||'';
   document.getElementById('m-size').value=it.size||'';
   document.getElementById('m-qty').value=it.qty||0;
-  document.getElementById('m-status').value=it.status||'retour';
   document.getElementById('m-exit-date').value=it.exit_date?it.exit_date.split('T')[0]:'';
   document.getElementById('m-notes').value=it.notes||'';
+  qbPick(it.status||'retour');
   document.getElementById('modal').classList.add('open');
 }
 function closeModal(){ document.getElementById('modal').classList.remove('open'); editId=null; }
@@ -619,7 +661,8 @@ function render() {
     var badge=ok?'<span class="badge b-ok"><span class="dot dg"></span>Dispo</span>':'<span class="badge b-ko"><span class="dot dr"></span>Rupture</span>';
     var imgHtml=it.image?'<img class="prod-thumb" src="'+it.image+'" alt="" onerror="this.style.display=\'none\'">':'<div class="prod-ph">👕</div>';
     var szDisplay='<b>'+(normalizeSize(parseSizePart(it.size))||parseSizePart(it.size)||'—')+'</b>'+(parseColorPart(it.size)?'<span style="font-size:11px;color:var(--muted);margin-left:6px">'+parseColorPart(it.size)+'</span>':'');
-    return '<tr>'
+    var id=it.id;
+    return '<tr class="mob-card" onclick="openModal(\''+id+'\')">'
       +'<td class="nnum">'+(i+1)+'</td>'
       +'<td data-label="Produit"><div class="prod-cell">'+imgHtml+'<span class="pname" title="'+it.product+'">'+it.product+'</span></div></td>'
       +'<td data-label="Taille">'+szDisplay+'</td>'
@@ -629,8 +672,9 @@ function render() {
       +'<td class="date-cell" data-label="Entrée">'+fmtDate(it.created_at)+'</td>'
       +'<td class="date-cell" data-label="Sortie">'+fmtDate(it.exit_date)+'</td>'
       +'<td data-label="Notes"><span style="font-size:12px;color:var(--muted)">'+(it.notes||'—')+'</span></td>'
-      +'<td data-label=""><div class="act-cell"><button class="btn-edit" onclick="openModal(\'' + it.id + '\')" title="Modifier">✏️</button>'
-      +'<button class="del" onclick="del(\'' + it.id + '\')" title="Supprimer">×</button></div></td></tr>';
+      +'<td data-label="Actions"><div class="act-cell" onclick="event.stopPropagation()">'
+      +'<button class="btn-edit" onclick="openModal(\''+id+'\')" title="Modifier">✏️</button>'
+      +'<button class="del" onclick="del(\''+id+'\')" title="Supprimer">×</button></div></td></tr>';
   }).join('');
 }
 
