@@ -1076,7 +1076,7 @@ function renderOverview(){
       'Valeur auto eGrow : '+Math.round(eg.ca).toLocaleString('fr-FR')+' MAD COD − '+Math.round(fraisOzoneInfo).toLocaleString('fr-FR')+' MAD frais Ozone = '+autoCA.toLocaleString('fr-FR')+' MAD net');
   }
 
-  var commission=eg.livreesHigh*(cfg.commHigh||5)+eg.livreesLow*(cfg.commLow||2);
+  var commission=(eg.livreesHigh||0)*(cfg.commHigh||5)+(eg.livreesLow||0)*(cfg.commLow||2);
   var revenus=totalVirements||autoCA;
   var depenses=totalFourn+totalMeta+customFixedTotal+customVarTotal+commission;
   var net=revenus-depenses;
