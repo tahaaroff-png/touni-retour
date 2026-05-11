@@ -231,6 +231,7 @@ td{padding:10px 14px;vertical-align:middle}
     <button class="nav-btn" onclick="showPage('finances',this)">💰 Finances</button>
     <button class="nav-btn" onclick="showPage('commandes',this)">📦 Commandes</button>
     <button class="nav-btn" onclick="showPage('charges',this)">⚙️ Charges</button>
+    <button class="nav-btn" onclick="showPage('releve',this)">📄 Relevé</button>
   </nav>
   <div class="header-right">
     <div class="sync-dot" id="sync-dot"></div>
@@ -656,9 +657,277 @@ td{padding:10px 14px;vertical-align:middle}
 </div>
 </div>
 
+<div class="page" id="page-releve">
+  <div class="wrap">
+
+    <!-- Clé API Claude -->
+    <div class="card" style="margin-bottom:20px">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
+        <div>
+          <div class="section-title" style="margin:0">🔑 Clé API Claude (Anthropic)</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:4px">Stockée localement, jamais envoyée ailleurs. <a href="https://console.anthropic.com" target="_blank" style="color:var(--blue)">Obtenir une clé</a></div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex:1;max-width:480px">
+          <input type="password" id="claude-api-key" placeholder="sk-ant-..." style="flex:1" oninput="saveClaudeKey()">
+          <span id="claude-key-status" style="font-size:12px;color:var(--muted);white-space:nowrap"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Mappings noms → catégories -->
+    <div class="card" style="margin-bottom:20px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+        <div>
+          <div class="section-title" style="margin:0">🏷️ Correspondances noms → catégories</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:4px">Entrez les noms exacts qui apparaissent dans votre relevé (partiel suffit). Ex : "DUPONT" → Fournisseur.</div>
+        </div>
+        <button onclick="addMappingRow()" style="background:var(--text);color:#fff;border:none;border-radius:8px;padding:8px 14px;font-family:Montserrat,sans-serif;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0">+ Ajouter</button>
+      </div>
+      <div id="mapping-list" style="display:flex;flex-direction:column;gap:10px"></div>
+    </div>
+
+    <!-- Upload PDF -->
+    <div class="card" style="margin-bottom:20px">
+      <div class="section-title" style="margin-bottom:14px">📄 Relevé bancaire (PDF)</div>
+      <div id="pdf-drop" onclick="document.getElementById('pdf-file-input').click()" style="border:2.5px dashed var(--border2);border-radius:12px;padding:40px;text-align:center;cursor:pointer;transition:background .15s" ondragover="event.preventDefault();this.style.background='#f0f9ff'" ondragleave="this.style.background=''" ondrop="handlePdfDrop(event)">
+        <div style="font-size:32px;margin-bottom:8px">📂</div>
+        <div style="font-family:Montserrat,sans-serif;font-weight:700;font-size:13px">Cliquez ou glissez votre relevé PDF ici</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:4px" id="pdf-file-name">Aucun fichier sélectionné</div>
+      </div>
+      <input type="file" id="pdf-file-input" accept="application/pdf" style="display:none" onchange="handlePdfFile(this.files[0])">
+      <div style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+        <button id="btn-analyze" onclick="analyzeReleve()" style="background:#7c3aed;color:#fff;border:none;border-radius:8px;padding:11px 22px;font-family:Montserrat,sans-serif;font-size:12px;font-weight:700;cursor:pointer;opacity:.5" disabled>🤖 Analyser avec Claude</button>
+        <div id="releve-status" style="font-size:12px;color:var(--muted)"></div>
+      </div>
+    </div>
+
+    <!-- Résultats -->
+    <div id="releve-results" style="display:none">
+      <div class="section-title" style="margin-bottom:14px">📊 Résultats de l'analyse</div>
+      <div id="releve-results-inner" style="display:flex;flex-direction:column;gap:16px"></div>
+      <div style="margin-top:20px;padding:16px 20px;background:var(--green-bg);border:1.5px solid var(--green-border);border-radius:var(--radius)">
+        <div style="font-family:Montserrat,sans-serif;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:1.5px;color:var(--green);margin-bottom:8px">Importer dans le dashboard</div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:10px">Les totaux détectés seront pré-remplis dans les sections Fournisseurs et Charges.</div>
+        <button onclick="importReleveResults()" style="background:var(--green);color:#fff;border:none;border-radius:8px;padding:10px 20px;font-family:Montserrat,sans-serif;font-size:12px;font-weight:700;cursor:pointer">✅ Importer les totaux</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
 </div><!-- /app-page -->
 
 <script>
+/* ── PDF.js (lazy load) ── */
+var pdfJsLoaded=false;
+function loadPdfJs(cb){
+  if(pdfJsLoaded){cb();return;}
+  var s=document.createElement('script');
+  s.src='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+  s.onload=function(){
+    pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    pdfJsLoaded=true; cb();
+  };
+  document.head.appendChild(s);
+}
+
+/* ── Relevé bancaire ── */
+var releveText='';
+var releveResults=null;
+
+var RELEVE_CATEGORIES=[
+  {id:'fournisseurs',  label:'Fournisseurs',           color:'var(--orange)'},
+  {id:'flocking',      label:'Flocking / Impression',  color:'var(--purple)'},
+  {id:'contenu',       label:'Création de contenu',    color:'#0891b2'},
+  {id:'ramassage',     label:'Ramassage / Pickup',     color:'var(--blue)'},
+  {id:'pub',           label:'Publicité (Meta/TikTok)',color:'#1877f2'},
+  {id:'loyer',         label:'Loyer / Bureau',         color:'var(--green)'},
+  {id:'salaires',      label:'Salaires / Personnel',   color:'#64748b'},
+  {id:'abonnements',   label:'Abonnements / SaaS',     color:'var(--muted)'},
+  {id:'autre',         label:'Autre / Non catégorisé', color:'var(--muted2)'}
+];
+
+function saveClaudeKey(){
+  var v=document.getElementById('claude-api-key').value.trim();
+  localStorage.setItem('touni_claude_key',v);
+  document.getElementById('claude-key-status').textContent=v?'✓ Sauvegardée':'';
+}
+function loadClaudeKey(){
+  var v=localStorage.getItem('touni_claude_key')||'';
+  var el=document.getElementById('claude-api-key');
+  if(el){ el.value=v; document.getElementById('claude-key-status').textContent=v?'✓ Sauvegardée':''; }
+}
+
+/* ── Mappings ── */
+function getMappings(){ return JSON.parse(localStorage.getItem('touni_mappings')||'[]'); }
+function saveMappings(arr){ localStorage.setItem('touni_mappings',JSON.stringify(arr)); }
+function addMappingRow(){
+  var arr=getMappings();
+  arr.push({id:Date.now()+'',keyword:'',category:'fournisseurs'});
+  saveMappings(arr); renderMappings();
+}
+function updateMapping(id,field,val){
+  var arr=getMappings(); arr.forEach(function(m){if(m.id===id) m[field]=val;}); saveMappings(arr);
+}
+function deleteMapping(id){
+  saveMappings(getMappings().filter(function(m){return m.id!==id;})); renderMappings();
+}
+function renderMappings(){
+  var list=document.getElementById('mapping-list'); if(!list) return;
+  var arr=getMappings();
+  if(!arr.length){
+    list.innerHTML='<div style="font-size:12px;color:var(--muted);padding:8px">Aucune correspondance. Ex : "DUPONT" → Fournisseur, "CHRONOPOST" → Ramassage.</div>';
+    return;
+  }
+  var catOptions=RELEVE_CATEGORIES.map(function(c){return '<option value="'+c.id+'">'+c.label+'</option>';}).join('');
+  list.innerHTML=arr.map(function(m){
+    return '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 12px;background:var(--bg);border-radius:10px">'
+      +'<input placeholder="Nom dans le relevé (ex: DUPONT SARL)" value="'+m.keyword+'" style="flex:2;min-width:160px;font-size:13px" oninput="updateMapping(\''+m.id+'\',\'keyword\',this.value)">'
+      +'<span style="font-size:12px;color:var(--muted)">→</span>'
+      +'<select style="flex:1;min-width:160px;font-size:13px" onchange="updateMapping(\''+m.id+'\',\'category\',this.value)">'
+      +RELEVE_CATEGORIES.map(function(c){return '<option value="'+c.id+'"'+(m.category===c.id?' selected':'')+'>'+c.label+'</option>';}).join('')
+      +'</select>'
+      +'<button onclick="deleteMapping(\''+m.id+'\')" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:18px;padding:0 4px">×</button>'
+      +'</div>';
+  }).join('');
+}
+
+/* ── PDF handling ── */
+function handlePdfDrop(e){
+  e.preventDefault();
+  document.getElementById('pdf-drop').style.background='';
+  var f=e.dataTransfer.files[0];
+  if(f && f.type==='application/pdf') handlePdfFile(f);
+}
+function handlePdfFile(file){
+  if(!file) return;
+  document.getElementById('pdf-file-name').textContent=file.name+' ('+Math.round(file.size/1024)+' Ko)';
+  document.getElementById('releve-status').textContent='Extraction du texte…';
+  loadPdfJs(function(){
+    var reader=new FileReader();
+    reader.onload=function(e){
+      pdfjsLib.getDocument({data:new Uint8Array(e.target.result)}).promise.then(function(pdf){
+        var pages=[]; var total=pdf.numPages;
+        for(var i=1;i<=total;i++) pages.push(pdf.getPage(i));
+        return Promise.all(pages);
+      }).then(function(pages){
+        return Promise.all(pages.map(function(p){return p.getTextContent();}));
+      }).then(function(contents){
+        releveText=contents.map(function(c){
+          return c.items.map(function(i){return i.str;}).join(' ');
+        }).join('\n');
+        var wordCount=releveText.split(/\s+/).length;
+        document.getElementById('releve-status').textContent='✓ '+total+' pages extraites · '+wordCount+' mots';
+        var btn=document.getElementById('btn-analyze');
+        btn.disabled=false; btn.style.opacity='1';
+      }).catch(function(err){
+        document.getElementById('releve-status').textContent='❌ Erreur extraction: '+err.message;
+      });
+    };
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+/* ── Analyse Claude ── */
+async function analyzeReleve(){
+  var key=localStorage.getItem('touni_claude_key')||'';
+  if(!key){alert('Entrez votre clé API Claude en haut de la page.');return;}
+  if(!releveText){alert('Importez d\'abord un PDF.');return;}
+  var mappings=getMappings().filter(function(m){return m.keyword.trim();});
+  var mappingText=mappings.length
+    ? mappings.map(function(m){
+        var cat=RELEVE_CATEGORIES.find(function(c){return c.id===m.category;});
+        return '"'+m.keyword+'" → '+(cat?cat.label:m.category);
+      }).join('\n')
+    : '(aucune correspondance définie — catégoriser au mieux)';
+
+  var prompt='Tu es un assistant comptable. Analyse ce relevé bancaire marocain et catégorise chaque débit (dépense).\n\n'
+    +'CORRESPONDANCES NOMS → CATÉGORIES (priorité absolue) :\n'+mappingText+'\n\n'
+    +'CATÉGORIES DISPONIBLES : Fournisseurs, Flocking/Impression, Création de contenu, Ramassage/Pickup, Publicité, Loyer/Bureau, Salaires/Personnel, Abonnements/SaaS, Autre\n\n'
+    +'RELEVÉ BANCAIRE :\n'+releveText.substring(0,40000)+'\n\n'
+    +'Réponds UNIQUEMENT en JSON valide avec cette structure exacte :\n'
+    +'{"categories":{"fournisseurs":[{"date":"...","description":"...","montant":0}],"flocking":[...],"contenu":[...],"ramassage":[...],"pub":[...],"loyer":[...],"salaires":[...],"abonnements":[...],"autre":[...]},"totaux":{"fournisseurs":0,"flocking":0,"contenu":0,"ramassage":0,"pub":0,"loyer":0,"salaires":0,"abonnements":0,"autre":0}}\n'
+    +'N\'inclus que les DÉBITS (dépenses). Ignore les crédits/virements reçus. montant = valeur positive en MAD.';
+
+  var btn=document.getElementById('btn-analyze');
+  var status=document.getElementById('releve-status');
+  btn.disabled=true; btn.style.opacity='.5'; status.textContent='⏳ Analyse en cours…';
+
+  try{
+    var resp=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{
+        'Content-Type':'application/json',
+        'x-api-key':key,
+        'anthropic-version':'2023-06-01',
+        'anthropic-dangerous-direct-browser-access':'true'
+      },
+      body:JSON.stringify({
+        model:'claude-haiku-4-5-20251001',
+        max_tokens:4096,
+        messages:[{role:'user',content:prompt}]
+      })
+    });
+    if(!resp.ok){var err=await resp.text(); throw new Error(resp.status+' : '+err);}
+    var data=await resp.json();
+    var raw=data.content[0].text.trim();
+    // Extract JSON from response
+    var jsonMatch=raw.match(/\{[\s\S]*\}/);
+    if(!jsonMatch) throw new Error('Réponse non-JSON : '+raw.substring(0,200));
+    releveResults=JSON.parse(jsonMatch[0]);
+    status.textContent='✅ Analyse terminée';
+    renderReleveResults();
+  }catch(e){
+    status.textContent='❌ Erreur : '+e.message;
+  }finally{
+    btn.disabled=false; btn.style.opacity='1';
+  }
+}
+
+function renderReleveResults(){
+  if(!releveResults) return;
+  var wrap=document.getElementById('releve-results-inner');
+  var cats=releveResults.categories||{};
+  var totaux=releveResults.totaux||{};
+  var html='';
+  RELEVE_CATEGORIES.forEach(function(cat){
+    var items=cats[cat.id]||[];
+    var total=totaux[cat.id]||0;
+    if(!items.length) return;
+    html+='<div class="card" style="padding:18px 20px">'
+      +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">'
+      +'<div style="font-family:Montserrat,sans-serif;font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:'+cat.color+'">'+cat.label+'</div>'
+      +'<div style="font-family:Montserrat,sans-serif;font-size:16px;font-weight:900;color:var(--red)">−'+Math.round(total).toLocaleString('fr-FR')+' MAD</div>'
+      +'</div>'
+      +'<table style="width:100%;border-collapse:collapse;font-size:12px">'
+      +'<thead><tr style="border-bottom:1.5px solid var(--border)"><th style="text-align:left;padding:6px 0;color:var(--muted);font-weight:600">Date</th><th style="text-align:left;padding:6px 0;color:var(--muted);font-weight:600">Description</th><th style="text-align:right;padding:6px 0;color:var(--muted);font-weight:600">Montant</th></tr></thead>'
+      +'<tbody>'
+      +items.map(function(t){
+        return '<tr style="border-bottom:1px solid var(--border)">'
+          +'<td style="padding:7px 0;color:var(--muted)">'+t.date+'</td>'
+          +'<td style="padding:7px 4px">'+t.description+'</td>'
+          +'<td style="padding:7px 0;text-align:right;font-weight:700;color:var(--red)">−'+Math.round(t.montant||0).toLocaleString('fr-FR')+'</td>'
+          +'</tr>';
+      }).join('')
+      +'</tbody></table></div>';
+  });
+  wrap.innerHTML=html||'<div style="color:var(--muted);font-size:13px">Aucune dépense détectée.</div>';
+  document.getElementById('releve-results').style.display='block';
+}
+
+function importReleveResults(){
+  if(!releveResults||!releveResults.totaux) return;
+  var t=releveResults.totaux;
+  // Notifier l'utilisateur
+  var msg='Totaux importés :\n';
+  if(t.fournisseurs) msg+='• Fournisseurs : '+Math.round(t.fournisseurs)+' MAD\n';
+  if(t.pub) msg+='• Publicité : '+Math.round(t.pub)+' MAD\n';
+  var other=(t.flocking||0)+(t.contenu||0)+(t.ramassage||0)+(t.loyer||0)+(t.salaires||0)+(t.abonnements||0)+(t.autre||0);
+  if(other) msg+='• Autres charges : '+Math.round(other)+' MAD\n';
+  msg+='\nCes montants sont informatifs. Saisissez-les manuellement dans Finances > Fournisseurs pour les enregistrer en base.';
+  alert(msg);
+}
+
 const SB_URL = 'https://dwjjrgjbkftejdcmwpgc.supabase.co';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR3ampyZ2pia2Z0ZWpkY213cGdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU0NzI2MDYsImV4cCI6MjA5MTA0ODYwNn0.6GxM9u1Om7zP-_MEYVhdtHBESyGLDZGFofxSKGwixPo';
 const PWD_ADMIN = 'Fitfat25!';
@@ -837,6 +1106,8 @@ async function initApp(){
   setDefaultDates();
   initDefaultChargesIfNeeded();
   loadConfig();
+  loadClaudeKey();
+  renderMappings();
   loadMetaConfig();
   setFilter('month');
   loadCaOzone();
