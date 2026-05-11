@@ -672,6 +672,8 @@ var filterTo   = null; // Date object — end of selected range
 var filterMode = 'month';
 var fournisseurs=[], virements=[], metaDepenses=[], commandesStats=[];
 var egrowDeals=[];
+function withTimeout(p,ms){return Promise.race([p,new Promise(function(_,r){setTimeout(function(){r(new Error('timeout'));},ms);})]);}
+
 
 // ── Date range helpers ──
 function startOfDay(d){return new Date(d.getFullYear(),d.getMonth(),d.getDate(),0,0,0);}
@@ -706,6 +708,8 @@ function setFilter(mode){
   loadCaOzone();
   metaApiSpend=null;
   renderAll();
+  // Re-fetch eGrow avec les nouvelles dates (fenêtre élargie)
+  withTimeout(fetchEgrow(),15000).then(function(){ renderAll(); }).catch(function(){});
   fetchMetaAPI(false).then(function(){ renderOverview(); }).catch(function(){});
 }
 function applyCustom(){setFilter('custom');}
@@ -759,9 +763,17 @@ var EGROW_EN_COURS = new Set([
 var EGROW_ANNULES = new Set(['Annuler Wtsp','Annuler autres','Annuler pas de reponse']);
 
 async function fetchEgrow(){
-  var r=await fetch('https://api.egrow.com/deal/getStageDeals.php?me='+EGROW_ME+'&dev=0&limit=1000',{headers:{'Account-Key':EGROW_KEY}});
+  // Fenêtre large : 45j avant filterFrom pour capturer les commandes créées avant la période mais livrées dedans
+  var from='', to='';
+  if(filterFrom && filterTo){
+    var extFrom=new Date(filterFrom.getTime()-45*24*60*60*1000);
+    var extTo=new Date(filterTo.getTime()+2*24*60*60*1000); // +2j buffer
+    from='&from='+Math.floor(extFrom.getTime()/1000)+'&to='+Math.floor(extTo.getTime()/1000);
+  }
+  var r=await fetch('https://api.egrow.com/deal/getStageDeals.php?me='+EGROW_ME+'&dev=0&limit=5000'+from,{headers:{'Account-Key':EGROW_KEY}});
   if(!r.ok) throw new Error('eGrow HTTP '+r.status);
-  egrowDeals=await r.json();
+  var data=await r.json();
+  egrowDeals=Array.isArray(data)?data:[];
 }
 
 // Stages comptant comme "expédié" pour le calcul des frais Ozone
@@ -842,7 +854,7 @@ async function initApp(){
   }
   renderAll(); // afficher dès que Supabase est chargé, sans attendre eGrow
   // eGrow + Meta en parallèle (avec timeout 15s)
-  function withTimeout(p,ms){return Promise.race([p,new Promise(function(_,r){setTimeout(function(){r(new Error('timeout'));},ms);})]);}
+
   await Promise.allSettled([
     withTimeout(fetchEgrow(),15000).then(function(){
       document.getElementById('egrow-status').textContent='🟢 eGrow connecté';
