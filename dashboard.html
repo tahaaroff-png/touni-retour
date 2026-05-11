@@ -260,6 +260,7 @@ td{padding:10px 14px;vertical-align:middle}
     </div>
     <div class="rb-val profit" id="result-val">— MAD</div>
   </div>
+  <div id="result-perso-info" style="display:none;margin-top:-14px;margin-bottom:22px;padding:10px 18px;background:var(--purple-bg);border:1.5px solid var(--purple-border);border-radius:var(--radius)"></div>
 
   <!-- KPIs -->
   <div class="kpi-grid">
@@ -531,9 +532,9 @@ td{padding:10px 14px;vertical-align:middle}
       <div class="kpi-lbl">Annulées</div>
     </div>
     <div class="kpi">
-      <div class="kpi-icon">✅</div>
+      <div class="kpi-icon">🚀</div>
       <div class="kpi-val" id="c-confirmees">—</div>
-      <div class="kpi-lbl">Confirmées (appel)</div>
+      <div class="kpi-lbl">Expédiés (livré + retours)</div>
     </div>
     <div class="kpi blue">
       <div class="kpi-icon">💰</div>
@@ -586,15 +587,16 @@ td{padding:10px 14px;vertical-align:middle}
     <span>Ces charges sont automatiquement incluses dans le calcul P&L chaque mois. Modifiez les valeurs si elles changent.</span>
   </div>
 
+  <!-- ── Charges fixes mensuelles (existantes + personnalisées) ── -->
   <div class="card" style="margin-bottom:20px">
-    <div class="section-title">Charges fixes mensuelles</div>
-    <div style="display:flex;flex-direction:column;gap:16px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+      <div class="section-title" style="margin:0">Charges fixes mensuelles</div>
+      <button onclick="addCustomFixed()" style="background:var(--text);color:#fff;border:none;border-radius:8px;padding:8px 14px;font-family:Montserrat,sans-serif;font-size:11px;font-weight:700;cursor:pointer">+ Ajouter</button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:12px">
 
       <div style="display:flex;align-items:center;justify-content:space-between;padding:14px;background:var(--bg);border-radius:10px;flex-wrap:wrap;gap:10px">
-        <div>
-          <div style="font-weight:600;font-size:14px">🚗 Livreur acheteur</div>
-          <div style="font-size:12px;color:var(--muted)">Salaire fixe mensuel</div>
-        </div>
+        <div><div style="font-weight:600;font-size:14px">🚗 Livreur acheteur</div><div style="font-size:12px;color:var(--muted)">Salaire fixe mensuel</div></div>
         <div style="display:flex;align-items:center;gap:8px">
           <input type="number" id="cfg-livreur" value="3000" style="width:110px;text-align:right;font-weight:700;font-family:Montserrat,sans-serif" onchange="saveConfig()">
           <span style="color:var(--muted);font-size:13px">MAD</span>
@@ -602,10 +604,7 @@ td{padding:10px 14px;vertical-align:middle}
       </div>
 
       <div style="display:flex;align-items:center;justify-content:space-between;padding:14px;background:var(--bg);border-radius:10px;flex-wrap:wrap;gap:10px">
-        <div>
-          <div style="font-weight:600;font-size:14px">👩 Place de confirmation (fixe)</div>
-          <div style="font-size:12px;color:var(--muted)">Salaire fixe mensuel</div>
-        </div>
+        <div><div style="font-weight:600;font-size:14px">👩 Place de confirmation (fixe)</div><div style="font-size:12px;color:var(--muted)">Salaire fixe mensuel</div></div>
         <div style="display:flex;align-items:center;gap:8px">
           <input type="number" id="cfg-confirmation" value="2500" style="width:110px;text-align:right;font-weight:700;font-family:Montserrat,sans-serif" onchange="saveConfig()">
           <span style="color:var(--muted);font-size:13px">MAD</span>
@@ -613,10 +612,7 @@ td{padding:10px 14px;vertical-align:middle}
       </div>
 
       <div style="display:flex;align-items:center;justify-content:space-between;padding:14px;background:var(--bg);border-radius:10px;flex-wrap:wrap;gap:10px">
-        <div>
-          <div style="font-weight:600;font-size:14px">📣 Commission confirmation (par livraison ≥300 MAD)</div>
-          <div style="font-size:12px;color:var(--muted)">MAD par commande livrée (prix ≥ 300 MAD)</div>
-        </div>
+        <div><div style="font-weight:600;font-size:14px">📣 Commission confirmation (≥300 MAD)</div><div style="font-size:12px;color:var(--muted)">MAD par commande livrée (prix ≥ 300 MAD)</div></div>
         <div style="display:flex;align-items:center;gap:8px">
           <input type="number" id="cfg-comm-high" value="5" style="width:80px;text-align:right;font-weight:700;font-family:Montserrat,sans-serif" onchange="saveConfig()">
           <span style="color:var(--muted);font-size:13px">MAD/cde</span>
@@ -624,10 +620,7 @@ td{padding:10px 14px;vertical-align:middle}
       </div>
 
       <div style="display:flex;align-items:center;justify-content:space-between;padding:14px;background:var(--bg);border-radius:10px;flex-wrap:wrap;gap:10px">
-        <div>
-          <div style="font-weight:600;font-size:14px">📣 Commission confirmation (par livraison &lt;300 MAD)</div>
-          <div style="font-size:12px;color:var(--muted)">MAD par commande livrée (prix &lt; 300 MAD)</div>
-        </div>
+        <div><div style="font-weight:600;font-size:14px">📣 Commission confirmation (&lt;300 MAD)</div><div style="font-size:12px;color:var(--muted)">MAD par commande livrée (prix &lt; 300 MAD)</div></div>
         <div style="display:flex;align-items:center;gap:8px">
           <input type="number" id="cfg-comm-low" value="2" style="width:80px;text-align:right;font-weight:700;font-family:Montserrat,sans-serif" onchange="saveConfig()">
           <span style="color:var(--muted);font-size:13px">MAD/cde</span>
@@ -635,53 +628,47 @@ td{padding:10px 14px;vertical-align:middle}
       </div>
 
       <div style="display:flex;align-items:center;justify-content:space-between;padding:14px;background:var(--bg);border-radius:10px;flex-wrap:wrap;gap:10px">
-        <div>
-          <div style="font-weight:600;font-size:14px">🛒 Shopify</div>
-          <div style="font-size:12px;color:var(--muted)">Abonnement mensuel</div>
-        </div>
+        <div><div style="font-weight:600;font-size:14px">🛒 Shopify</div><div style="font-size:12px;color:var(--muted)">Abonnement mensuel</div></div>
         <div style="display:flex;align-items:center;gap:8px">
           <input type="number" id="cfg-shopify" value="850" style="width:110px;text-align:right;font-weight:700;font-family:Montserrat,sans-serif" onchange="saveConfig()">
           <span style="color:var(--muted);font-size:13px">MAD</span>
         </div>
       </div>
 
+      <!-- Custom fixed charges (ajoutées par l'utilisateur) -->
+      <div id="custom-fixed-list"></div>
+
     </div>
+    <div style="margin-top:10px;font-size:11px;color:var(--muted)">Proratisées selon la période sélectionnée (base 30 jours).</div>
   </div>
 
-  <!-- Charges fixes personnalisées -->
+  <!-- ── Charges variables (par commande expédiée) ── -->
   <div class="card" style="margin-bottom:20px">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
-      <div class="section-title" style="margin:0">Charges fixes personnalisées</div>
-      <button onclick="addCustomFixed()" style="background:var(--text);color:#fff;border:none;border-radius:8px;padding:8px 14px;font-family:Montserrat,sans-serif;font-size:11px;font-weight:700;cursor:pointer">+ Ajouter</button>
-    </div>
-    <div id="custom-fixed-list" style="display:flex;flex-direction:column;gap:12px"></div>
-    <div style="margin-top:10px;font-size:11px;color:var(--muted)">Ces charges sont proratisées selon la période sélectionnée (÷30 jours).</div>
-  </div>
-
-  <!-- Charges variables par livraison -->
-  <div class="card" style="margin-bottom:20px">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
-      <div class="section-title" style="margin:0">Charges variables (par commande livrée)</div>
-      <button onclick="addCustomVar()" style="background:var(--text);color:#fff;border:none;border-radius:8px;padding:8px 14px;font-family:Montserrat,sans-serif;font-size:11px;font-weight:700;cursor:pointer">+ Ajouter</button>
-    </div>
-    <div id="custom-var-list" style="display:flex;flex-direction:column;gap:12px"></div>
-    <div style="margin-top:10px;font-size:11px;color:var(--muted)">Calculé automatiquement : montant × nb commandes livrées. Ex : Emballage 13 MAD/cde.</div>
-  </div>
-
-  <!-- Consommation personnelle -->
-  <div class="card" style="margin-bottom:20px">
-    <div class="section-title">Consommation personnelle mensuelle</div>
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:14px;background:var(--bg);border-radius:10px;flex-wrap:wrap;gap:10px">
       <div>
-        <div style="font-weight:600;font-size:14px">👤 Retrait dirigeant</div>
-        <div style="font-size:12px;color:var(--muted)">Votre consommation personnelle mensuelle</div>
+        <div class="section-title" style="margin:0">Charges variables (par commande expédiée)</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:4px">Calculé sur les commandes passées par Ozone (Expédier + transit). Ex : emballage 13 MAD/cde.</div>
       </div>
-      <div style="display:flex;align-items:center;gap:8px">
-        <input type="number" id="cfg-perso" value="0" min="0" style="width:120px;text-align:right;font-weight:700;font-family:Montserrat,sans-serif" onchange="saveConfig()">
-        <span style="color:var(--muted);font-size:13px">MAD/mois</span>
-      </div>
+      <button onclick="addCustomVar()" style="background:var(--text);color:#fff;border:none;border-radius:8px;padding:8px 14px;font-family:Montserrat,sans-serif;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0">+ Ajouter</button>
     </div>
-    <div style="margin-top:10px;font-size:11px;color:var(--muted)">Affiché séparément dans le P&L — vous saurez ce que le business vous rapporte après vos dépenses personnelles.</div>
+    <div id="custom-var-list" style="display:flex;flex-direction:column;gap:12px">
+      <div style="font-size:12px;color:var(--muted);padding:8px">Aucune charge variable. Cliquez "+ Ajouter" — ex: Emballage 13 MAD/cde expédiée.</div>
+    </div>
+  </div>
+
+  <!-- ── Consommation personnelle ── -->
+  <div class="card" style="margin-bottom:20px;border:1.5px solid var(--purple,#7c3aed)22">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+      <div>
+        <div class="section-title" style="margin:0">👤 Consommation personnelle</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:4px">Calculée séparément — n'affecte pas le résultat business. Affichée à titre informatif dans le P&L.</div>
+      </div>
+      <button onclick="addPersoEntry()" style="background:#7c3aed;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-family:Montserrat,sans-serif;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0">+ Ajouter</button>
+    </div>
+    <div id="perso-list" style="display:flex;flex-direction:column;gap:12px">
+      <div style="font-size:12px;color:var(--muted);padding:8px">Aucune dépense personnelle. Ex : loyer, alimentation, transport...</div>
+    </div>
+    <div style="margin-top:12px;padding:10px 14px;background:#f5f3ff;border-radius:8px;font-size:12px;color:#7c3aed;font-weight:600" id="perso-total-display" style="display:none"></div>
   </div>
 
   <div class="card">
@@ -801,24 +788,20 @@ document.getElementById('pwd-input').addEventListener('keydown',function(e){if(e
 
 // ── eGrow — Mapping stages business ──────────────────────────────────────────
 // Livrer = livré et facturé (UNIQUEMENT ce stage).
-var EGROW_LIVRES          = new Set(['Livrer']);
-// Retourner = retour en stock via Ozone. Retour agence/recu = variations.
-var EGROW_RETOURS         = new Set(['Retourner','Retour recu','Retour agence ']);
-// Confirmer Appelle = SEULE vraie confirmation (opératrice a appelé, client a dit oui).
-var EGROW_CONFIRMES       = new Set(['Confirmer Appelle']);
-// Confirmer Wtsp = client a cliqué "confirmer" sur message auto — PAS encore confirmé.
-var EGROW_WTSP_AUTO       = new Set(['Confirmer Wtsp']);
-// EN COURS = tout le pipeline actif (confirmation, relance, transit, rupture...)
+var EGROW_LIVRES  = new Set(['Livrer']);
+// Retours = retour physique + Annuler Ozone (commande expédiée, refusée à la porte)
+var EGROW_RETOURS = new Set(['Retourner','Retour recu','Retour agence ','Annuler Ozone']);
+// En cours = TOUT ce qui est actif : confirmation, pipeline, transit, rupture...
 var EGROW_EN_COURS = new Set([
+  'Confirmer Appelle','Confirmer Wtsp',
   'En attente','A contacter','Nouveau Colis',
   'J1 Appelle N 1 Matin','J1 Appel N 2 Aprem','J2 Appel Wtsp + message','J3 Relance finale',
   'rappeler le stock','A livrer','Rupture',
   'Ramassé','Expédier','Mise en distribution','En cours','Recu ','Attente de ramassage',
   'Reporté','Pas de réponse','Erreur Ozone','Success Ozone','Traiter','Autres'
 ]);
-var EGROW_ANN_PRECOCE = new Set(['Annuler Wtsp','Annuler autres']);
-var EGROW_ANN_NR      = new Set(['Annuler pas de reponse']);
-var EGROW_ANN_OZONE   = new Set(['Annuler Ozone']);
+// Annulées avant expédition = jamais partis chez Ozone
+var EGROW_ANNULES = new Set(['Annuler Wtsp','Annuler autres','Annuler pas de reponse']);
 
 async function fetchEgrow(){
   var r=await fetch('https://api.egrow.com/deal/getStageDeals.php?me='+EGROW_ME+'&dev=0&limit=1000',{headers:{'Account-Key':EGROW_KEY}});
@@ -840,9 +823,7 @@ function egrowStats(){
     return dt>=filterFrom && dt<=filterTo;
   });
   var s={
-    total:deals.length, livrees:0, retours:0, confirmes:0,
-    wtspAuto:0, enCours:0,
-    annPrecoce:0, annNR:0, annOzone:0,
+    total:deals.length, livrees:0, retours:0, enCours:0, annules:0,
     ca:0, fraisOzone:0, nbExpedies:0, stages:{}
   };
   deals.forEach(function(d){
@@ -854,18 +835,13 @@ function egrowStats(){
       s.fraisOzone+=shippingCost||35;
       s.nbExpedies++;
     }
-    if(EGROW_LIVRES.has(name))        { s.livrees++; s.ca+=v; }
-    else if(EGROW_RETOURS.has(name))    s.retours++;
-    else if(EGROW_CONFIRMES.has(name))  s.confirmes++;
-    else if(EGROW_WTSP_AUTO.has(name))  s.wtspAuto++;
-    else if(EGROW_EN_COURS.has(name))   s.enCours++;
-    else if(EGROW_ANN_PRECOCE.has(name))s.annPrecoce++;
-    else if(EGROW_ANN_NR.has(name))     s.annNR++;
-    else if(EGROW_ANN_OZONE.has(name))  s.annOzone++;
-    else                                s.enCours++; // tout inconnu = en cours
+    if(EGROW_LIVRES.has(name))       { s.livrees++; s.ca+=v; }
+    else if(EGROW_RETOURS.has(name))   s.retours++;
+    else if(EGROW_EN_COURS.has(name))  s.enCours++;
+    else if(EGROW_ANNULES.has(name))   s.annules++;
+    else                               s.enCours++;
   });
-  s.annules = s.annPrecoce + s.annNR + s.annOzone;
-  var expedies = s.livrees + s.retours + s.annOzone;
+  var expedies = s.livrees + s.retours;
   s.tauxLiv = expedies > 0 ? ((s.livrees / expedies)*100).toFixed(1) : '—';
   s.tauxRet = expedies > 0 ? ((s.retours / expedies)*100).toFixed(1) : '—';
   return s;
@@ -938,6 +914,7 @@ function saveCustomFixed(arr){ localStorage.setItem('touni_custom_fixed',JSON.st
 function saveCustomVar(arr){   localStorage.setItem('touni_custom_var',JSON.stringify(arr));   renderCustomCharges(); renderAll(); }
 
 function renderCustomCharges(){
+  renderPersoList();
   var fixedList=document.getElementById('custom-fixed-list');
   var varList=document.getElementById('custom-var-list');
   if(!fixedList||!varList) return;
@@ -975,6 +952,53 @@ function deleteCustom(type,id){
   else               saveCustomVar(getCustomVar().filter(function(i){return i.id!==id;}));
 }
 
+// ── Consommation personnelle (localStorage) ──
+function getPersoEntries(){ return JSON.parse(localStorage.getItem('touni_perso')||'[]'); }
+function savePersoEntries(arr){ localStorage.setItem('touni_perso',JSON.stringify(arr)); renderPersoList(); renderOverview(); }
+function addPersoEntry(){
+  var arr=getPersoEntries();
+  arr.push({id:Date.now()+'',name:'Nouvelle dépense',amount:0});
+  savePersoEntries(arr);
+}
+function updatePerso(id,field,val){
+  var arr=getPersoEntries();
+  arr.forEach(function(i){if(i.id===id)i[field]=val;});
+  savePersoEntries(arr);
+}
+function deletePerso(id){
+  savePersoEntries(getPersoEntries().filter(function(i){return i.id!==id;}));
+}
+function renderPersoList(){
+  var list=document.getElementById('perso-list');
+  var totalEl=document.getElementById('perso-total-display');
+  if(!list) return;
+  var entries=getPersoEntries();
+  var total=entries.reduce(function(s,e){return s+(+e.amount||0);},0);
+  if(!entries.length){
+    list.innerHTML='<div style="font-size:12px;color:var(--muted);padding:8px">Aucune dépense personnelle. Ex : loyer, alimentation, transport...</div>';
+  } else {
+    list.innerHTML=entries.map(function(e){
+      return '<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px;background:var(--bg);border-radius:10px;flex-wrap:wrap;gap:8px">'
+        +'<input value="'+e.name+'" style="flex:1;min-width:120px;font-weight:600;font-size:13px;border:none;border-bottom:1.5px solid var(--border);background:transparent;outline:none;padding:2px 4px" '
+        +'onchange="updatePerso(\''+e.id+'\',\'name\',this.value)">'
+        +'<div style="display:flex;align-items:center;gap:6px">'
+        +'<input type="number" value="'+e.amount+'" min="0" style="width:90px;text-align:right;font-weight:700;font-family:Montserrat,sans-serif" '
+        +'onchange="updatePerso(\''+e.id+'\',\'amount\',+this.value)">'
+        +'<span style="font-size:12px;color:var(--muted)">MAD/mois</span>'
+        +'<button onclick="deletePerso(\''+e.id+'\')" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:18px;line-height:1;padding:0 4px">×</button>'
+        +'</div></div>';
+    }).join('');
+  }
+  if(totalEl){
+    if(total>0){
+      totalEl.textContent='Total consommation personnelle : '+total.toLocaleString('fr-FR')+' MAD/mois';
+      totalEl.style.display='block';
+    } else {
+      totalEl.style.display='none';
+    }
+  }
+}
+
 // ── Config (localStorage) ──
 function saveConfig(){
   var cfg={
@@ -983,7 +1007,6 @@ function saveConfig(){
     commHigh:+document.getElementById('cfg-comm-high').value||5,
     commLow:+document.getElementById('cfg-comm-low').value||2,
     shopify:+document.getElementById('cfg-shopify').value||850,
-    perso:+document.getElementById('cfg-perso').value||0,
     tarifLivraison:35,tarifRetour:0,
   };
   localStorage.setItem('touni_cfg',JSON.stringify(cfg));
@@ -996,14 +1019,13 @@ function loadConfig(){
   if(cfg.commHigh)      document.getElementById('cfg-comm-high').value=cfg.commHigh;
   if(cfg.commLow)       document.getElementById('cfg-comm-low').value=cfg.commLow;
   if(cfg.shopify)       document.getElementById('cfg-shopify').value=cfg.shopify;
-  if(cfg.perso!=null)   document.getElementById('cfg-perso').value=cfg.perso||0;
   if(cfg.tarifLivraison) document.getElementById('cfg-tarif-livraison').value=cfg.tarifLivraison;
   if(cfg.tarifRetour)   document.getElementById('cfg-tarif-retour').value=cfg.tarifRetour;
   renderCustomCharges();
 }
 function getConfig(){
   return JSON.parse(localStorage.getItem('touni_cfg')||JSON.stringify({
-    livreur:3000,confirmation:2500,commHigh:5,commLow:2,shopify:850,perso:0,tarifLivraison:35,tarifRetour:0
+    livreur:3000,confirmation:2500,commHigh:5,commLow:2,shopify:850,tarifLivraison:35,tarifRetour:0
   }));
 }
 
@@ -1069,12 +1091,16 @@ function renderOverview(){
   var shopify=Math.round(cfg.shopify*daysRatio);
   var livreur=Math.round(cfg.livreur*daysRatio);
   var confFix=Math.round(cfg.confirmation*daysRatio);
-  var perso=Math.round((cfg.perso||0)*daysRatio);
 
   // Charges personnalisées fixes (proratisées)
   var customFixedTotal=getCustomFixed().reduce(function(s,c){return s+Math.round((+c.amount||0)*daysRatio);},0);
-  // Charges variables (par livraison)
-  var customVarTotal=getCustomVar().reduce(function(s,c){return s+(+c.amount||0)*totalLivrees;},0);
+  // Charges variables (par colis expédié = livré + retours)
+  var nbExpedies=egrowDeals.length>0 ? eg.nbExpedies : totalLivrees;
+  var customVarTotal=getCustomVar().reduce(function(s,c){return s+(+c.amount||0)*nbExpedies;},0);
+
+  // Consommation personnelle (multi-entrées, non déduite du business net)
+  var persoEntries=getPersoEntries();
+  var persoTotal=Math.round(persoEntries.reduce(function(s,e){return s+(+e.amount||0);},0)*daysRatio);
 
   // CA auto = eGrow livrees COD − frais Ozone (si simulateur vide)
   var autoCA = eg.ca>0 ? Math.round(eg.ca - fraisOzoneInfo) : 0;
@@ -1088,7 +1114,6 @@ function renderOverview(){
   var revenus=totalVirements||autoCA;
   var depenses=totalFourn+totalMeta+livreur+confFix+commission+shopify+customFixedTotal+customVarTotal;
   var net=revenus-depenses;
-  var netApresPerso=net-perso;
   var marge=revenus>0?((net/revenus)*100):0;
 
   // KPIs
@@ -1113,21 +1138,32 @@ function renderOverview(){
   if(plCustomEl){
     var rows='';
     getCustomFixed().forEach(function(c){rows+='<div class="pl-row"><span class="pl-lbl">'+c.name+'</span><span class="pl-amt neg">−'+fmt(Math.round((+c.amount||0)*daysRatio))+'</span></div>';});
-    getCustomVar().forEach(function(c){rows+='<div class="pl-row"><span class="pl-lbl">'+c.name+' (×'+totalLivrees+' cdés)</span><span class="pl-amt neg">−'+fmt((+c.amount||0)*totalLivrees)+'</span></div>';});
-    if(perso>0) rows+='<div class="pl-row"><span class="pl-lbl">👤 Retrait dirigeant</span><span class="pl-amt neg">−'+fmt(perso)+'</span></div>';
+    getCustomVar().forEach(function(c){rows+='<div class="pl-row"><span class="pl-lbl">'+c.name+' (×'+nbExpedies+' expédiés)</span><span class="pl-amt neg">−'+fmt((+c.amount||0)*nbExpedies)+'</span></div>';});
     plCustomEl.innerHTML=rows;
   }
-  document.getElementById('pl-dep-total').textContent='−'+fmt(depenses+(perso));
+  document.getElementById('pl-dep-total').textContent='−'+fmt(depenses);
 
-  // Result banner
+  // Result banner — NET BUSINESS (sans consommation personnelle)
   var banner=document.getElementById('result-banner');
-  var isProfit=netApresPerso>=0;
+  var isProfit=net>=0;
   banner.className='result-banner '+(isProfit?'profit':'loss');
   document.getElementById('result-label').className='rb-label '+(isProfit?'profit':'loss');
-  document.getElementById('result-label').textContent=isProfit?'BÉNÉFICE NET':'PERTE NETTE';
+  document.getElementById('result-label').textContent=isProfit?'BÉNÉFICE NET BUSINESS':'PERTE NETTE';
   document.getElementById('result-val').className='rb-val '+(isProfit?'profit':'loss');
-  document.getElementById('result-val').textContent=(isProfit?'+':'')+Math.round(netApresPerso).toLocaleString('fr-FR')+' MAD';
-  document.getElementById('result-margin').textContent='Marge : '+marge.toFixed(1)+'% | Revenus : '+fmt(revenus)+' | Dépenses : '+fmt(depenses)+' | Perso : '+fmt(perso)+' | '+periodDays+' j';
+  document.getElementById('result-val').textContent=(isProfit?'+':'')+Math.round(net).toLocaleString('fr-FR')+' MAD';
+  document.getElementById('result-margin').textContent='Marge nette : '+marge.toFixed(1)+'% du CA | Revenus : '+fmt(revenus)+' | Dépenses business : '+fmt(depenses)+' | '+periodDays+' j';
+
+  // Consommation personnelle — affichage secondaire informatif
+  var persoInfoEl=document.getElementById('result-perso-info');
+  if(persoInfoEl){
+    if(persoTotal>0){
+      var resteReel=net-persoTotal;
+      persoInfoEl.style.display='block';
+      persoInfoEl.innerHTML='<span style="color:var(--muted);font-size:12px">👤 Consommation personnelle : <b>'+fmt(persoTotal)+'</b> → Reste réel disponible : <b style="color:'+(resteReel>=0?'var(--green)':'var(--red)')+'">'+Math.round(resteReel).toLocaleString('fr-FR')+' MAD</b></span>';
+    } else {
+      persoInfoEl.style.display='none';
+    }
+  }
 }
 
 // ── FOURNISSEURS ──
@@ -1350,7 +1386,7 @@ function renderCommandes(){
   document.getElementById('c-en-cours').textContent=eg.enCours;
   document.getElementById('c-retours').textContent=eg.retours;
   document.getElementById('c-annules').textContent=eg.annules;
-  document.getElementById('c-confirmees').textContent=eg.confirmes;
+  document.getElementById('c-confirmees').textContent=eg.nbExpedies;
   document.getElementById('c-ca').textContent=Math.round(eg.ca).toLocaleString('fr-FR')+' MAD';
   document.getElementById('c-frais-ozone').textContent=Math.round(eg.fraisOzone).toLocaleString('fr-FR')+' MAD';
   document.getElementById('c-nb-expedies').textContent=eg.nbExpedies+' colis expédiés';
@@ -1379,14 +1415,10 @@ function renderCommandes(){
       +'</tr>';
   }
   tb.innerHTML=''
-    +row('📦 Livrées & facturées',               eg.livrees,    'var(--blue)')
-    +row('🔄 En cours (pipeline)',               eg.enCours,    '#0891b2')
-    +row('↩️ Retours',                           eg.retours,    'var(--orange)')
-    +row('✅ Confirmées (appel)',                 eg.confirmes,  'var(--green)')
-    +row('💬 Confirmées (WhatsApp auto)',         eg.wtspAuto,   '#64748b')
-    +row('❌ Annulées (1er contact)',             eg.annPrecoce, 'var(--red)')
-    +row('🔇 Annulées (sans réponse)',           eg.annNR,      '#dc2626')
-    +row('🙅 Annulées après expédition',         eg.annOzone,   '#991b1b');
+    +row('📦 Livrées & facturées',        eg.livrees,  'var(--green)')
+    +row('🔄 En cours (pipeline)',        eg.enCours,  'var(--blue)')
+    +row('↩️ Retours',                    eg.retours,  'var(--orange)')
+    +row('❌ Annulées avant expédition',  eg.annules,  'var(--red)');
 }
 
 // ── Delete ──
