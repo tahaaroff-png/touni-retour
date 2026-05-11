@@ -1101,9 +1101,12 @@ function renderOverview(){
   var plCustomEl=document.getElementById('pl-custom-charges');
   if(plCustomEl){
     var rows='';
-    getCustomFixed().forEach(function(c){rows+='<div class="pl-row"><span class="pl-lbl">'+c.name+'</span><span class="pl-amt neg">−'+fmt(Math.round((+c.amount||0)*daysRatio))+'</span></div>';});
+    getCustomFixed().forEach(function(c){
+      rows+='<div class="pl-row"><span class="pl-lbl">'+c.name+'</span><span class="pl-amt neg">−'+fmt(Math.round((+c.amount||0)*daysRatio))+'</span></div>';
+      if(c.id==='def_confirmation' && commission>0)
+        rows+='<div class="pl-row" style="padding-left:16px;border-bottom-style:dashed"><span class="pl-lbl-muted">↳ Commission ('+eg.livreesHigh+' × '+(cfg.commHigh||5)+' + '+eg.livreesLow+' × '+(cfg.commLow||2)+' MAD/cde livrée)</span><span class="pl-amt neg" style="font-size:12px">−'+fmt(commission)+'</span></div>';
+    });
     getCustomVar().forEach(function(c){rows+='<div class="pl-row"><span class="pl-lbl">'+c.name+' (×'+nbExpedies+' expédiés)</span><span class="pl-amt neg">−'+fmt((+c.amount||0)*nbExpedies)+'</span></div>';});
-    if(commission>0) rows+='<div class="pl-row"><span class="pl-lbl">📣 Commission confirmation ('+eg.livreesHigh+' × '+(cfg.commHigh||5)+' + '+eg.livreesLow+' × '+(cfg.commLow||2)+')</span><span class="pl-amt neg">−'+fmt(commission)+'</span></div>';
     plCustomEl.innerHTML=rows;
   }
   document.getElementById('pl-dep-total').textContent='−'+fmt(depenses);
