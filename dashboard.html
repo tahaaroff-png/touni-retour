@@ -289,22 +289,22 @@ td{padding:10px 14px;vertical-align:middle}
     </div>
   </div>
 
-  <!-- CA Ozone saisie rapide -->
-  <div class="card" style="margin-bottom:16px;padding:18px 22px">
-    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+  <!-- Simulateur CA Ozone -->
+  <div class="card" style="margin-bottom:16px;padding:16px 20px;border:1.5px dashed var(--border)">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
       <div style="flex:1;min-width:200px">
-        <div style="font-family:'Montserrat',sans-serif;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);margin-bottom:6px">CA Ozone — Livré facturé + Livré non facturé</div>
-        <div style="display:flex;align-items:center;gap:10px">
-          <span style="font-family:'Montserrat',sans-serif;font-size:11px;color:var(--muted)">MAD</span>
-          <input type="number" id="ca-ozone-input" placeholder="Ex: 38130" min="0" step="1"
-            style="font-family:'Montserrat',sans-serif;font-size:28px;font-weight:800;color:var(--green);border:none;border-bottom:2px solid var(--border);background:transparent;width:200px;outline:none;padding:2px 0"
-            oninput="saveCaOzone()" onchange="saveCaOzone()">
+        <div style="font-family:'Montserrat',sans-serif;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);margin-bottom:6px">
+          🧮 Simulateur — Remplacer le CA automatique
         </div>
-        <div style="font-size:11px;color:var(--muted);margin-top:4px">Ouvrez Ozone → sélectionnez la période → additionnez Livré Facturé + Livré Non Facturé → entrez ici</div>
-      </div>
-      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px">
-        <button onclick="saveCaOzone(true)" style="background:var(--green);color:#fff;border:none;border-radius:8px;padding:8px 16px;font-family:'Montserrat',sans-serif;font-size:11px;font-weight:700;cursor:pointer">✅ Actualiser le P&L</button>
-        <div style="font-size:10px;color:var(--muted);text-align:right">Fin de mois : entrez le virement<br>réel reçu → <a href="#" onclick="showPage('finances',null);finTab('virements',null);return false" style="color:var(--blue)">Enregistrer dans Finances</a></div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <input type="number" id="ca-ozone-input" placeholder="—" min="0" step="1"
+            style="font-family:'Montserrat',sans-serif;font-size:22px;font-weight:800;color:var(--text);border:1.5px solid var(--border);border-radius:8px;background:var(--bg);width:180px;outline:none;padding:6px 10px"
+            oninput="saveCaOzone(true)" onchange="saveCaOzone(true)">
+          <span style="font-size:12px;color:var(--muted)">MAD</span>
+          <button onclick="resetCaOzone()" title="Revenir au calcul automatique"
+            style="background:none;border:1.5px solid var(--border);border-radius:8px;padding:6px 12px;font-family:'Montserrat',sans-serif;font-size:11px;font-weight:700;cursor:pointer;color:var(--muted)">↩ Auto</button>
+        </div>
+        <div style="font-size:10px;color:var(--muted);margin-top:5px" id="ca-sim-hint">Laissez vide pour utiliser le calcul automatique eGrow</div>
       </div>
     </div>
   </div>
@@ -314,7 +314,7 @@ td{padding:10px 14px;vertical-align:middle}
     <div class="pl-section">
       <div class="pl-title">+ Revenus</div>
       <div class="pl-row">
-        <span class="pl-lbl">CA Ozone (saisi manuellement)</span>
+        <span class="pl-lbl" id="pl-ozone-vir-lbl">CA eGrow (livré − frais Ozone)</span>
         <span class="pl-amt pos" id="pl-ozone-vir">0 MAD</span>
       </div>
       <div class="pl-row total">
@@ -349,6 +349,7 @@ td{padding:10px 14px;vertical-align:middle}
         <span class="pl-lbl">Shopify</span>
         <span class="pl-amt neg" id="pl-shopify">850 MAD</span>
       </div>
+      <div id="pl-custom-charges"></div>
       <div class="pl-row total">
         <span>Total dépenses</span>
         <span class="pl-amt neg" id="pl-dep-total">0 MAD</span>
@@ -509,30 +510,35 @@ td{padding:10px 14px;vertical-align:middle}
       <div class="kpi-val" id="c-total">—</div>
       <div class="kpi-lbl">Total commandes</div>
     </div>
-    <div class="kpi">
-      <div class="kpi-icon">✅</div>
-      <div class="kpi-val" id="c-confirmees">—</div>
-      <div class="kpi-lbl">Confirmées</div>
-    </div>
     <div class="kpi green">
-      <div class="kpi-icon">📬</div>
+      <div class="kpi-icon">📦</div>
       <div class="kpi-val" id="c-livrees">—</div>
-      <div class="kpi-lbl">Livrées</div>
+      <div class="kpi-lbl">Livrées & facturées</div>
     </div>
-    <div class="kpi red">
+    <div class="kpi blue">
+      <div class="kpi-icon">🔄</div>
+      <div class="kpi-val" id="c-en-cours">—</div>
+      <div class="kpi-lbl">En cours (pipeline)</div>
+    </div>
+    <div class="kpi orange">
       <div class="kpi-icon">↩️</div>
       <div class="kpi-val" id="c-retours">—</div>
       <div class="kpi-lbl">Retours</div>
     </div>
-    <div class="kpi orange">
+    <div class="kpi red">
       <div class="kpi-icon">❌</div>
       <div class="kpi-val" id="c-annules">—</div>
       <div class="kpi-lbl">Annulées</div>
     </div>
+    <div class="kpi">
+      <div class="kpi-icon">✅</div>
+      <div class="kpi-val" id="c-confirmees">—</div>
+      <div class="kpi-lbl">Confirmées (appel)</div>
+    </div>
     <div class="kpi blue">
       <div class="kpi-icon">💰</div>
       <div class="kpi-val" id="c-ca" style="font-size:16px">—</div>
-      <div class="kpi-lbl">CA livré</div>
+      <div class="kpi-lbl">CA livré (COD)</div>
     </div>
     <div class="kpi red">
       <div class="kpi-icon">🚚</div>
@@ -640,6 +646,42 @@ td{padding:10px 14px;vertical-align:middle}
       </div>
 
     </div>
+  </div>
+
+  <!-- Charges fixes personnalisées -->
+  <div class="card" style="margin-bottom:20px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+      <div class="section-title" style="margin:0">Charges fixes personnalisées</div>
+      <button onclick="addCustomFixed()" style="background:var(--text);color:#fff;border:none;border-radius:8px;padding:8px 14px;font-family:Montserrat,sans-serif;font-size:11px;font-weight:700;cursor:pointer">+ Ajouter</button>
+    </div>
+    <div id="custom-fixed-list" style="display:flex;flex-direction:column;gap:12px"></div>
+    <div style="margin-top:10px;font-size:11px;color:var(--muted)">Ces charges sont proratisées selon la période sélectionnée (÷30 jours).</div>
+  </div>
+
+  <!-- Charges variables par livraison -->
+  <div class="card" style="margin-bottom:20px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+      <div class="section-title" style="margin:0">Charges variables (par commande livrée)</div>
+      <button onclick="addCustomVar()" style="background:var(--text);color:#fff;border:none;border-radius:8px;padding:8px 14px;font-family:Montserrat,sans-serif;font-size:11px;font-weight:700;cursor:pointer">+ Ajouter</button>
+    </div>
+    <div id="custom-var-list" style="display:flex;flex-direction:column;gap:12px"></div>
+    <div style="margin-top:10px;font-size:11px;color:var(--muted)">Calculé automatiquement : montant × nb commandes livrées. Ex : Emballage 13 MAD/cde.</div>
+  </div>
+
+  <!-- Consommation personnelle -->
+  <div class="card" style="margin-bottom:20px">
+    <div class="section-title">Consommation personnelle mensuelle</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:14px;background:var(--bg);border-radius:10px;flex-wrap:wrap;gap:10px">
+      <div>
+        <div style="font-weight:600;font-size:14px">👤 Retrait dirigeant</div>
+        <div style="font-size:12px;color:var(--muted)">Votre consommation personnelle mensuelle</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <input type="number" id="cfg-perso" value="0" min="0" style="width:120px;text-align:right;font-weight:700;font-family:Montserrat,sans-serif" onchange="saveConfig()">
+        <span style="color:var(--muted);font-size:13px">MAD/mois</span>
+      </div>
+    </div>
+    <div style="margin-top:10px;font-size:11px;color:var(--muted)">Affiché séparément dans le P&L — vous saurez ce que le business vous rapporte après vos dépenses personnelles.</div>
   </div>
 
   <div class="card">
@@ -766,20 +808,17 @@ var EGROW_RETOURS         = new Set(['Retourner','Retour recu','Retour agence ']
 var EGROW_CONFIRMES       = new Set(['Confirmer Appelle']);
 // Confirmer Wtsp = client a cliqué "confirmer" sur message auto — PAS encore confirmé.
 var EGROW_WTSP_AUTO       = new Set(['Confirmer Wtsp']);
-// En attente = commande vient d'arriver, pas encore traitée.
-var EGROW_EN_ATTENTE      = new Set(['En attente','A contacter','Nouveau Colis']);
-// En cours de relance = tentatives d'appel multiples.
-var EGROW_RELANCE         = new Set(['J1 Appel N 2 Aprem','J2 Appel Wtsp + message','J3 Relance finale','Pas de réponse','Reporté','Autres','A livrer']);
-// En transit Ozone = commande expédiée, en cours de livraison.
-var EGROW_TRANSIT         = new Set(['Traiter','Ramassé','Attente de ramassage','Mise en distribution','En cours','Expédier','Success Ozone','Recu ']);
-// Annulé précoce = annulé dès le 1er contact (WhatsApp auto ou appel).
-var EGROW_ANN_PRECOCE     = new Set(['Annuler Wtsp','Annuler autres']);
-// Annulé NR = annulé après plusieurs tentatives sans réponse.
-var EGROW_ANN_NR          = new Set(['Annuler pas de reponse']);
-// Annulé après expédition = commande partie, client a refusé/pas répondu au livreur.
-var EGROW_ANN_OZONE       = new Set(['Annuler Ozone']);
-// Rupture de stock = produit indispo ou à rappeler.
-var EGROW_RUPTURE         = new Set(['Rupture','rappeler le stock']);
+// EN COURS = tout le pipeline actif (confirmation, relance, transit, rupture...)
+var EGROW_EN_COURS = new Set([
+  'En attente','A contacter','Nouveau Colis',
+  'J1 Appelle N 1 Matin','J1 Appel N 2 Aprem','J2 Appel Wtsp + message','J3 Relance finale',
+  'rappeler le stock','A livrer','Rupture',
+  'Ramassé','Expédier','Mise en distribution','En cours','Recu ','Attente de ramassage',
+  'Reporté','Pas de réponse','Erreur Ozone','Success Ozone','Traiter','Autres'
+]);
+var EGROW_ANN_PRECOCE = new Set(['Annuler Wtsp','Annuler autres']);
+var EGROW_ANN_NR      = new Set(['Annuler pas de reponse']);
+var EGROW_ANN_OZONE   = new Set(['Annuler Ozone']);
 
 async function fetchEgrow(){
   var r=await fetch('https://api.egrow.com/deal/getStageDeals.php?me='+EGROW_ME+'&dev=0&limit=1000',{headers:{'Account-Key':EGROW_KEY}});
@@ -802,31 +841,28 @@ function egrowStats(){
   });
   var s={
     total:deals.length, livrees:0, retours:0, confirmes:0,
-    wtspAuto:0, enAttente:0, relance:0, transit:0,
-    annPrecoce:0, annNR:0, annOzone:0, rupture:0,
+    wtspAuto:0, enCours:0,
+    annPrecoce:0, annNR:0, annOzone:0,
     ca:0, fraisOzone:0, nbExpedies:0, stages:{}
   };
   deals.forEach(function(d){
     var name=d.stage&&d.stage.name?d.stage.name:'Autre';
     s.stages[name]=(s.stages[name]||0)+1;
     var v=parseFloat(d.value||0);
-    // Frais Ozone réels depuis deal_shipping_price (données Ozone via eGrow)
     if(EGROW_EXPEDIES.has(name)){
       var shippingCost=parseFloat(d.deal_shipping_price||0);
-      s.fraisOzone+=shippingCost||35; // fallback 35 MAD si non renseigné
+      s.fraisOzone+=shippingCost||35;
       s.nbExpedies++;
     }
-    if(EGROW_LIVRES.has(name))       { s.livrees++;  s.ca+=v; }
-    else if(EGROW_RETOURS.has(name))      s.retours++;
-    else if(EGROW_CONFIRMES.has(name))    s.confirmes++;
-    else if(EGROW_WTSP_AUTO.has(name))    s.wtspAuto++;
-    else if(EGROW_EN_ATTENTE.has(name))   s.enAttente++;
-    else if(EGROW_RELANCE.has(name))      s.relance++;
-    else if(EGROW_TRANSIT.has(name))      s.transit++;
-    else if(EGROW_ANN_PRECOCE.has(name))  s.annPrecoce++;
-    else if(EGROW_ANN_NR.has(name))       s.annNR++;
-    else if(EGROW_ANN_OZONE.has(name))    s.annOzone++;
-    else if(EGROW_RUPTURE.has(name))      s.rupture++;
+    if(EGROW_LIVRES.has(name))        { s.livrees++; s.ca+=v; }
+    else if(EGROW_RETOURS.has(name))    s.retours++;
+    else if(EGROW_CONFIRMES.has(name))  s.confirmes++;
+    else if(EGROW_WTSP_AUTO.has(name))  s.wtspAuto++;
+    else if(EGROW_EN_COURS.has(name))   s.enCours++;
+    else if(EGROW_ANN_PRECOCE.has(name))s.annPrecoce++;
+    else if(EGROW_ANN_NR.has(name))     s.annNR++;
+    else if(EGROW_ANN_OZONE.has(name))  s.annOzone++;
+    else                                s.enCours++; // tout inconnu = en cours
   });
   s.annules = s.annPrecoce + s.annNR + s.annOzone;
   var expedies = s.livrees + s.retours + s.annOzone;
@@ -895,6 +931,50 @@ function setDefaultDates(){
   });
 }
 
+// ── Custom charges (localStorage) ──
+function getCustomFixed(){ return JSON.parse(localStorage.getItem('touni_custom_fixed')||'[]'); }
+function getCustomVar(){   return JSON.parse(localStorage.getItem('touni_custom_var')||'[]'); }
+function saveCustomFixed(arr){ localStorage.setItem('touni_custom_fixed',JSON.stringify(arr)); renderCustomCharges(); renderAll(); }
+function saveCustomVar(arr){   localStorage.setItem('touni_custom_var',JSON.stringify(arr));   renderCustomCharges(); renderAll(); }
+
+function renderCustomCharges(){
+  var fixedList=document.getElementById('custom-fixed-list');
+  var varList=document.getElementById('custom-var-list');
+  if(!fixedList||!varList) return;
+  var cf=getCustomFixed(); var cv=getCustomVar();
+  function rowHtml(item,type){
+    return '<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px;background:var(--bg);border-radius:10px;flex-wrap:wrap;gap:8px">'
+      +'<input value="'+item.name+'" style="flex:1;min-width:120px;font-weight:600;font-size:13px;border:none;border-bottom:1.5px solid var(--border);background:transparent;outline:none;padding:2px 4px" '
+      +'onchange="updateCustom(\''+type+'\',\''+item.id+'\',\'name\',this.value)">'
+      +'<div style="display:flex;align-items:center;gap:6px">'
+      +'<input type="number" value="'+item.amount+'" min="0" style="width:90px;text-align:right;font-weight:700;font-family:Montserrat,sans-serif" '
+      +'onchange="updateCustom(\''+type+'\',\''+item.id+'\',\'amount\',+this.value)">'
+      +'<span style="font-size:12px;color:var(--muted)">'+(type==='fixed'?'MAD/mois':'MAD/cde')+'</span>'
+      +'<button onclick="deleteCustom(\''+type+'\',\''+item.id+'\')" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:18px;line-height:1;padding:0 4px">×</button>'
+      +'</div></div>';
+  }
+  fixedList.innerHTML = cf.length ? cf.map(function(i){return rowHtml(i,'fixed');}).join('') : '<div style="font-size:12px;color:var(--muted);padding:8px">Aucune charge fixe personnalisée. Cliquez "+ Ajouter".</div>';
+  varList.innerHTML   = cv.length ? cv.map(function(i){return rowHtml(i,'var');}).join('')   : '<div style="font-size:12px;color:var(--muted);padding:8px">Aucune charge variable. Ex: Emballage 13 MAD/cde.</div>';
+}
+function addCustomFixed(){
+  var arr=getCustomFixed();
+  arr.push({id:Date.now()+'',name:'Nouvelle charge',amount:0});
+  saveCustomFixed(arr);
+}
+function addCustomVar(){
+  var arr=getCustomVar();
+  arr.push({id:Date.now()+'',name:'Emballage',amount:13});
+  saveCustomVar(arr);
+}
+function updateCustom(type,id,field,val){
+  if(type==='fixed'){var arr=getCustomFixed();arr.forEach(function(i){if(i.id===id)i[field]=val;});saveCustomFixed(arr);}
+  else              {var arr=getCustomVar();  arr.forEach(function(i){if(i.id===id)i[field]=val;});saveCustomVar(arr);}
+}
+function deleteCustom(type,id){
+  if(type==='fixed') saveCustomFixed(getCustomFixed().filter(function(i){return i.id!==id;}));
+  else               saveCustomVar(getCustomVar().filter(function(i){return i.id!==id;}));
+}
+
 // ── Config (localStorage) ──
 function saveConfig(){
   var cfg={
@@ -903,25 +983,27 @@ function saveConfig(){
     commHigh:+document.getElementById('cfg-comm-high').value||5,
     commLow:+document.getElementById('cfg-comm-low').value||2,
     shopify:+document.getElementById('cfg-shopify').value||850,
-    tarifLivraison:+document.getElementById('cfg-tarif-livraison').value||30,
-    tarifRetour:+document.getElementById('cfg-tarif-retour').value||10,
+    perso:+document.getElementById('cfg-perso').value||0,
+    tarifLivraison:35,tarifRetour:0,
   };
   localStorage.setItem('touni_cfg',JSON.stringify(cfg));
   renderAll();
 }
 function loadConfig(){
   var cfg=JSON.parse(localStorage.getItem('touni_cfg')||'{}');
-  if(cfg.livreur) document.getElementById('cfg-livreur').value=cfg.livreur;
-  if(cfg.confirmation) document.getElementById('cfg-confirmation').value=cfg.confirmation;
-  if(cfg.commHigh) document.getElementById('cfg-comm-high').value=cfg.commHigh;
-  if(cfg.commLow) document.getElementById('cfg-comm-low').value=cfg.commLow;
-  if(cfg.shopify) document.getElementById('cfg-shopify').value=cfg.shopify;
+  if(cfg.livreur)       document.getElementById('cfg-livreur').value=cfg.livreur;
+  if(cfg.confirmation)  document.getElementById('cfg-confirmation').value=cfg.confirmation;
+  if(cfg.commHigh)      document.getElementById('cfg-comm-high').value=cfg.commHigh;
+  if(cfg.commLow)       document.getElementById('cfg-comm-low').value=cfg.commLow;
+  if(cfg.shopify)       document.getElementById('cfg-shopify').value=cfg.shopify;
+  if(cfg.perso!=null)   document.getElementById('cfg-perso').value=cfg.perso||0;
   if(cfg.tarifLivraison) document.getElementById('cfg-tarif-livraison').value=cfg.tarifLivraison;
-  if(cfg.tarifRetour) document.getElementById('cfg-tarif-retour').value=cfg.tarifRetour;
+  if(cfg.tarifRetour)   document.getElementById('cfg-tarif-retour').value=cfg.tarifRetour;
+  renderCustomCharges();
 }
 function getConfig(){
   return JSON.parse(localStorage.getItem('touni_cfg')||JSON.stringify({
-    livreur:3000,confirmation:2500,commHigh:5,commLow:2,shopify:850,tarifLivraison:30,tarifRetour:10
+    livreur:3000,confirmation:2500,commHigh:5,commLow:2,shopify:850,perso:0,tarifLivraison:35,tarifRetour:0
   }));
 }
 
@@ -953,6 +1035,7 @@ function getCaOzone(){
 // ── Render all ──
 function renderAll(){
   loadCaOzone();
+  renderCustomCharges();
   renderOverview();
   renderFournisseurs();
   renderVirements();
@@ -981,48 +1064,70 @@ function renderOverview(){
 
   // Prorata charges fixes selon durée de la période (base 30 jours)
   var periodDays=1;
-  if(filterFrom&&filterTo){
-    periodDays=Math.round((filterTo-filterFrom)/(1000*60*60*24))+1;
-  }
+  if(filterFrom&&filterTo) periodDays=Math.round((filterTo-filterFrom)/(1000*60*60*24))+1;
   var daysRatio=Math.min(periodDays,30)/30;
   var shopify=Math.round(cfg.shopify*daysRatio);
   var livreur=Math.round(cfg.livreur*daysRatio);
   var confFix=Math.round(cfg.confirmation*daysRatio);
+  var perso=Math.round((cfg.perso||0)*daysRatio);
 
-  var revenus=totalVirements;
-  var depenses=totalFourn+totalMeta+livreur+confFix+commission+shopify;
+  // Charges personnalisées fixes (proratisées)
+  var customFixedTotal=getCustomFixed().reduce(function(s,c){return s+Math.round((+c.amount||0)*daysRatio);},0);
+  // Charges variables (par livraison)
+  var customVarTotal=getCustomVar().reduce(function(s,c){return s+(+c.amount||0)*totalLivrees;},0);
+
+  // CA auto = eGrow livrees COD − frais Ozone (si simulateur vide)
+  var autoCA = eg.ca>0 ? Math.round(eg.ca - fraisOzoneInfo) : 0;
+  if(document.getElementById('ca-ozone-input') && !document.getElementById('ca-ozone-input').value){
+    // Afficher la valeur auto dans le placeholder
+    document.getElementById('ca-ozone-input').placeholder = autoCA>0 ? autoCA : '—';
+    document.getElementById('ca-sim-hint') && (document.getElementById('ca-sim-hint').textContent =
+      'Valeur auto eGrow : '+Math.round(eg.ca).toLocaleString('fr-FR')+' MAD COD − '+Math.round(fraisOzoneInfo).toLocaleString('fr-FR')+' MAD frais Ozone = '+autoCA.toLocaleString('fr-FR')+' MAD net');
+  }
+
+  var revenus=totalVirements||autoCA;
+  var depenses=totalFourn+totalMeta+livreur+confFix+commission+shopify+customFixedTotal+customVarTotal;
   var net=revenus-depenses;
+  var netApresPerso=net-perso;
   var marge=revenus>0?((net/revenus)*100):0;
 
   // KPIs
-  document.getElementById('kpi-ca').textContent=Math.round(totalVirements).toLocaleString('fr-FR');
+  document.getElementById('kpi-ca').textContent=Math.round(revenus).toLocaleString('fr-FR');
   document.getElementById('kpi-fournisseurs').textContent=Math.round(totalFourn).toLocaleString('fr-FR');
   document.getElementById('kpi-meta').textContent=Math.round(totalMeta).toLocaleString('fr-FR');
   document.getElementById('kpi-ozone').textContent=Math.round(fraisOzoneInfo).toLocaleString('fr-FR');
 
   // P&L rows
-  document.getElementById('pl-ozone-vir').textContent=fmt(totalVirements);
+  document.getElementById('pl-ozone-vir-lbl').textContent=totalVirements>0?'CA Ozone (simulateur)':'CA eGrow (livré − frais Ozone)';
+  document.getElementById('pl-ozone-vir').textContent=fmt(revenus);
   document.getElementById('pl-rev-total').textContent=fmt(revenus);
   document.getElementById('pl-fourn').textContent='−'+fmt(totalFourn);
-  // Frais Ozone ligne = informatif (déjà dans le virement)
-  document.getElementById('pl-ozone-frais').textContent=fmt(fraisOzoneInfo)+' (déduit par Ozone)';
+  document.getElementById('pl-ozone-frais').textContent=fmt(fraisOzoneInfo)+' (inclus dans CA)';
   document.getElementById('pl-meta').textContent='−'+fmt(totalMeta);
   document.getElementById('pl-livreur').textContent='−'+fmt(livreur);
   document.getElementById('pl-confirmation').textContent='−'+fmt(confFix);
   document.getElementById('pl-commission').textContent='−'+fmt(commission);
   document.getElementById('pl-shopify').textContent='−'+fmt(shopify);
-  document.getElementById('pl-dep-total').textContent='−'+fmt(depenses);
+  // Inject custom charges rows dynamically
+  var plCustomEl=document.getElementById('pl-custom-charges');
+  if(plCustomEl){
+    var rows='';
+    getCustomFixed().forEach(function(c){rows+='<div class="pl-row"><span class="pl-lbl">'+c.name+'</span><span class="pl-amt neg">−'+fmt(Math.round((+c.amount||0)*daysRatio))+'</span></div>';});
+    getCustomVar().forEach(function(c){rows+='<div class="pl-row"><span class="pl-lbl">'+c.name+' (×'+totalLivrees+' cdés)</span><span class="pl-amt neg">−'+fmt((+c.amount||0)*totalLivrees)+'</span></div>';});
+    if(perso>0) rows+='<div class="pl-row"><span class="pl-lbl">👤 Retrait dirigeant</span><span class="pl-amt neg">−'+fmt(perso)+'</span></div>';
+    plCustomEl.innerHTML=rows;
+  }
+  document.getElementById('pl-dep-total').textContent='−'+fmt(depenses+(perso));
 
   // Result banner
   var banner=document.getElementById('result-banner');
-  var isProfit=net>=0;
+  var isProfit=netApresPerso>=0;
   banner.className='result-banner '+(isProfit?'profit':'loss');
   document.getElementById('result-label').className='rb-label '+(isProfit?'profit':'loss');
-  var periodLabel=document.getElementById('dr-label')?document.getElementById('dr-label').textContent:'';
   document.getElementById('result-label').textContent=isProfit?'BÉNÉFICE NET':'PERTE NETTE';
   document.getElementById('result-val').className='rb-val '+(isProfit?'profit':'loss');
-  document.getElementById('result-val').textContent=(isProfit?'+':'')+Math.round(net).toLocaleString('fr-FR')+' MAD';
-  document.getElementById('result-margin').textContent='Marge : '+marge.toFixed(1)+'% | Revenus : '+fmt(revenus)+' | Dépenses : '+fmt(depenses)+' | Charges fixes sur '+periodDays+' j (÷30)';
+  document.getElementById('result-val').textContent=(isProfit?'+':'')+Math.round(netApresPerso).toLocaleString('fr-FR')+' MAD';
+  document.getElementById('result-margin').textContent='Marge : '+marge.toFixed(1)+'% | Revenus : '+fmt(revenus)+' | Dépenses : '+fmt(depenses)+' | Perso : '+fmt(perso)+' | '+periodDays+' j';
 }
 
 // ── FOURNISSEURS ──
@@ -1241,10 +1346,11 @@ function renderCommandes(){
   var comm=cfg.confirmation+(eg.livrees*cfg.commHigh);
 
   document.getElementById('c-total').textContent=eg.total;
-  document.getElementById('c-confirmees').textContent=eg.confirmes;
   document.getElementById('c-livrees').textContent=eg.livrees;
+  document.getElementById('c-en-cours').textContent=eg.enCours;
   document.getElementById('c-retours').textContent=eg.retours;
   document.getElementById('c-annules').textContent=eg.annules;
+  document.getElementById('c-confirmees').textContent=eg.confirmes;
   document.getElementById('c-ca').textContent=Math.round(eg.ca).toLocaleString('fr-FR')+' MAD';
   document.getElementById('c-frais-ozone').textContent=Math.round(eg.fraisOzone).toLocaleString('fr-FR')+' MAD';
   document.getElementById('c-nb-expedies').textContent=eg.nbExpedies+' colis expédiés';
@@ -1273,17 +1379,14 @@ function renderCommandes(){
       +'</tr>';
   }
   tb.innerHTML=''
-    +row('✅ Confirmées (appel)',        eg.confirmes,  'var(--green)')
-    +row('💬 En attente confirmation',   eg.wtspAuto,   '#64748b')
-    +row('📬 Livrées & facturées',              eg.livrees,    'var(--blue)')
-    +row('🚚 En transit / En cours Ozone',      eg.transit,    '#0891b2')
-    +row('↩️ Retours en stock',                 eg.retours,    'var(--orange)')
-    +row('📞 En relance appel',                  eg.relance,    '#7c3aed')
-    +row('⏳ En attente traitement',             eg.enAttente,  'var(--muted)')
+    +row('📦 Livrées & facturées',               eg.livrees,    'var(--blue)')
+    +row('🔄 En cours (pipeline)',               eg.enCours,    '#0891b2')
+    +row('↩️ Retours',                           eg.retours,    'var(--orange)')
+    +row('✅ Confirmées (appel)',                 eg.confirmes,  'var(--green)')
+    +row('💬 Confirmées (WhatsApp auto)',         eg.wtspAuto,   '#64748b')
     +row('❌ Annulées (1er contact)',             eg.annPrecoce, 'var(--red)')
     +row('🔇 Annulées (sans réponse)',           eg.annNR,      '#dc2626')
-    +row('🙅 Annulées après expédition (client)',eg.annOzone,   '#991b1b')
-    +row('📦 Rupture / Rappel stock',            eg.rupture,    '#92400e');
+    +row('🙅 Annulées après expédition',         eg.annOzone,   '#991b1b');
 }
 
 // ── Delete ──
