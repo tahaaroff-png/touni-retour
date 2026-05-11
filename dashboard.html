@@ -699,30 +699,27 @@ td{padding:10px 14px;vertical-align:middle}
       <div id="mapping-list" style="display:flex;flex-direction:column;gap:10px"></div>
     </div>
 
-    <!-- Upload PDF -->
+    <!-- Upload PDFs (multi-fichiers) -->
     <div class="card" style="margin-bottom:20px">
-      <div class="section-title" style="margin-bottom:14px">📄 Relevé bancaire (PDF)</div>
-      <div id="pdf-drop" onclick="document.getElementById('pdf-file-input').click()" style="border:2.5px dashed var(--border2);border-radius:12px;padding:40px;text-align:center;cursor:pointer;transition:background .15s" ondragover="event.preventDefault();this.style.background='#f0f9ff'" ondragleave="this.style.background=''" ondrop="handlePdfDrop(event)">
-        <div style="font-size:32px;margin-bottom:8px">📂</div>
-        <div style="font-family:Montserrat,sans-serif;font-weight:700;font-size:13px">Cliquez ou glissez votre relevé PDF ici</div>
-        <div style="font-size:12px;color:var(--muted);margin-top:4px" id="pdf-file-name">Aucun fichier sélectionné</div>
+      <div class="section-title" style="margin-bottom:14px">📄 Relevés bancaires — déposez un ou plusieurs PDF</div>
+      <div id="pdf-drop" onclick="document.getElementById('pdf-file-input').click()" style="border:2.5px dashed var(--border2);border-radius:12px;padding:36px;text-align:center;cursor:pointer;transition:all .15s" ondragover="event.preventDefault();this.style.background='#eff6ff';this.style.borderColor='var(--blue)'" ondragleave="this.style.background='';this.style.borderColor='var(--border2)'" ondrop="handlePdfDrop(event)">
+        <div style="font-size:36px;margin-bottom:8px">📂</div>
+        <div style="font-family:Montserrat,sans-serif;font-weight:700;font-size:13px">Glissez vos relevés PDF ici ou cliquez</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:4px">Plusieurs fichiers acceptés — un relevé par mois, ou plusieurs banques</div>
       </div>
-      <input type="file" id="pdf-file-input" accept="application/pdf" style="display:none" onchange="handlePdfFile(this.files[0])">
+      <input type="file" id="pdf-file-input" accept="application/pdf" multiple style="display:none" onchange="handlePdfFiles(this.files)">
+      <!-- Liste des fichiers chargés -->
+      <div id="pdf-file-list" style="margin-top:14px;display:flex;flex-direction:column;gap:8px"></div>
       <div style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-        <button id="btn-analyze" onclick="analyzeReleve()" style="background:#7c3aed;color:#fff;border:none;border-radius:8px;padding:11px 22px;font-family:Montserrat,sans-serif;font-size:12px;font-weight:700;cursor:pointer;opacity:.5" disabled>🤖 Analyser avec Claude</button>
+        <button id="btn-analyze" onclick="analyzeReleve()" style="background:#7c3aed;color:#fff;border:none;border-radius:8px;padding:11px 24px;font-family:Montserrat,sans-serif;font-size:12px;font-weight:700;cursor:pointer;opacity:.4" disabled>🤖 Lancer l'audit complet</button>
+        <button onclick="clearPdfs()" style="background:none;border:1.5px solid var(--border);border-radius:8px;padding:10px 14px;font-size:12px;cursor:pointer;color:var(--muted)">🗑 Vider</button>
         <div id="releve-status" style="font-size:12px;color:var(--muted)"></div>
       </div>
     </div>
 
-    <!-- Résultats -->
+    <!-- Résultats audit -->
     <div id="releve-results" style="display:none">
-      <div class="section-title" style="margin-bottom:14px">📊 Résultats de l'analyse</div>
-      <div id="releve-results-inner" style="display:flex;flex-direction:column;gap:16px"></div>
-      <div style="margin-top:20px;padding:16px 20px;background:var(--green-bg);border:1.5px solid var(--green-border);border-radius:var(--radius)">
-        <div style="font-family:Montserrat,sans-serif;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:1.5px;color:var(--green);margin-bottom:8px">Importer dans le dashboard</div>
-        <div style="font-size:12px;color:var(--muted);margin-bottom:10px">Les totaux détectés seront pré-remplis dans les sections Fournisseurs et Charges.</div>
-        <button onclick="importReleveResults()" style="background:var(--green);color:#fff;border:none;border-radius:8px;padding:10px 20px;font-family:Montserrat,sans-serif;font-size:12px;font-weight:700;cursor:pointer">✅ Importer les totaux</button>
-      </div>
+      <div id="releve-results-inner"></div>
     </div>
 
   </div>
@@ -745,7 +742,7 @@ function loadPdfJs(cb){
 }
 
 /* ── Relevé bancaire ── */
-var releveText='';
+var relevePdfs=[];   // [{name, size, text, pages, status}]
 var releveResults=null;
 
 var RELEVE_CATEGORIES=[
@@ -834,66 +831,139 @@ function renderMappings(){
   }).join('');
 }
 
-/* ── PDF handling ── */
+/* ── PDF multi-fichiers ── */
 function handlePdfDrop(e){
   e.preventDefault();
-  document.getElementById('pdf-drop').style.background='';
-  var f=e.dataTransfer.files[0];
-  if(f && f.type==='application/pdf') handlePdfFile(f);
+  var el=document.getElementById('pdf-drop');
+  el.style.background=''; el.style.borderColor='var(--border2)';
+  handlePdfFiles(e.dataTransfer.files);
 }
-function handlePdfFile(file){
-  if(!file) return;
-  document.getElementById('pdf-file-name').textContent=file.name+' ('+Math.round(file.size/1024)+' Ko)';
-  document.getElementById('releve-status').textContent='Extraction du texte…';
+function handlePdfFiles(files){
+  if(!files||!files.length) return;
   loadPdfJs(function(){
-    var reader=new FileReader();
-    reader.onload=function(e){
-      pdfjsLib.getDocument({data:new Uint8Array(e.target.result)}).promise.then(function(pdf){
-        var pages=[]; var total=pdf.numPages;
-        for(var i=1;i<=total;i++) pages.push(pdf.getPage(i));
-        return Promise.all(pages);
-      }).then(function(pages){
-        return Promise.all(pages.map(function(p){return p.getTextContent();}));
-      }).then(function(contents){
-        releveText=contents.map(function(c){
-          return c.items.map(function(i){return i.str;}).join(' ');
-        }).join('\n');
-        var wordCount=releveText.split(/\s+/).length;
-        document.getElementById('releve-status').textContent='✓ '+total+' pages extraites · '+wordCount+' mots';
-        var btn=document.getElementById('btn-analyze');
-        btn.disabled=false; btn.style.opacity='1';
-      }).catch(function(err){
-        document.getElementById('releve-status').textContent='❌ Erreur extraction: '+err.message;
-      });
-    };
-    reader.readAsArrayBuffer(file);
+    Array.from(files).forEach(function(f){
+      if(f.type!=='application/pdf') return;
+      if(relevePdfs.find(function(p){return p.name===f.name;})) return; // déjà chargé
+      var entry={id:Date.now()+'_'+Math.random(), name:f.name, size:f.size, text:'', pages:0, status:'loading'};
+      relevePdfs.push(entry);
+      renderPdfList();
+      var reader=new FileReader();
+      reader.onload=function(ev){
+        pdfjsLib.getDocument({data:new Uint8Array(ev.target.result)}).promise.then(function(pdf){
+          var numPages=pdf.numPages;
+          var pagePromises=[];
+          for(var i=1;i<=numPages;i++) pagePromises.push(pdf.getPage(i));
+          return Promise.all(pagePromises).then(function(pages){
+            return Promise.all(pages.map(function(p){return p.getTextContent();}));
+          }).then(function(contents){
+            entry.text=contents.map(function(c){
+              return c.items.map(function(i){return i.str;}).join(' ');
+            }).join('\n');
+            entry.pages=numPages;
+            entry.status='ready';
+            renderPdfList();
+            updateAnalyzeBtn();
+          });
+        }).catch(function(err){
+          entry.status='error'; entry.error=err.message;
+          renderPdfList();
+        });
+      };
+      reader.readAsArrayBuffer(f);
+    });
   });
 }
+function renderPdfList(){
+  var list=document.getElementById('pdf-file-list'); if(!list) return;
+  if(!relevePdfs.length){list.innerHTML='';return;}
+  list.innerHTML=relevePdfs.map(function(p){
+    var icon=p.status==='ready'?'✅':p.status==='error'?'❌':'⏳';
+    var info=p.status==='ready'?p.pages+' pages · '+Math.round(p.size/1024)+' Ko'
+            :p.status==='error'?'Erreur: '+p.error
+            :'Extraction…';
+    return '<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--bg);border-radius:10px">'
+      +'<span style="font-size:16px">'+icon+'</span>'
+      +'<div style="flex:1"><div style="font-weight:600;font-size:13px">'+p.name+'</div><div style="font-size:11px;color:var(--muted)">'+info+'</div></div>'
+      +'<button onclick="removePdf(\''+p.id+'\')" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:18px;padding:0 4px">×</button>'
+      +'</div>';
+  }).join('');
+}
+function removePdf(id){
+  relevePdfs=relevePdfs.filter(function(p){return p.id!==id;});
+  renderPdfList(); updateAnalyzeBtn();
+}
+function clearPdfs(){
+  relevePdfs=[]; releveResults=null;
+  renderPdfList(); updateAnalyzeBtn();
+  document.getElementById('releve-results').style.display='none';
+  document.getElementById('releve-status').textContent='';
+}
+function updateAnalyzeBtn(){
+  var ready=relevePdfs.filter(function(p){return p.status==='ready';}).length;
+  var btn=document.getElementById('btn-analyze');
+  if(!btn) return;
+  btn.disabled=!ready; btn.style.opacity=ready?'1':'.4';
+  if(ready) document.getElementById('releve-status').textContent=ready+' fichier'+(ready>1?'s':'')+' prêt'+(ready>1?'s':'')+' pour analyse';
+}
 
-/* ── Analyse Claude ── */
+/* ── Analyse Claude complète ── */
 async function analyzeReleve(){
   var key=localStorage.getItem('touni_claude_key')||'';
   if(!key){alert('Entrez votre clé API Claude en haut de la page.');return;}
-  if(!releveText){alert('Importez d\'abord un PDF.');return;}
+  var readyPdfs=relevePdfs.filter(function(p){return p.status==='ready'&&p.text;});
+  if(!readyPdfs.length){alert('Aucun PDF chargé.');return;}
+
   var mappings=getMappings().filter(function(m){return m.keyword.trim();});
+  var allCats=getAllCategories();
+  var catIds=allCats.map(function(c){return c.id;}).join(',');
+  var catLabels=allCats.map(function(c){return c.id+': '+c.label;}).join('\n');
   var mappingText=mappings.length
     ? mappings.map(function(m){
-        var cat=RELEVE_CATEGORIES.find(function(c){return c.id===m.category;});
+        var cat=allCats.find(function(c){return c.id===m.category;});
         return '"'+m.keyword+'" → '+(cat?cat.label:m.category);
       }).join('\n')
-    : '(aucune correspondance définie — catégoriser au mieux)';
+    : '(utiliser la détection intelligente)';
 
-  var prompt='Tu es un assistant comptable. Analyse ce relevé bancaire marocain et catégorise chaque débit (dépense).\n\n'
-    +'CORRESPONDANCES NOMS → CATÉGORIES (priorité absolue) :\n'+mappingText+'\n\n'
-    +'CATÉGORIES DISPONIBLES : Fournisseurs, Flocking/Impression, Création de contenu, Ramassage/Pickup, Publicité, Loyer/Bureau, Salaires/Personnel, Abonnements/SaaS, Autre\n\n'
-    +'RELEVÉ BANCAIRE :\n'+releveText.substring(0,40000)+'\n\n'
-    +'Réponds UNIQUEMENT en JSON valide avec cette structure exacte :\n'
-    +'{"categories":{"fournisseurs":[{"date":"...","description":"...","montant":0}],"flocking":[...],"contenu":[...],"ramassage":[...],"pub":[...],"loyer":[...],"salaires":[...],"abonnements":[...],"autre":[...]},"totaux":{"fournisseurs":0,"flocking":0,"contenu":0,"ramassage":0,"pub":0,"loyer":0,"salaires":0,"abonnements":0,"autre":0}}\n'
-    +'N\'inclus que les DÉBITS (dépenses). Ignore les crédits/virements reçus. montant = valeur positive en MAD.';
+  // Construire le texte combiné de tous les relevés
+  var combined=readyPdfs.map(function(p,i){
+    return '=== RELEVÉ '+(i+1)+' : '+p.name+' ===\n'+p.text.substring(0,18000);
+  }).join('\n\n');
+
+  var prompt='Tu es le directeur financier (CFO) d\'une entreprise marocaine d\'e-commerce. Analyse ces relevés bancaires et fournis un audit financier complet.\n\n'
+    +'DÉTECTION INTELLIGENTE AUTOMATIQUE — reconnais ces services sans mapping :\n'
+    +'• Shopify, Shopify* → Abonnements/SaaS\n'
+    +'• Google One, Google Play, Google LLC, GOOGLE → Abonnements/SaaS\n'
+    +'• Apple, iTunes, iCloud, APPLE → Abonnements/SaaS\n'
+    +'• Facebook, META, Instagram → Publicité\n'
+    +'• TikTok, Bytedance → Publicité\n'
+    +'• Canva, Adobe, Notion, Zoom → Abonnements/SaaS\n'
+    +'• Shell, Ziz, Total Energie → Carburant/Transport\n'
+    +'• Maroc Telecom, Orange, Inwi, Techno → Téléphone/Internet\n'
+    +'• CTM, Chronopost, Amana, DHL, FedEx → Ramassage/Pickup\n'
+    +'• Toute écriture avec "LOYER", "BAIL", "LOCATION" → Loyer/Bureau\n'
+    +'• Toute écriture avec "SALAIRE", "VIREMENT VERS [prénom]" → Salaires/Personnel\n\n'
+    +'CORRESPONDANCES PERSONNALISÉES (priorité absolue) :\n'+mappingText+'\n\n'
+    +'CATÉGORIES DISPONIBLES :\n'+catLabels+'\n\n'
+    +'RELEVÉS BANCAIRES :\n'+combined+'\n\n'
+    +'Réponds UNIQUEMENT avec un JSON valide et complet avec cette structure :\n'
+    +'{\n'
+    +'  "periodes": ["YYYY-MM", ...],\n'
+    +'  "resume": {"total_debits": 0, "total_credits": 0, "solde_net": 0},\n'
+    +'  "categories": {"'+catIds.split(',').join('":[{"date":"DD/MM","description":"...","montant":0,"recurrent":false}],"')+'": [{"date":"DD/MM","description":"...","montant":0,"recurrent":false}]},\n'
+    +'  "totaux": {"'+catIds.split(',').join('":0,"')+'": 0},\n'
+    +'  "recurrents": [{"description":"...","montant":0,"categorie":"..."}],\n'
+    +'  "alertes": ["texte alerte 1", "texte alerte 2"],\n'
+    +'  "insights": ["observation DG 1", "observation DG 2", "observation DG 3"]\n'
+    +'}\n\n'
+    +'Règles : Ne inclure que les DÉBITS dans categories/totaux. montant = valeur POSITIVE en MAD. '
+    +'Marquer recurrent:true si la dépense revient régulièrement (abonnement, loyer, salaire). '
+    +'Les alertes signalent les dépenses inhabituelles ou élevées. '
+    +'Les insights sont des observations stratégiques de niveau DG (2-3 phrases par insight).';
 
   var btn=document.getElementById('btn-analyze');
   var status=document.getElementById('releve-status');
-  btn.disabled=true; btn.style.opacity='.5'; status.textContent='⏳ Analyse en cours…';
+  btn.disabled=true; btn.style.opacity='.5';
+  status.innerHTML='⏳ Analyse Claude en cours… <span style="color:var(--muted)">(peut prendre 15-30s)</span>';
 
   try{
     var resp=await fetch('https://api.anthropic.com/v1/messages',{
@@ -905,22 +975,21 @@ async function analyzeReleve(){
         'anthropic-dangerous-direct-browser-access':'true'
       },
       body:JSON.stringify({
-        model:'claude-haiku-4-5-20251001',
-        max_tokens:4096,
+        model:'claude-sonnet-4-5',
+        max_tokens:8000,
         messages:[{role:'user',content:prompt}]
       })
     });
-    if(!resp.ok){var err=await resp.text(); throw new Error(resp.status+' : '+err);}
+    if(!resp.ok){var errTxt=await resp.text(); throw new Error(resp.status+' : '+errTxt);}
     var data=await resp.json();
     var raw=data.content[0].text.trim();
-    // Extract JSON from response
     var jsonMatch=raw.match(/\{[\s\S]*\}/);
-    if(!jsonMatch) throw new Error('Réponse non-JSON : '+raw.substring(0,200));
+    if(!jsonMatch) throw new Error('Réponse non-JSON. Réponse brute : '+raw.substring(0,300));
     releveResults=JSON.parse(jsonMatch[0]);
-    status.textContent='✅ Analyse terminée';
+    status.textContent='✅ Audit terminé';
     renderReleveResults();
   }catch(e){
-    status.textContent='❌ Erreur : '+e.message;
+    status.innerHTML='❌ Erreur : '+e.message;
   }finally{
     btn.disabled=false; btn.style.opacity='1';
   }
@@ -931,43 +1000,91 @@ function renderReleveResults(){
   var wrap=document.getElementById('releve-results-inner');
   var cats=releveResults.categories||{};
   var totaux=releveResults.totaux||{};
+  var resume=releveResults.resume||{};
+  var periodes=(releveResults.periodes||[]).join(', ')||'—';
+  var alertes=releveResults.alertes||[];
+  var insights=releveResults.insights||[];
+  var recurrents=releveResults.recurrents||[];
+  var allCats=getAllCategories();
+  var grandTotal=Object.values(totaux).reduce(function(s,v){return s+(+v||0);},0);
   var html='';
-  getAllCategories().forEach(function(cat){
-    var items=cats[cat.id]||[];
-    var total=totaux[cat.id]||0;
-    if(!items.length) return;
-    html+='<div class="card" style="padding:18px 20px">'
-      +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">'
-      +'<div style="font-family:Montserrat,sans-serif;font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:'+cat.color+'">'+cat.label+'</div>'
-      +'<div style="font-family:Montserrat,sans-serif;font-size:16px;font-weight:900;color:var(--red)">−'+Math.round(total).toLocaleString('fr-FR')+' MAD</div>'
-      +'</div>'
-      +'<table style="width:100%;border-collapse:collapse;font-size:12px">'
-      +'<thead><tr style="border-bottom:1.5px solid var(--border)"><th style="text-align:left;padding:6px 0;color:var(--muted);font-weight:600">Date</th><th style="text-align:left;padding:6px 0;color:var(--muted);font-weight:600">Description</th><th style="text-align:right;padding:6px 0;color:var(--muted);font-weight:600">Montant</th></tr></thead>'
-      +'<tbody>'
-      +items.map(function(t){
-        return '<tr style="border-bottom:1px solid var(--border)">'
-          +'<td style="padding:7px 0;color:var(--muted)">'+t.date+'</td>'
-          +'<td style="padding:7px 4px">'+t.description+'</td>'
-          +'<td style="padding:7px 0;text-align:right;font-weight:700;color:var(--red)">−'+Math.round(t.montant||0).toLocaleString('fr-FR')+'</td>'
-          +'</tr>';
-      }).join('')
-      +'</tbody></table></div>';
-  });
-  wrap.innerHTML=html||'<div style="color:var(--muted);font-size:13px">Aucune dépense détectée.</div>';
-  document.getElementById('releve-results').style.display='block';
-}
 
-function importReleveResults(){
-  if(!releveResults||!releveResults.totaux) return;
-  var t=releveResults.totaux;
-  // Notifier l'utilisateur
-  var msg='Totaux importés :\n';
-  if(t.fournisseurs) msg+='• Fournisseurs : '+Math.round(t.fournisseurs)+' MAD\n';
-  if(t.pub) msg+='• Publicité : '+Math.round(t.pub)+' MAD\n';
-  var other=(t.flocking||0)+(t.contenu||0)+(t.ramassage||0)+(t.loyer||0)+(t.salaires||0)+(t.abonnements||0)+(t.autre||0);
-  if(other) msg+='• Autres charges : '+Math.round(other)+' MAD\n';
-  msg+='\nCes montants sont informatifs. Saisissez-les manuellement dans Finances > Fournisseurs pour les enregistrer en base.';
-  alert(msg);
+  // En-tête résumé
+  html+='<div class="card" style="margin-bottom:16px;background:linear-gradient(135deg,#1e1e2e,#2d2d44);color:#fff;border:none">'
+    +'<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:16px">'
+    +'<div><div style="font-family:Montserrat,sans-serif;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:2px;opacity:.6;margin-bottom:6px">Audit Financier — '+periodes+'</div>'
+    +'<div style="font-family:Montserrat,sans-serif;font-size:32px;font-weight:900;color:#f87171">−'+Math.round(grandTotal).toLocaleString('fr-FR')+' MAD</div>'
+    +'<div style="font-size:12px;opacity:.7;margin-top:4px">Total dépenses détectées</div></div>'
+    +'<div style="display:flex;gap:24px;flex-wrap:wrap">'
+    +(resume.total_credits?'<div><div style="font-family:Montserrat,sans-serif;font-size:18px;font-weight:800;color:#4ade80">+'+Math.round(resume.total_credits).toLocaleString('fr-FR')+' MAD</div><div style="font-size:11px;opacity:.6">Entrées</div></div>':'')
+    +'<div><div style="font-family:Montserrat,sans-serif;font-size:18px;font-weight:800;color:#93c5fd">'+relevePdfs.filter(function(p){return p.status==='ready';}).length+' relevé(s)</div><div style="font-size:11px;opacity:.6">Analysés</div></div>'
+    +'</div></div></div>';
+
+  // Alertes
+  if(alertes.length){
+    html+='<div class="card" style="margin-bottom:16px;border-color:var(--orange-border);background:var(--orange-bg)">'
+      +'<div style="font-family:Montserrat,sans-serif;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:1.5px;color:var(--orange);margin-bottom:10px">⚠️ Alertes</div>'
+      +alertes.map(function(a){return '<div style="font-size:13px;padding:6px 0;border-bottom:1px solid var(--orange-border)">'+a+'</div>';}).join('')
+      +'</div>';
+  }
+
+  // Insights DG
+  if(insights.length){
+    html+='<div class="card" style="margin-bottom:16px;border-color:var(--blue-border);background:var(--blue-bg)">'
+      +'<div style="font-family:Montserrat,sans-serif;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:1.5px;color:var(--blue);margin-bottom:10px">💡 Observations stratégiques</div>'
+      +insights.map(function(ins){return '<div style="font-size:13px;padding:8px 0;border-bottom:1px solid var(--blue-border);line-height:1.6">'+ins+'</div>';}).join('')
+      +'</div>';
+  }
+
+  // Charges récurrentes
+  if(recurrents.length){
+    var recTotal=recurrents.reduce(function(s,r){return s+(+r.montant||0);},0);
+    html+='<div class="card" style="margin-bottom:16px">'
+      +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">'
+      +'<div style="font-family:Montserrat,sans-serif;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:1.5px;color:var(--purple)">🔄 Charges récurrentes identifiées</div>'
+      +'<div style="font-family:Montserrat,sans-serif;font-weight:900;color:var(--red)">−'+Math.round(recTotal).toLocaleString('fr-FR')+' MAD/mois</div>'
+      +'</div>'
+      +'<div style="display:flex;flex-wrap:wrap;gap:8px">'
+      +recurrents.map(function(r){
+        return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:var(--purple-bg);border:1px solid var(--purple-border);border-radius:8px;min-width:200px;flex:1">'
+          +'<span style="font-size:12px;font-weight:600">'+r.description+'</span>'
+          +'<span style="font-size:12px;font-weight:700;color:var(--purple)">'+Math.round(r.montant||0).toLocaleString('fr-FR')+' MAD</span>'
+          +'</div>';
+      }).join('')
+      +'</div></div>';
+  }
+
+  // Dépenses par catégorie
+  html+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;margin-bottom:16px">';
+  allCats.forEach(function(cat){
+    var items=cats[cat.id]||[];
+    var tot=totaux[cat.id]||0;
+    if(!items.length&&!tot) return;
+    var pct=grandTotal>0?((tot/grandTotal)*100).toFixed(0):0;
+    html+='<div class="card" style="padding:18px">'
+      +'<div style="display:flex;justify-content:space-between;margin-bottom:8px">'
+      +'<span style="font-family:Montserrat,sans-serif;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:'+cat.color+'">'+cat.label+'</span>'
+      +'<span style="font-family:Montserrat,sans-serif;font-weight:900;color:var(--red)">−'+Math.round(tot).toLocaleString('fr-FR')+'</span>'
+      +'</div>'
+      +'<div style="background:var(--border);border-radius:4px;height:6px;margin-bottom:10px"><div style="background:'+cat.color+';height:6px;border-radius:4px;width:'+pct+'%"></div></div>'
+      +'<div style="font-size:11px;color:var(--muted);margin-bottom:8px">'+pct+'% des dépenses · '+items.length+' transaction'+(items.length>1?'s':'')+'</div>'
+      +(items.length?
+        '<details style="cursor:pointer"><summary style="font-size:11px;font-weight:600;color:var(--blue);outline:none">Voir le détail</summary>'
+        +'<table style="width:100%;border-collapse:collapse;font-size:11px;margin-top:8px">'
+        +items.map(function(t){
+          return '<tr style="border-bottom:1px solid var(--border)">'
+            +'<td style="padding:5px 0;color:var(--muted);white-space:nowrap">'+t.date+'</td>'
+            +'<td style="padding:5px 6px">'+(t.recurrent?'🔄 ':'')+t.description+'</td>'
+            +'<td style="padding:5px 0;text-align:right;font-weight:700">'+Math.round(t.montant||0).toLocaleString('fr-FR')+'</td>'
+            +'</tr>';
+        }).join('')
+        +'</table></details>':'')
+      +'</div>';
+  });
+  html+='</div>';
+
+  wrap.innerHTML=html;
+  document.getElementById('releve-results').style.display='block';
 }
 
 const SB_URL = 'https://dwjjrgjbkftejdcmwpgc.supabase.co';
