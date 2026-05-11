@@ -1199,7 +1199,7 @@ function inDateRange(dateStr){
 // ── Auth ──
 function login(){
   if(document.getElementById('pwd-input').value===PWD_ADMIN){
-    sessionStorage.setItem('role','admin');
+    localStorage.setItem('touni_role','admin');
     document.getElementById('login-page').style.display='none';
     document.getElementById('app-page').style.display='block';
     initApp();
@@ -1207,7 +1207,7 @@ function login(){
     document.getElementById('login-err').style.display='block';
   }
 }
-function logout(){sessionStorage.removeItem('role');location.reload();}
+function logout(){localStorage.removeItem('touni_role');location.reload();}
 document.getElementById('pwd-input').addEventListener('keydown',function(e){if(e.key==='Enter')login();});
 
 // ── eGrow — Mapping stages business ──────────────────────────────────────────
@@ -2051,13 +2051,10 @@ function finTab(name,btn){
 function fmtDate(d){if(!d) return '—';return new Date(d+'T12:00:00').toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'2-digit'});}
 
 // ── Start ──
-if(sessionStorage.getItem('role')==='admin'){
+if(localStorage.getItem('touni_role')==='admin'){
   document.getElementById('login-page').style.display='none';
   document.getElementById('app-page').style.display='block';
   initApp();
-} else if(sessionStorage.getItem('role')==='staff'){
-  // Staff n'a pas accès au dashboard
-  window.location.href='/';
 }
 </script>
 </body>
