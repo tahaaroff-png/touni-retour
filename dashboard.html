@@ -590,6 +590,22 @@ td{padding:10px 14px;vertical-align:middle}
       </div>
       <button onclick="addCustomVar()" style="background:var(--text);color:#fff;border:none;border-radius:8px;padding:8px 14px;font-family:Montserrat,sans-serif;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0">+ Ajouter</button>
     </div>
+    <!-- Commission confirmation (calculée par tranche de prix) -->
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px;background:#eff6ff;border:1px solid var(--blue-border);border-radius:10px;margin-bottom:12px;flex-wrap:wrap;gap:10px">
+      <div style="font-weight:600;font-size:13px;color:var(--blue)">📣 Commission confirmation <span style="font-weight:400;font-size:11px;color:var(--muted)">(par commande livrée)</span></div>
+      <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center">
+        <div style="display:flex;align-items:center;gap:6px">
+          <span style="font-size:12px;color:var(--muted);white-space:nowrap">≥ 300 MAD :</span>
+          <input type="number" id="cfg-comm-high" value="5" min="0" style="width:60px;text-align:right;font-weight:700;font-family:Montserrat,sans-serif" onchange="saveCommConfig()">
+          <span style="font-size:12px;color:var(--muted)">MAD/cde</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px">
+          <span style="font-size:12px;color:var(--muted);white-space:nowrap">&lt; 300 MAD :</span>
+          <input type="number" id="cfg-comm-low" value="2" min="0" style="width:60px;text-align:right;font-weight:700;font-family:Montserrat,sans-serif" onchange="saveCommConfig()">
+          <span style="font-size:12px;color:var(--muted)">MAD/cde</span>
+        </div>
+      </div>
+    </div>
     <div id="custom-var-list" style="display:flex;flex-direction:column;gap:12px">
       <div style="font-size:12px;color:var(--muted);padding:8px">Aucune charge variable. Cliquez "+ Ajouter" — ex: Emballage 13 MAD/cde expédiée.</div>
     </div>
@@ -762,7 +778,7 @@ function egrowStats(){
     return dt>=filterFrom && dt<=filterTo;
   });
   var s={
-    total:deals.length, livrees:0, retours:0, enCours:0, annules:0,
+    total:deals.length, livrees:0, livreesHigh:0, livreesLow:0, retours:0, enCours:0, annules:0,
     ca:0, fraisOzone:0, nbExpedies:0, stages:{}
   };
   deals.forEach(function(d){
@@ -774,7 +790,7 @@ function egrowStats(){
       s.fraisOzone+=shippingCost||35;
       s.nbExpedies++;
     }
-    if(EGROW_LIVRES.has(name))       { s.livrees++; s.ca+=v; }
+    if(EGROW_LIVRES.has(name))       { s.livrees++; s.ca+=v; if(v>=300) s.livreesHigh++; else s.livreesLow++; }
     else if(EGROW_RETOURS.has(name))   s.retours++;
     else if(EGROW_EN_COURS.has(name))  s.enCours++;
     else if(EGROW_ANNULES.has(name))   s.annules++;
@@ -849,7 +865,7 @@ function setDefaultDates(){
 
 // ── Init default charges (merge into existing, run once per migration) ──
 function initDefaultChargesIfNeeded(){
-  if(localStorage.getItem('touni_charges_defaults_v1')) return; // already done
+  if(localStorage.getItem('touni_charges_defaults_v2')) return; // already done
   var existing=getCustomFixed();
   var existingIds=existing.map(function(i){return i.id;});
   var defaults=[
@@ -862,13 +878,10 @@ function initDefaultChargesIfNeeded(){
   });
   localStorage.setItem('touni_custom_fixed', JSON.stringify(existing));
 
-  var existingVar=getCustomVar();
-  var existingVarIds=existingVar.map(function(i){return i.id;});
-  if(existingVarIds.indexOf('def_commission')===-1){
-    existingVar.unshift({id:'def_commission',name:'📣 Commission confirmation',amount:5});
-    localStorage.setItem('touni_custom_var', JSON.stringify(existingVar));
-  }
-  localStorage.setItem('touni_charges_defaults_v1','1');
+  // Remove def_commission if present (commission now calculated from livreesHigh/Low tiers)
+  var existingVar=getCustomVar().filter(function(i){return i.id!=='def_commission';});
+  localStorage.setItem('touni_custom_var', JSON.stringify(existingVar));
+  localStorage.setItem('touni_charges_defaults_v2','1');
 }
 
 // ── Custom charges (localStorage) ──
@@ -965,15 +978,25 @@ function renderPersoList(){
 
 // ── Config (localStorage) ──
 function saveConfig(){
-  var cfg={tarifLivraison:35,tarifRetour:0};
+  var cfg=getConfig();
   localStorage.setItem('touni_cfg',JSON.stringify(cfg));
   renderAll();
 }
+function saveCommConfig(){
+  var cfg=getConfig();
+  cfg.commHigh=+document.getElementById('cfg-comm-high').value||5;
+  cfg.commLow=+document.getElementById('cfg-comm-low').value||2;
+  localStorage.setItem('touni_cfg',JSON.stringify(cfg));
+  renderOverview();
+}
 function loadConfig(){
+  var cfg=getConfig();
+  var h=document.getElementById('cfg-comm-high'); if(h) h.value=cfg.commHigh||5;
+  var l=document.getElementById('cfg-comm-low');  if(l) l.value=cfg.commLow||2;
   renderCustomCharges();
 }
 function getConfig(){
-  return JSON.parse(localStorage.getItem('touni_cfg')||JSON.stringify({tarifLivraison:35,tarifRetour:0}));
+  return JSON.parse(localStorage.getItem('touni_cfg')||JSON.stringify({commHigh:5,commLow:2,tarifLivraison:35,tarifRetour:0}));
 }
 
 // ── CA Ozone manuel ──
@@ -1053,8 +1076,9 @@ function renderOverview(){
       'Valeur auto eGrow : '+Math.round(eg.ca).toLocaleString('fr-FR')+' MAD COD − '+Math.round(fraisOzoneInfo).toLocaleString('fr-FR')+' MAD frais Ozone = '+autoCA.toLocaleString('fr-FR')+' MAD net');
   }
 
+  var commission=eg.livreesHigh*(cfg.commHigh||5)+eg.livreesLow*(cfg.commLow||2);
   var revenus=totalVirements||autoCA;
-  var depenses=totalFourn+totalMeta+customFixedTotal+customVarTotal;
+  var depenses=totalFourn+totalMeta+customFixedTotal+customVarTotal+commission;
   var net=revenus-depenses;
   var marge=revenus>0?((net/revenus)*100):0;
 
@@ -1077,6 +1101,7 @@ function renderOverview(){
     var rows='';
     getCustomFixed().forEach(function(c){rows+='<div class="pl-row"><span class="pl-lbl">'+c.name+'</span><span class="pl-amt neg">−'+fmt(Math.round((+c.amount||0)*daysRatio))+'</span></div>';});
     getCustomVar().forEach(function(c){rows+='<div class="pl-row"><span class="pl-lbl">'+c.name+' (×'+nbExpedies+' expédiés)</span><span class="pl-amt neg">−'+fmt((+c.amount||0)*nbExpedies)+'</span></div>';});
+    if(commission>0) rows+='<div class="pl-row"><span class="pl-lbl">📣 Commission confirmation ('+eg.livreesHigh+' × '+(cfg.commHigh||5)+' + '+eg.livreesLow+' × '+(cfg.commLow||2)+')</span><span class="pl-amt neg">−'+fmt(commission)+'</span></div>';
     plCustomEl.innerHTML=rows;
   }
   document.getElementById('pl-dep-total').textContent='−'+fmt(depenses);
