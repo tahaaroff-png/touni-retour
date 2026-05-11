@@ -840,9 +840,11 @@ async function initApp(){
     console.warn('Supabase error:', e.message);
     dot('err');
   }
-  // eGrow + Meta en parallèle
+  renderAll(); // afficher dès que Supabase est chargé, sans attendre eGrow
+  // eGrow + Meta en parallèle (avec timeout 15s)
+  function withTimeout(p,ms){return Promise.race([p,new Promise(function(_,r){setTimeout(function(){r(new Error('timeout'));},ms);})]);}
   await Promise.allSettled([
-    fetchEgrow().then(function(){
+    withTimeout(fetchEgrow(),15000).then(function(){
       document.getElementById('egrow-status').textContent='🟢 eGrow connecté';
       document.getElementById('egrow-status').style.color='var(--green)';
     }).catch(function(e){
