@@ -945,20 +945,17 @@ async function analyzeReleve(){
     +'CORRESPONDANCES PERSONNALISÉES (priorité absolue) :\n'+mappingText+'\n\n'
     +'CATÉGORIES DISPONIBLES :\n'+catLabels+'\n\n'
     +'RELEVÉS BANCAIRES :\n'+combined+'\n\n'
-    +'Réponds UNIQUEMENT avec un JSON valide et complet avec cette structure :\n'
-    +'{\n'
-    +'  "periodes": ["YYYY-MM", ...],\n'
-    +'  "resume": {"total_debits": 0, "total_credits": 0, "solde_net": 0},\n'
-    +'  "categories": {"'+catIds.split(',').join('":[{"date":"DD/MM","description":"...","montant":0,"recurrent":false}],"')+'": [{"date":"DD/MM","description":"...","montant":0,"recurrent":false}]},\n'
-    +'  "totaux": {"'+catIds.split(',').join('":0,"')+'": 0},\n'
-    +'  "recurrents": [{"description":"...","montant":0,"categorie":"..."}],\n'
-    +'  "alertes": ["texte alerte 1", "texte alerte 2"],\n'
-    +'  "insights": ["observation DG 1", "observation DG 2", "observation DG 3"]\n'
-    +'}\n\n'
-    +'Règles : Ne inclure que les DÉBITS dans categories/totaux. montant = valeur POSITIVE en MAD. '
-    +'Marquer recurrent:true si la dépense revient régulièrement (abonnement, loyer, salaire). '
-    +'Les alertes signalent les dépenses inhabituelles ou élevées. '
-    +'Les insights sont des observations stratégiques de niveau DG (2-3 phrases par insight).';
+    +'Réponds UNIQUEMENT avec un objet JSON valide. Structure attendue :\n'
+    +'- "periodes" : tableau de strings "YYYY-MM"\n'
+    +'- "resume" : objet avec total_debits, total_credits, solde_net (nombres entiers MAD)\n'
+    +'- "categories" : objet dont les clés sont les IDs de catégories ('+catIds+') et les valeurs sont des tableaux de transactions {"date":"DD/MM","description":"...","montant":123,"recurrent":false}\n'
+    +'- "totaux" : objet dont les clés sont les IDs de catégories et les valeurs sont des nombres entiers (total MAD débité dans cette catégorie)\n'
+    +'- "recurrents" : tableau de {"description":"...","montant":0,"categorie":"id_cat"}\n'
+    +'- "alertes" : tableau de strings (max 5 alertes sur dépenses inhabituelles)\n'
+    +'- "insights" : tableau de strings (3-4 observations stratégiques niveau DG)\n\n'
+    +'RÈGLES JSON CRITIQUES : utiliser uniquement des guillemets doubles, échapper les apostrophes avec \\u0027 ou les éviter, ne pas couper le JSON, toutes les valeurs montant sont des nombres entiers positifs. '
+    +'Ne inclure que les DÉBITS dans categories/totaux. '
+    +'Marquer recurrent:true si la dépense revient régulièrement (abonnement, loyer, salaire).';
 
   var btn=document.getElementById('btn-analyze');
   var status=document.getElementById('releve-status');
@@ -976,16 +973,35 @@ async function analyzeReleve(){
       },
       body:JSON.stringify({
         model:'claude-sonnet-4-5',
-        max_tokens:8000,
+        max_tokens:6000,
+        system:'Tu es un CFO expert. Tu réponds TOUJOURS et UNIQUEMENT avec un objet JSON valide, sans texte avant ni après, sans bloc markdown, sans apostrophe non échappée. Toutes les descriptions de transactions doivent avoir les apostrophes remplacées par des espaces ou \\u0027.',
         messages:[{role:'user',content:prompt}]
       })
     });
     if(!resp.ok){var errTxt=await resp.text(); throw new Error(resp.status+' : '+errTxt);}
     var data=await resp.json();
     var raw=data.content[0].text.trim();
-    var jsonMatch=raw.match(/\{[\s\S]*\}/);
-    if(!jsonMatch) throw new Error('Réponse non-JSON. Réponse brute : '+raw.substring(0,300));
-    releveResults=JSON.parse(jsonMatch[0]);
+    // Extraire le bloc JSON le plus grand (du premier { au dernier })
+    var firstBrace=raw.indexOf('{');
+    var lastBrace=raw.lastIndexOf('}');
+    if(firstBrace===-1||lastBrace===-1) throw new Error('Réponse non-JSON. Réponse brute : '+raw.substring(0,300));
+    var jsonStr=raw.substring(firstBrace,lastBrace+1);
+    // Tentative de parse direct
+    try{
+      releveResults=JSON.parse(jsonStr);
+    }catch(parseErr){
+      // Nettoyage : supprimer les caractères de contrôle illégaux dans les chaînes
+      var cleaned=jsonStr
+        .replace(/[ --]/g,'')  // ctrl chars sauf \t\n\r
+        .replace(/\t/g,' ');  // tabs dans chaînes → espace
+      try{
+        releveResults=JSON.parse(cleaned);
+      }catch(e2){
+        // Dernier recours : extraire juste les clés principales
+        console.warn('JSON parse failed:', e2.message, '\nRaw (first 500):', jsonStr.substring(0,500));
+        throw new Error('JSON invalide dans la réponse Claude (pos '+e2.message.match(/\d+/)?.[0]+'). Réessayez — le modèle a parfois des apostrophes non échappées.');
+      }
+    }
     status.textContent='✅ Audit terminé';
     renderReleveResults();
   }catch(e){
@@ -1129,6 +1145,14 @@ function setFilter(mode){
     filterFrom=fv?new Date(fv+'T00:00:00'):startOfDay(now);
     filterTo=tv?new Date(tv+'T23:59:59'):endOfDay(now);
   }
+  // Persister la sélection pour la restaurer après refresh
+  var persist={mode:mode};
+  if(mode==='custom'){
+    persist.from=document.getElementById('dr-from').value;
+    persist.to=document.getElementById('dr-to').value;
+  }
+  localStorage.setItem('touni_filter', JSON.stringify(persist));
+
   document.querySelectorAll('.dr-btn').forEach(function(b){b.classList.remove('active');});
   var ab=document.getElementById('dr-btn-'+mode); if(ab) ab.classList.add('active');
   document.getElementById('dr-custom').style.display=mode==='custom'?'flex':'none';
@@ -1142,6 +1166,18 @@ function setFilter(mode){
   fetchMetaAPI(false).then(function(){ renderOverview(); }).catch(function(){});
 }
 function applyCustom(){setFilter('custom');}
+function restoreFilter(){
+  try{
+    var saved=JSON.parse(localStorage.getItem('touni_filter')||'null');
+    if(!saved) return setFilter('month'); // défaut
+    if(saved.mode==='custom' && saved.from && saved.to){
+      // Restaurer les inputs custom avant setFilter
+      var df=document.getElementById('dr-from'); if(df) df.value=saved.from;
+      var dt=document.getElementById('dr-to');   if(dt) dt.value=saved.to;
+    }
+    setFilter(saved.mode);
+  }catch(e){ setFilter('month'); }
+}
 
 function updateRangeLabel(){
   if(!filterFrom||!filterTo) return;
@@ -1269,7 +1305,7 @@ async function initApp(){
   loadClaudeKey();
   renderMappings();
   loadMetaConfig();
-  setFilter('month');
+  restoreFilter();
   loadCaOzone();
   try{
     [fournisseurs,virements,metaDepenses,commandesStats]=await Promise.all([
@@ -1299,6 +1335,9 @@ async function initApp(){
   ]);
   renderAll();
   document.getElementById('last-calc').textContent=new Date().toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+  // Restaurer la page active après le chargement complet
+  var savedPage=localStorage.getItem('touni_activepage')||'overview';
+  restorePageNav(savedPage);
 }
 
 function setDefaultDates(){
@@ -1979,6 +2018,22 @@ function showPage(name,btn){
   document.querySelectorAll('.nav-btn').forEach(function(b){b.classList.remove('active');});
   document.getElementById('page-'+name).classList.add('active');
   if(btn) btn.classList.add('active');
+  localStorage.setItem('touni_activepage', name);
+}
+function restorePageNav(name){
+  // Active le bon bouton nav sans sauvegarder à nouveau
+  document.querySelectorAll('.page').forEach(function(p){p.classList.remove('active');});
+  document.querySelectorAll('.nav-btn').forEach(function(b){b.classList.remove('active');});
+  var pg=document.getElementById('page-'+name); if(pg) pg.classList.add('active');
+  // Nav buttons : trouver celui qui correspond
+  var pages=['overview','finances','commandes','charges','releve'];
+  var idx=pages.indexOf(name);
+  var btns=document.querySelectorAll('.nav-btn');
+  if(idx>=0 && btns[idx]) btns[idx].classList.add('active');
+  // Mobile nav
+  var mnbIds=['mnb-overview','mnb-finances','mnb-commandes','mnb-charges',null];
+  document.querySelectorAll('.mnb').forEach(function(b){b.classList.remove('active');});
+  if(idx>=0 && mnbIds[idx]){ var m=document.getElementById(mnbIds[idx]); if(m) m.classList.add('active'); }
 }
 function mnbA(id){
   document.querySelectorAll('.mnb').forEach(function(b){b.classList.remove('active');});
