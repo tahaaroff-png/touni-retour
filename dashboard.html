@@ -1062,7 +1062,7 @@ function renderOverview(){
   // Charges personnalisées fixes (proratisées)
   var customFixedTotal=getCustomFixed().reduce(function(s,c){return s+Math.round((+c.amount||0)*daysRatio);},0);
   // Charges variables (par colis expédié = livré + retours)
-  var nbExpedies=egrowDeals.length>0 ? eg.nbExpedies : totalLivrees;
+  var nbExpedies=eg.nbExpedies||0;
   var customVarTotal=getCustomVar().reduce(function(s,c){return s+(+c.amount||0)*nbExpedies;},0);
 
   // Consommation personnelle (multi-entrées, non déduite du business net)
