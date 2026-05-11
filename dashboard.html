@@ -992,7 +992,7 @@ async function analyzeReleve(){
     }catch(parseErr){
       // Nettoyage : supprimer les caractères de contrôle illégaux dans les chaînes
       var cleaned=jsonStr
-        .replace(/[ --]/g,'')  // ctrl chars sauf \t\n\r
+        .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g,'')  // ctrl chars sauf \t\n\r
         .replace(/\t/g,' ');  // tabs dans chaînes → espace
       try{
         releveResults=JSON.parse(cleaned);
