@@ -259,8 +259,12 @@ td{padding:10px 14px;vertical-align:middle}
       <div class="rb-label profit" id="result-label">BÉNÉFICE NET DU MOIS</div>
       <div class="rb-margin" id="result-margin">Marge : —%</div>
     </div>
-    <div class="rb-val profit" id="result-val">— MAD</div>
+    <div style="display:flex;align-items:center;gap:16px">
+      <div class="rb-val profit" id="result-val">— MAD</div>
+      <button id="btn-snapshot" onclick="saveSnapshot()" title="Sauvegarder les données de cette période" style="background:rgba(255,255,255,.25);border:1.5px solid rgba(255,255,255,.4);border-radius:8px;padding:8px 12px;font-family:Montserrat,sans-serif;font-size:10px;font-weight:700;cursor:pointer;color:inherit;white-space:nowrap">📸 Sauvegarder</button>
+    </div>
   </div>
+  <div id="snapshot-banner" style="display:none;margin-top:-14px;margin-bottom:14px;padding:10px 18px;background:#fef9c3;border:1.5px solid #fde68a;border-radius:var(--radius);font-size:12px;color:#92400e;display:flex;justify-content:space-between;align-items:center"></div>
   <div id="result-perso-info" style="display:none;margin-top:-14px;margin-bottom:22px;padding:10px 18px;background:var(--purple-bg);border:1.5px solid var(--purple-border);border-radius:var(--radius)"></div>
 
   <!-- KPIs -->
@@ -1017,6 +1021,7 @@ function setFilter(mode){
   renderAll();
   // Re-fetch eGrow avec les nouvelles dates (fenêtre élargie)
   withTimeout(fetchEgrow(),15000).then(function(){ renderAll(); }).catch(function(){});
+  checkSnapshotForPeriod();
   fetchMetaAPI(false).then(function(){ renderOverview(); }).catch(function(){});
 }
 function applyCustom(){setFilter('custom');}
@@ -1706,6 +1711,136 @@ function renderCommandes(){
     +row('🔄 En cours (pipeline)',        eg.enCours,  'var(--blue)')
     +row('↩️ Retours',                    eg.retours,  'var(--orange)')
     +row('❌ Annulées avant expédition',  eg.annules,  'var(--red)');
+}
+
+// ── Snapshots mensuels ──
+function getPeriodeKey(){
+  if(!filterFrom) return null;
+  var y=filterFrom.getFullYear();
+  var m=String(filterFrom.getMonth()+1).padStart(2,'0');
+  return y+'-'+m;
+}
+
+async function saveSnapshot(){
+  var btn=document.getElementById('btn-snapshot');
+  if(btn){btn.textContent='⏳…';btn.disabled=true;}
+  try{
+    var cfg=getConfig();
+    var eg=egrowStats();
+    var mFourn=fournisseurs.filter(function(r){return inDateRange(r.date);});
+    var mMeta=metaDepenses.filter(function(r){return inDateRange(r.date);});
+    var periodDays=1;
+    if(filterFrom&&filterTo) periodDays=Math.round((filterTo-filterFrom)/(1000*60*60*24))+1;
+    var daysRatio=Math.min(periodDays,30)/30;
+    var customFixedTotal=getCustomFixed().reduce(function(s,c){return s+Math.round((+c.amount||0)*daysRatio);},0);
+    var nbExpedies=eg.nbExpedies||0;
+    var customVarTotal=getCustomVar().reduce(function(s,c){return s+(+c.amount||0)*nbExpedies;},0);
+    var commission=(eg.livreesHigh||0)*(cfg.commHigh||5)+(eg.livreesLow||0)*(cfg.commLow||2);
+    var totalFourn=mFourn.reduce(function(s,r){return s+(+r.montant_mad||0);},0);
+    var totalMeta=mMeta.length>0
+      ? mMeta.reduce(function(s,r){return s+(+r.montant_mad||0);},0)
+      : (metaApiSpend?metaApiSpend.mad:0);
+    var revenus=getCaOzone()||(eg.ca>0?Math.round(eg.ca-eg.fraisOzone):0);
+    var depenses=totalFourn+totalMeta+customFixedTotal+customVarTotal+commission;
+    var net=revenus-depenses;
+    var marge=revenus>0?((net/revenus)*100):0;
+    var periode=getPeriodeKey();
+    if(!periode){alert('Sélectionnez une période mensuelle.');return;}
+    var payload={
+      periode:periode,
+      ca_ozone:Math.round(revenus),
+      livrees:eg.livrees||0,
+      retours:eg.retours||0,
+      en_cours:eg.enCours||0,
+      annules:eg.annules||0,
+      nb_expedies:nbExpedies,
+      frais_ozone:Math.round(eg.fraisOzone||0),
+      taux_livraison:eg.tauxLiv||'—',
+      total_fournisseurs:Math.round(totalFourn),
+      total_meta:Math.round(totalMeta),
+      charges_fixes:customFixedTotal,
+      charges_variables:Math.round(customVarTotal),
+      commission:Math.round(commission),
+      net_business:Math.round(net),
+      marge_pct:parseFloat(marge.toFixed(2)),
+      saved_at:new Date().toISOString()
+    };
+    // Upsert (update si la période existe déjà)
+    var r=await fetch(SB_URL+'/rest/v1/snapshots_mensuels?periode=eq.'+periode,{
+      method:'DELETE', headers:H
+    });
+    await sbInsert('snapshots_mensuels',payload);
+    if(btn){btn.textContent='✅ Sauvegardé';setTimeout(function(){btn.textContent='📸 Sauvegarder';btn.disabled=false;},2000);}
+    showSnapshotBanner('✅ Snapshot '+periode+' sauvegardé — données figées pour ce mois.',false);
+    // Mettre à jour le cache local
+    var cached=JSON.parse(localStorage.getItem('touni_snapshots')||'{}');
+    cached[periode]=payload;
+    localStorage.setItem('touni_snapshots',JSON.stringify(cached));
+  }catch(e){
+    if(btn){btn.textContent='📸 Sauvegarder';btn.disabled=false;}
+    alert('Erreur snapshot : '+e.message);
+  }
+}
+
+async function loadSnapshot(periode){
+  // Check local cache first
+  var cached=JSON.parse(localStorage.getItem('touni_snapshots')||'{}');
+  if(cached[periode]) return cached[periode];
+  // Fetch from Supabase
+  try{
+    var r=await fetch(SB_URL+'/rest/v1/snapshots_mensuels?periode=eq.'+periode+'&select=*',{headers:H});
+    if(!r.ok) return null;
+    var data=await r.json();
+    if(data&&data.length){
+      cached[periode]=data[0];
+      localStorage.setItem('touni_snapshots',JSON.stringify(cached));
+      return data[0];
+    }
+  }catch(e){}
+  return null;
+}
+
+async function checkSnapshotForPeriod(){
+  var periode=getPeriodeKey();
+  if(!periode){document.getElementById('snapshot-banner').style.display='none';return;}
+  var snap=await loadSnapshot(periode);
+  if(snap){
+    var d=new Date(snap.saved_at).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+    showSnapshotBanner('📸 Snapshot disponible pour '+periode+' (sauvegardé le '+d+') — données ci-dessous issues du snapshot.',true,snap);
+  }else{
+    document.getElementById('snapshot-banner').style.display='none';
+  }
+}
+
+function showSnapshotBanner(msg,showLoad,snap){
+  var el=document.getElementById('snapshot-banner');
+  if(!el) return;
+  el.style.display='flex';
+  el.innerHTML='<span>'+msg+'</span>'
+    +(showLoad&&snap?'<button onclick="applySnapshot()" style="background:#92400e;color:#fff;border:none;border-radius:6px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:Montserrat,sans-serif;flex-shrink:0">Afficher snapshot</button>':'');
+  if(showLoad&&snap) window._lastSnap=snap;
+}
+
+function applySnapshot(){
+  var snap=window._lastSnap; if(!snap) return;
+  // Override KPIs and P&L with snapshot values
+  var r=function(id,v){var el=document.getElementById(id);if(el)el.textContent=v;};
+  r('kpi-ca', Math.round(snap.ca_ozone).toLocaleString('fr-FR'));
+  r('kpi-ozone', Math.round(snap.frais_ozone).toLocaleString('fr-FR'));
+  r('c-livrees', snap.livrees);
+  r('c-retours', snap.retours);
+  r('c-en-cours', snap.en_cours);
+  r('c-annules', snap.annules);
+  r('c-confirmees', snap.nb_expedies);
+  r('taux-livraison', snap.taux_livraison==='—'?'—':snap.taux_livraison+'%');
+  var net=snap.net_business;
+  var isProfit=net>=0;
+  var banner=document.getElementById('result-banner');
+  if(banner) banner.className='result-banner '+(isProfit?'profit':'loss');
+  r('result-label', isProfit?'BÉNÉFICE NET BUSINESS':'PERTE NETTE');
+  r('result-val', (isProfit?'+':'')+Math.round(net).toLocaleString('fr-FR')+' MAD');
+  r('result-margin','Marge nette : '+snap.marge_pct+'% du CA | CA : '+Math.round(snap.ca_ozone).toLocaleString('fr-FR')+' MAD | Dépenses : '+(snap.total_fournisseurs+snap.total_meta+snap.charges_fixes+snap.charges_variables+snap.commission).toLocaleString('fr-FR')+' MAD [📸 SNAPSHOT]');
+  showSnapshotBanner('📸 Données snapshot '+snap.periode+' affichées — sauvegardées le '+new Date(snap.saved_at).toLocaleDateString('fr-FR')+'.',false);
 }
 
 // ── Delete ──
