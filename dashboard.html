@@ -266,8 +266,8 @@ td{padding:10px 14px;vertical-align:middle}
     <div class="kpi">
       <div class="kpi-icon">💰</div>
       <div class="kpi-val" id="kpi-ca">—</div>
-      <div class="kpi-lbl">CA (virements Ozone)</div>
-      <div class="kpi-sub" id="kpi-ca-sub">MAD reçus ce mois</div>
+      <div class="kpi-lbl">CA Ozone (saisi)</div>
+      <div class="kpi-sub" id="kpi-ca-sub">Livré facturé + non facturé</div>
     </div>
     <div class="kpi red">
       <div class="kpi-icon">🛒</div>
@@ -289,12 +289,32 @@ td{padding:10px 14px;vertical-align:middle}
     </div>
   </div>
 
+  <!-- CA Ozone saisie rapide -->
+  <div class="card" style="margin-bottom:16px;padding:18px 22px">
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <div style="flex:1;min-width:200px">
+        <div style="font-family:'Montserrat',sans-serif;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);margin-bottom:6px">CA Ozone — Livré facturé + Livré non facturé</div>
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="font-family:'Montserrat',sans-serif;font-size:11px;color:var(--muted)">MAD</span>
+          <input type="number" id="ca-ozone-input" placeholder="Ex: 38130" min="0" step="1"
+            style="font-family:'Montserrat',sans-serif;font-size:28px;font-weight:800;color:var(--green);border:none;border-bottom:2px solid var(--border);background:transparent;width:200px;outline:none;padding:2px 0"
+            oninput="saveCaOzone()" onchange="saveCaOzone()">
+        </div>
+        <div style="font-size:11px;color:var(--muted);margin-top:4px">Ouvrez Ozone → sélectionnez la période → additionnez Livré Facturé + Livré Non Facturé → entrez ici</div>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px">
+        <button onclick="saveCaOzone(true)" style="background:var(--green);color:#fff;border:none;border-radius:8px;padding:8px 16px;font-family:'Montserrat',sans-serif;font-size:11px;font-weight:700;cursor:pointer">✅ Actualiser le P&L</button>
+        <div style="font-size:10px;color:var(--muted);text-align:right">Fin de mois : entrez le virement<br>réel reçu → <a href="#" onclick="showPage('finances',null);finTab('virements',null);return false" style="color:var(--blue)">Enregistrer dans Finances</a></div>
+      </div>
+    </div>
+  </div>
+
   <!-- P&L detail -->
   <div class="pl-grid">
     <div class="pl-section">
       <div class="pl-title">+ Revenus</div>
       <div class="pl-row">
-        <span class="pl-lbl">Virements Ozone (COD)</span>
+        <span class="pl-lbl">CA Ozone (saisi manuellement)</span>
         <span class="pl-amt pos" id="pl-ozone-vir">0 MAD</span>
       </div>
       <div class="pl-row total">
@@ -699,7 +719,8 @@ function setFilter(mode){
   var ab=document.getElementById('dr-btn-'+mode); if(ab) ab.classList.add('active');
   document.getElementById('dr-custom').style.display=mode==='custom'?'flex':'none';
   updateRangeLabel();
-  metaApiSpend=null; // reset cache, will re-fetch for new date range
+  loadCaOzone();
+  metaApiSpend=null;
   renderAll();
   fetchMetaAPI(false).then(function(){ renderOverview(); }).catch(function(){});
 }
@@ -837,7 +858,8 @@ async function initApp(){
   setDefaultDates();
   loadConfig();
   loadMetaConfig();
-  setFilter('month'); // initialise filterFrom/filterTo + label
+  setFilter('month');
+  loadCaOzone();
   try{
     [fournisseurs,virements,metaDepenses,commandesStats]=await Promise.all([
       sbGet('depenses_fournisseurs'),
@@ -903,8 +925,34 @@ function getConfig(){
   }));
 }
 
+// ── CA Ozone manuel ──
+function getCaOzoneKey(){
+  // key par mois/période pour ne pas mélanger les mois
+  var now=new Date();
+  return 'touni_ca_ozone_'+(filterFrom?filterFrom.getFullYear():now.getFullYear())+'_'+(filterFrom?filterFrom.getMonth():now.getMonth());
+}
+function loadCaOzone(){
+  var val=localStorage.getItem(getCaOzoneKey());
+  var el=document.getElementById('ca-ozone-input');
+  if(el && val) el.value=val;
+}
+function saveCaOzone(andRender){
+  var el=document.getElementById('ca-ozone-input');
+  if(!el) return;
+  var val=el.value.trim();
+  localStorage.setItem(getCaOzoneKey(), val||'0');
+  if(andRender) renderOverview();
+}
+function getCaOzone(){
+  var el=document.getElementById('ca-ozone-input');
+  if(el && el.value) return parseFloat(el.value)||0;
+  var val=localStorage.getItem(getCaOzoneKey());
+  return val ? parseFloat(val)||0 : 0;
+}
+
 // ── Render all ──
 function renderAll(){
+  loadCaOzone();
   renderOverview();
   renderFournisseurs();
   renderVirements();
@@ -916,25 +964,19 @@ function renderAll(){
 function fmt(n){return Math.round(n).toLocaleString('fr-FR')+' MAD';}
 function renderOverview(){
   var cfg=getConfig();
-  // Filter by current month
   var mFourn=fournisseurs.filter(function(r){return inDateRange(r.date);});
-  var mVir=virements.filter(function(r){return inDateRange(r.date_virement);});
   var mMeta=metaDepenses.filter(function(r){return inDateRange(r.date);});
   var eg=egrowStats();
 
-  var totalVirements=mVir.reduce(function(s,r){return s+(+r.montant_mad||0);},0);
+  // CA Ozone = chiffre saisi manuellement (facturé + non facturé livré)
+  var totalVirements=getCaOzone();
   var totalFourn=mFourn.reduce(function(s,r){return s+(+r.montant_mad||0);},0);
   // Meta: use Supabase entries; if none this month and API has a live figure, use that
   var totalMeta=mMeta.length>0
     ? mMeta.reduce(function(s,r){return s+(+r.montant_mad||0);},0)
     : (metaApiSpend ? metaApiSpend.mad : 0);
   var totalLivrees=egrowDeals.length>0?eg.livrees:commandesStats.filter(function(r){return inDateRange(r.date);}).reduce(function(s,r){return s+(+r.nb_livrees||0);},0);
-  var totalRetours=egrowDeals.length>0?eg.retours:commandesStats.filter(function(r){return inDateRange(r.date);}).reduce(function(s,r){return s+(+r.nb_retours||0);},0);
-
-  // Frais Ozone = informatif seulement (déjà déduits par Ozone avant virement)
   var fraisOzoneInfo=egrowDeals.length>0 ? eg.fraisOzone : 0;
-
-  // Commission confirmation
   var commission=totalLivrees*cfg.commHigh;
 
   // Prorata charges fixes selon durée de la période (base 30 jours)
@@ -947,9 +989,6 @@ function renderOverview(){
   var livreur=Math.round(cfg.livreur*daysRatio);
   var confFix=Math.round(cfg.confirmation*daysRatio);
 
-  // P&L CORRECT :
-  // Le virement Ozone = COD collecté − frais livraison déjà déduits par Ozone
-  // → on ne retranche PAS les frais Ozone (ils ne sont PLUS dans les dépenses)
   var revenus=totalVirements;
   var depenses=totalFourn+totalMeta+livreur+confFix+commission+shopify;
   var net=revenus-depenses;
@@ -959,7 +998,6 @@ function renderOverview(){
   document.getElementById('kpi-ca').textContent=Math.round(totalVirements).toLocaleString('fr-FR');
   document.getElementById('kpi-fournisseurs').textContent=Math.round(totalFourn).toLocaleString('fr-FR');
   document.getElementById('kpi-meta').textContent=Math.round(totalMeta).toLocaleString('fr-FR');
-  // KPI Ozone = frais déduits (informatif)
   document.getElementById('kpi-ozone').textContent=Math.round(fraisOzoneInfo).toLocaleString('fr-FR');
 
   // P&L rows
