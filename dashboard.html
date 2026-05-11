@@ -334,22 +334,6 @@ td{padding:10px 14px;vertical-align:middle}
         <span class="pl-lbl">Meta Ads</span>
         <span class="pl-amt neg" id="pl-meta">0 MAD</span>
       </div>
-      <div class="pl-row">
-        <span class="pl-lbl">Livreur acheteur</span>
-        <span class="pl-amt neg" id="pl-livreur">3 000 MAD</span>
-      </div>
-      <div class="pl-row">
-        <span class="pl-lbl">Place de confirmation</span>
-        <span class="pl-amt neg" id="pl-confirmation">2 500 MAD</span>
-      </div>
-      <div class="pl-row">
-        <span class="pl-lbl pl-lbl-muted">↳ Commission (livraisons)</span>
-        <span class="pl-amt neg" id="pl-commission">0 MAD</span>
-      </div>
-      <div class="pl-row">
-        <span class="pl-lbl">Shopify</span>
-        <span class="pl-amt neg" id="pl-shopify">850 MAD</span>
-      </div>
       <div id="pl-custom-charges"></div>
       <div class="pl-row total">
         <span>Total dépenses</span>
@@ -593,52 +577,7 @@ td{padding:10px 14px;vertical-align:middle}
       <div class="section-title" style="margin:0">Charges fixes mensuelles</div>
       <button onclick="addCustomFixed()" style="background:var(--text);color:#fff;border:none;border-radius:8px;padding:8px 14px;font-family:Montserrat,sans-serif;font-size:11px;font-weight:700;cursor:pointer">+ Ajouter</button>
     </div>
-    <div style="display:flex;flex-direction:column;gap:12px">
-
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:14px;background:var(--bg);border-radius:10px;flex-wrap:wrap;gap:10px">
-        <div><div style="font-weight:600;font-size:14px">🚗 Livreur acheteur</div><div style="font-size:12px;color:var(--muted)">Salaire fixe mensuel</div></div>
-        <div style="display:flex;align-items:center;gap:8px">
-          <input type="number" id="cfg-livreur" value="3000" style="width:110px;text-align:right;font-weight:700;font-family:Montserrat,sans-serif" onchange="saveConfig()">
-          <span style="color:var(--muted);font-size:13px">MAD</span>
-        </div>
-      </div>
-
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:14px;background:var(--bg);border-radius:10px;flex-wrap:wrap;gap:10px">
-        <div><div style="font-weight:600;font-size:14px">👩 Place de confirmation (fixe)</div><div style="font-size:12px;color:var(--muted)">Salaire fixe mensuel</div></div>
-        <div style="display:flex;align-items:center;gap:8px">
-          <input type="number" id="cfg-confirmation" value="2500" style="width:110px;text-align:right;font-weight:700;font-family:Montserrat,sans-serif" onchange="saveConfig()">
-          <span style="color:var(--muted);font-size:13px">MAD</span>
-        </div>
-      </div>
-
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:14px;background:var(--bg);border-radius:10px;flex-wrap:wrap;gap:10px">
-        <div><div style="font-weight:600;font-size:14px">📣 Commission confirmation (≥300 MAD)</div><div style="font-size:12px;color:var(--muted)">MAD par commande livrée (prix ≥ 300 MAD)</div></div>
-        <div style="display:flex;align-items:center;gap:8px">
-          <input type="number" id="cfg-comm-high" value="5" style="width:80px;text-align:right;font-weight:700;font-family:Montserrat,sans-serif" onchange="saveConfig()">
-          <span style="color:var(--muted);font-size:13px">MAD/cde</span>
-        </div>
-      </div>
-
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:14px;background:var(--bg);border-radius:10px;flex-wrap:wrap;gap:10px">
-        <div><div style="font-weight:600;font-size:14px">📣 Commission confirmation (&lt;300 MAD)</div><div style="font-size:12px;color:var(--muted)">MAD par commande livrée (prix &lt; 300 MAD)</div></div>
-        <div style="display:flex;align-items:center;gap:8px">
-          <input type="number" id="cfg-comm-low" value="2" style="width:80px;text-align:right;font-weight:700;font-family:Montserrat,sans-serif" onchange="saveConfig()">
-          <span style="color:var(--muted);font-size:13px">MAD/cde</span>
-        </div>
-      </div>
-
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:14px;background:var(--bg);border-radius:10px;flex-wrap:wrap;gap:10px">
-        <div><div style="font-weight:600;font-size:14px">🛒 Shopify</div><div style="font-size:12px;color:var(--muted)">Abonnement mensuel</div></div>
-        <div style="display:flex;align-items:center;gap:8px">
-          <input type="number" id="cfg-shopify" value="850" style="width:110px;text-align:right;font-weight:700;font-family:Montserrat,sans-serif" onchange="saveConfig()">
-          <span style="color:var(--muted);font-size:13px">MAD</span>
-        </div>
-      </div>
-
-      <!-- Custom fixed charges (ajoutées par l'utilisateur) -->
-      <div id="custom-fixed-list"></div>
-
-    </div>
+    <div id="custom-fixed-list" style="display:flex;flex-direction:column;gap:12px"></div>
     <div style="margin-top:10px;font-size:11px;color:var(--muted)">Proratisées selon la période sélectionnée (base 30 jours).</div>
   </div>
 
@@ -868,6 +807,7 @@ async function sbDelete(table,id){
 async function initApp(){
   dot('loading');
   setDefaultDates();
+  initDefaultChargesIfNeeded();
   loadConfig();
   loadMetaConfig();
   setFilter('month');
@@ -905,6 +845,21 @@ function setDefaultDates(){
   ['f-date','v-date','m-date','cs-date'].forEach(function(id){
     var el=document.getElementById(id); if(el) el.value=today;
   });
+}
+
+// ── Init default charges on first launch ──
+function initDefaultChargesIfNeeded(){
+  if(localStorage.getItem('touni_custom_fixed')!==null) return; // already initialized
+  var fixed=[
+    {id:'def_livreur',    name:'🚗 Livreur acheteur',       amount:3000},
+    {id:'def_confirmation',name:'👩 Confirmation (fixe)',    amount:2500},
+    {id:'def_shopify',    name:'🛒 Shopify',                 amount:850}
+  ];
+  var variable=[
+    {id:'def_commission', name:'📣 Commission confirmation', amount:5}
+  ];
+  localStorage.setItem('touni_custom_fixed', JSON.stringify(fixed));
+  localStorage.setItem('touni_custom_var',   JSON.stringify(variable));
 }
 
 // ── Custom charges (localStorage) ──
@@ -1001,32 +956,15 @@ function renderPersoList(){
 
 // ── Config (localStorage) ──
 function saveConfig(){
-  var cfg={
-    livreur:+document.getElementById('cfg-livreur').value||3000,
-    confirmation:+document.getElementById('cfg-confirmation').value||2500,
-    commHigh:+document.getElementById('cfg-comm-high').value||5,
-    commLow:+document.getElementById('cfg-comm-low').value||2,
-    shopify:+document.getElementById('cfg-shopify').value||850,
-    tarifLivraison:35,tarifRetour:0,
-  };
+  var cfg={tarifLivraison:35,tarifRetour:0};
   localStorage.setItem('touni_cfg',JSON.stringify(cfg));
   renderAll();
 }
 function loadConfig(){
-  var cfg=JSON.parse(localStorage.getItem('touni_cfg')||'{}');
-  if(cfg.livreur)       document.getElementById('cfg-livreur').value=cfg.livreur;
-  if(cfg.confirmation)  document.getElementById('cfg-confirmation').value=cfg.confirmation;
-  if(cfg.commHigh)      document.getElementById('cfg-comm-high').value=cfg.commHigh;
-  if(cfg.commLow)       document.getElementById('cfg-comm-low').value=cfg.commLow;
-  if(cfg.shopify)       document.getElementById('cfg-shopify').value=cfg.shopify;
-  if(cfg.tarifLivraison) document.getElementById('cfg-tarif-livraison').value=cfg.tarifLivraison;
-  if(cfg.tarifRetour)   document.getElementById('cfg-tarif-retour').value=cfg.tarifRetour;
   renderCustomCharges();
 }
 function getConfig(){
-  return JSON.parse(localStorage.getItem('touni_cfg')||JSON.stringify({
-    livreur:3000,confirmation:2500,commHigh:5,commLow:2,shopify:850,tarifLivraison:35,tarifRetour:0
-  }));
+  return JSON.parse(localStorage.getItem('touni_cfg')||JSON.stringify({tarifLivraison:35,tarifRetour:0}));
 }
 
 // ── CA Ozone manuel ──
@@ -1080,17 +1018,12 @@ function renderOverview(){
   var totalMeta=mMeta.length>0
     ? mMeta.reduce(function(s,r){return s+(+r.montant_mad||0);},0)
     : (metaApiSpend ? metaApiSpend.mad : 0);
-  var totalLivrees=egrowDeals.length>0?eg.livrees:commandesStats.filter(function(r){return inDateRange(r.date);}).reduce(function(s,r){return s+(+r.nb_livrees||0);},0);
   var fraisOzoneInfo=egrowDeals.length>0 ? eg.fraisOzone : 0;
-  var commission=totalLivrees*cfg.commHigh;
 
   // Prorata charges fixes selon durée de la période (base 30 jours)
   var periodDays=1;
   if(filterFrom&&filterTo) periodDays=Math.round((filterTo-filterFrom)/(1000*60*60*24))+1;
   var daysRatio=Math.min(periodDays,30)/30;
-  var shopify=Math.round(cfg.shopify*daysRatio);
-  var livreur=Math.round(cfg.livreur*daysRatio);
-  var confFix=Math.round(cfg.confirmation*daysRatio);
 
   // Charges personnalisées fixes (proratisées)
   var customFixedTotal=getCustomFixed().reduce(function(s,c){return s+Math.round((+c.amount||0)*daysRatio);},0);
@@ -1112,7 +1045,7 @@ function renderOverview(){
   }
 
   var revenus=totalVirements||autoCA;
-  var depenses=totalFourn+totalMeta+livreur+confFix+commission+shopify+customFixedTotal+customVarTotal;
+  var depenses=totalFourn+totalMeta+customFixedTotal+customVarTotal;
   var net=revenus-depenses;
   var marge=revenus>0?((net/revenus)*100):0;
 
@@ -1129,10 +1062,6 @@ function renderOverview(){
   document.getElementById('pl-fourn').textContent='−'+fmt(totalFourn);
   document.getElementById('pl-ozone-frais').textContent=fmt(fraisOzoneInfo)+' (inclus dans CA)';
   document.getElementById('pl-meta').textContent='−'+fmt(totalMeta);
-  document.getElementById('pl-livreur').textContent='−'+fmt(livreur);
-  document.getElementById('pl-confirmation').textContent='−'+fmt(confFix);
-  document.getElementById('pl-commission').textContent='−'+fmt(commission);
-  document.getElementById('pl-shopify').textContent='−'+fmt(shopify);
   // Inject custom charges rows dynamically
   var plCustomEl=document.getElementById('pl-custom-charges');
   if(plCustomEl){
@@ -1378,8 +1307,6 @@ async function addCommandeStats(){
 }
 function renderCommandes(){
   var eg=egrowStats();
-  var cfg=getConfig();
-  var comm=cfg.confirmation+(eg.livrees*cfg.commHigh);
 
   document.getElementById('c-total').textContent=eg.total;
   document.getElementById('c-livrees').textContent=eg.livrees;
@@ -1392,7 +1319,7 @@ function renderCommandes(){
   document.getElementById('c-nb-expedies').textContent=eg.nbExpedies+' colis expédiés';
   document.getElementById('taux-livraison').textContent=(eg.tauxLiv==='—'?'—':eg.tauxLiv+'%');
   document.getElementById('taux-retour').textContent=(eg.tauxRet==='—'?'—':eg.tauxRet+'%');
-  document.getElementById('commission-calc').textContent=Math.round(comm).toLocaleString('fr-FR')+' MAD';
+  var commEl=document.getElementById('commission-calc'); if(commEl) commEl.textContent='Voir charges variables';
   // Ozone status badge
   var ozEl=document.getElementById('ozone-status');
   if(ozEl && eg.nbExpedies>0){
