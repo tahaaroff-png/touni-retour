@@ -847,19 +847,28 @@ function setDefaultDates(){
   });
 }
 
-// ── Init default charges on first launch ──
+// ── Init default charges (merge into existing, run once per migration) ──
 function initDefaultChargesIfNeeded(){
-  if(localStorage.getItem('touni_custom_fixed')!==null) return; // already initialized
-  var fixed=[
-    {id:'def_livreur',    name:'🚗 Livreur acheteur',       amount:3000},
-    {id:'def_confirmation',name:'👩 Confirmation (fixe)',    amount:2500},
-    {id:'def_shopify',    name:'🛒 Shopify',                 amount:850}
+  if(localStorage.getItem('touni_charges_defaults_v1')) return; // already done
+  var existing=getCustomFixed();
+  var existingIds=existing.map(function(i){return i.id;});
+  var defaults=[
+    {id:'def_livreur',     name:'🚗 Livreur acheteur',    amount:3000},
+    {id:'def_confirmation',name:'👩 Confirmation (fixe)', amount:2500},
+    {id:'def_shopify',     name:'🛒 Shopify',              amount:850}
   ];
-  var variable=[
-    {id:'def_commission', name:'📣 Commission confirmation', amount:5}
-  ];
-  localStorage.setItem('touni_custom_fixed', JSON.stringify(fixed));
-  localStorage.setItem('touni_custom_var',   JSON.stringify(variable));
+  defaults.forEach(function(d){
+    if(existingIds.indexOf(d.id)===-1) existing.unshift(d);
+  });
+  localStorage.setItem('touni_custom_fixed', JSON.stringify(existing));
+
+  var existingVar=getCustomVar();
+  var existingVarIds=existingVar.map(function(i){return i.id;});
+  if(existingVarIds.indexOf('def_commission')===-1){
+    existingVar.unshift({id:'def_commission',name:'📣 Commission confirmation',amount:5});
+    localStorage.setItem('touni_custom_var', JSON.stringify(existingVar));
+  }
+  localStorage.setItem('touni_charges_defaults_v1','1');
 }
 
 // ── Custom charges (localStorage) ──
