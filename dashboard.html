@@ -906,6 +906,53 @@ function updateAnalyzeBtn(){
   if(ready) document.getElementById('releve-status').textContent=ready+' fichier'+(ready>1?'s':'')+' prêt'+(ready>1?'s':'')+' pour analyse';
 }
 
+/* ── Réparation JSON robuste ── */
+function tryParseJson(str){
+  // 1. Essai direct
+  try{ return JSON.parse(str); }catch(e){}
+  // 2. Nettoyage basique
+  var s=str
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g,'') // ctrl chars illégaux
+    .replace(/,(\s*[\]\}])/g,'$1')                      // virgules finales
+    .replace(/\t/g,' ');                                 // tabs → espace
+  try{ return JSON.parse(s); }catch(e){}
+  // 3. Réparer les sauts de ligne dans les strings JSON
+  // Un vrai \n dans une valeur string doit être \\n
+  s=s.replace(/"([^"]*)"/g,function(m,content){
+    return '"'+content.replace(/\n/g,' ').replace(/\r/g,' ')+'"';
+  });
+  try{ return JSON.parse(s); }catch(e){}
+  // 4. JSON tronqué : fermer les crochets/accolades ouverts
+  var depth=0, inStr=false, esc=false;
+  for(var i=0;i<s.length;i++){
+    var c=s[i];
+    if(esc){esc=false;continue;}
+    if(c==='\\'&&inStr){esc=true;continue;}
+    if(c==='"'){inStr=!inStr;continue;}
+    if(!inStr){
+      if(c==='{'||c==='[') depth++;
+      else if(c==='}'||c===']') depth--;
+    }
+  }
+  // Couper au dernier } ou ] valide et fermer
+  var repaired=s;
+  if(repaired[repaired.length-1]===',') repaired=repaired.slice(0,-1);
+  // Trouver le dernier endroit sain pour fermer
+  var lastGood=repaired.lastIndexOf('}');
+  if(lastGood>0) repaired=repaired.substring(0,lastGood+1);
+  try{ return JSON.parse(repaired); }catch(e){}
+  // 5. Extraction partielle des champs connus
+  try{
+    var partial={periodes:[],resume:{},categories:{},totaux:{},recurrents:[],alertes:[],insights:[]};
+    var m;
+    m=str.match(/"alertes"\s*:\s*\[([\s\S]*?)\]/); if(m) try{partial.alertes=JSON.parse('['+m[1]+']');}catch(e){}
+    m=str.match(/"insights"\s*:\s*\[([\s\S]*?)\]/); if(m) try{partial.insights=JSON.parse('['+m[1]+']');}catch(e){}
+    m=str.match(/"periodes"\s*:\s*\[([\s\S]*?)\]/); if(m) try{partial.periodes=JSON.parse('['+m[1]+']');}catch(e){}
+    m=str.match(/"resume"\s*:\s*(\{[^}]+\})/); if(m) try{partial.resume=JSON.parse(m[1]);}catch(e){}
+    return partial;
+  }catch(e){ return null; }
+}
+
 /* ── Analyse Claude complète ── */
 async function analyzeReleve(){
   var key=localStorage.getItem('touni_claude_key')||'';
@@ -924,9 +971,9 @@ async function analyzeReleve(){
       }).join('\n')
     : '(utiliser la détection intelligente)';
 
-  // Construire le texte combiné de tous les relevés
+  // Construire le texte combiné de tous les relevés (limité pour garder de la place pour le JSON de réponse)
   var combined=readyPdfs.map(function(p,i){
-    return '=== RELEVÉ '+(i+1)+' : '+p.name+' ===\n'+p.text.substring(0,18000);
+    return '=== RELEVÉ '+(i+1)+' : '+p.name+' ===\n'+p.text.substring(0,9000);
   }).join('\n\n');
 
   var prompt='Tu es le directeur financier (CFO) d\'une entreprise marocaine d\'e-commerce. Analyse ces relevés bancaires et fournis un audit financier complet.\n\n'
@@ -981,27 +1028,14 @@ async function analyzeReleve(){
     if(!resp.ok){var errTxt=await resp.text(); throw new Error(resp.status+' : '+errTxt);}
     var data=await resp.json();
     var raw=data.content[0].text.trim();
-    // Extraire le bloc JSON le plus grand (du premier { au dernier })
+    // Extraire le bloc JSON (du premier { au dernier })
     var firstBrace=raw.indexOf('{');
     var lastBrace=raw.lastIndexOf('}');
-    if(firstBrace===-1||lastBrace===-1) throw new Error('Réponse non-JSON. Réponse brute : '+raw.substring(0,300));
+    if(firstBrace===-1||lastBrace===-1) throw new Error('Réponse non-JSON : '+raw.substring(0,200));
     var jsonStr=raw.substring(firstBrace,lastBrace+1);
-    // Tentative de parse direct
-    try{
-      releveResults=JSON.parse(jsonStr);
-    }catch(parseErr){
-      // Nettoyage : supprimer les caractères de contrôle illégaux dans les chaînes
-      var cleaned=jsonStr
-        .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g,'')  // ctrl chars sauf \t\n\r
-        .replace(/\t/g,' ');  // tabs dans chaînes → espace
-      try{
-        releveResults=JSON.parse(cleaned);
-      }catch(e2){
-        // Dernier recours : extraire juste les clés principales
-        console.warn('JSON parse failed:', e2.message, '\nRaw (first 500):', jsonStr.substring(0,500));
-        throw new Error('JSON invalide dans la réponse Claude (pos '+e2.message.match(/\d+/)?.[0]+'). Réessayez — le modèle a parfois des apostrophes non échappées.');
-      }
-    }
+    // Tenter parse + réparation progressive
+    releveResults=tryParseJson(jsonStr);
+    if(!releveResults) throw new Error('JSON impossible à parser. Réessayez.');
     status.textContent='✅ Audit terminé';
     renderReleveResults();
   }catch(e){
