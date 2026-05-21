@@ -79,10 +79,12 @@ html,body{font-family:var(--font-main);background:var(--bg);color:var(--text);mi
 .btn-dep{background:#222}
 .btn-dep:active{background:#050505}
 
-/* ── Tabs ── */
+/* ── Tabs (3 : Reçu / Dépense / Historique) ── */
 .tabs{background:var(--surface);border-bottom:1px solid var(--border);display:flex;position:sticky;top:70px;z-index:50}
-.tab{flex:1;padding:14px;border:none;background:transparent;font-family:var(--font-main);font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;transition:.3s ease}
+.tab{flex:1;padding:14px 8px;border:none;background:transparent;font-family:var(--font-main);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-1px;transition:.3s ease;white-space:nowrap}
 .tab.active{color:var(--text);border-bottom-color:var(--ink)}
+.tab.tab-recu.active{color:var(--green);border-bottom-color:var(--green)}
+.tab.tab-dep.active{color:var(--ink);border-bottom-color:var(--ink)}
 .tab .badge-count{display:inline-block;margin-left:4px;background:var(--signal);color:#fff;font-size:10px;font-weight:700;padding:1px 6px;border-radius:10px;min-width:18px;text-align:center}
 
 /* ── Pages ── */
@@ -142,9 +144,9 @@ html,body{font-family:var(--font-main);background:var(--bg);color:var(--text);mi
 .btn-submit:disabled{opacity:.5;cursor:not-allowed;background:#222}
 .btn-submit.loading{background:var(--secondary)}
 
-/* Toast notification */
-.toast{position:fixed;left:50%;bottom:30px;transform:translateX(-50%) translateY(120%);background:#111;color:#fff;padding:14px 24px;border-radius:var(--radius);font-family:var(--font-main);font-size:14px;font-weight:600;box-shadow:0 8px 32px rgba(0,0,0,.25);transition:transform .4s cubic-bezier(.34,1.56,.64,1);z-index:1000;display:flex;align-items:center;gap:10px;max-width:90%}
-.toast.show{transform:translateX(-50%) translateY(0)}
+/* Toast notification (vraiment caché par défaut) */
+.toast{position:fixed;left:50%;bottom:30px;transform:translateX(-50%) translateY(140%);background:#111;color:#fff;padding:14px 24px;border-radius:var(--radius);font-family:var(--font-main);font-size:14px;font-weight:600;box-shadow:0 8px 32px rgba(0,0,0,.25);transition:transform .4s cubic-bezier(.34,1.56,.64,1),opacity .3s,visibility .3s;z-index:1000;display:flex;align-items:center;gap:10px;max-width:90%;visibility:hidden;opacity:0;pointer-events:none}
+.toast.show{transform:translateX(-50%) translateY(0);visibility:visible;opacity:1}
 .toast.err{background:var(--signal)}
 .toast .toast-ic{font-size:20px}
 
@@ -241,23 +243,24 @@ html,body{font-family:var(--font-main);background:var(--bg);color:var(--text);mi
   <span id="bal-period">Solde global · <b id="bal-period-detail">tout l'historique</b></span>
 </div>
 
-<!-- Tabs -->
+<!-- Tabs : Reçu / Dépense / Historique -->
 <div class="tabs">
-  <button class="tab active" id="tab-add" onclick="showPage('add')">+ Saisir</button>
+  <button class="tab tab-recu active" id="tab-recu" onclick="showPage('recu')">💰 Reçu</button>
+  <button class="tab tab-dep" id="tab-dep" onclick="showPage('dep')">💸 Dépense</button>
   <button class="tab" id="tab-hist" onclick="showPage('hist')">Historique 7j</button>
 </div>
 
-<!-- ── PAGE SAISIE ── -->
-<div class="page active" id="page-add">
-
-  <!-- Identité livreur (1ʳᵉ fois uniquement) -->
-  <div id="livreur-name-card" style="display:none" class="fg">
+<!-- Identité livreur (1ʳᵉ fois uniquement, affichée au-dessus des tabs si non défini) -->
+<div id="livreur-name-card" style="display:none;padding:18px 16px 0">
+  <div class="fg">
     <label>Votre prénom (1 seule fois)</label>
     <input type="text" id="livreur-name-input" placeholder="Ex: Hamza" autocapitalize="words">
-    <div class="hint">Pour identifier vos saisies dans le dashboard</div>
+    <div class="hint" style="font-size:11px;color:var(--muted);margin-top:6px">Identifie vos saisies dans le dashboard admin</div>
   </div>
+</div>
 
-  <!-- SECTION 1 : ARGENT REÇU -->
+<!-- ── PAGE ARGENT REÇU ── -->
+<div class="page active" id="page-recu">
   <form class="form-section recu-section" onsubmit="event.preventDefault();submitRecu()">
     <div class="section-head">
       <span class="section-ic">💰</span>
@@ -290,8 +293,10 @@ html,body{font-family:var(--font-main);background:var(--bg);color:var(--text);mi
 
     <button type="submit" class="btn-submit btn-recu" id="btn-submit-recu">Enregistrer le reçu</button>
   </form>
+</div>
 
-  <!-- SECTION 2 : DÉPENSE -->
+<!-- ── PAGE DÉPENSE ── -->
+<div class="page" id="page-dep">
   <form class="form-section dep-section" onsubmit="event.preventDefault();submitDep()">
     <div class="section-head">
       <span class="section-ic">💸</span>
