@@ -1402,6 +1402,11 @@ async function initApp(){
   loadMetaConfig();
   restoreFilter();
   loadCaOzone();
+  // ✨ Restaurer la page active IMMÉDIATEMENT (avant les fetches longs)
+  // pour éviter de voir Vue d'ensemble pendant 15s avant que ça switch
+  var savedPage=localStorage.getItem('touni_activepage')||'overview';
+  restorePageNav(savedPage);
+  if(savedPage==='finances') restoreFinTab();
   try{
     [fournisseurs,virements,metaDepenses,commandesStats,livreurRecus]=await Promise.all([
       sbGet('depenses_fournisseurs'),
@@ -1431,11 +1436,6 @@ async function initApp(){
   ]);
   renderAll();
   document.getElementById('last-calc').textContent=new Date().toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
-  // Restaurer la page active après le chargement complet
-  var savedPage=localStorage.getItem('touni_activepage')||'overview';
-  restorePageNav(savedPage);
-  // Restaurer le sous-onglet Finances si on est sur Finances
-  if(savedPage==='finances') restoreFinTab();
 }
 
 function setDefaultDates(){
