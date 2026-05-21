@@ -1629,9 +1629,14 @@ function renderLivreurBalance(){
   var elReste=document.getElementById('liv-bal-reste');
   elReste.textContent=(reste>=0?'':'−')+Math.abs(Math.round(reste)).toLocaleString('fr-FR')+' MAD';
   elReste.style.color=reste<0?'#fda4a4':'#fff';
-  // Refresh détail si ouvert
+  // Auto-affiche le détail des envois s'il y a au moins 1 reçu (avec justificatifs)
   var det=document.getElementById('liv-envois-detail');
-  if(det && det.style.display==='block') renderEnvoisDetail();
+  var btn=document.getElementById('liv-envois-toggle');
+  if(det && btn && (livreurRecus||[]).length){
+    det.style.display='block';
+    btn.innerHTML='Masquer le détail ▴';
+    renderEnvoisDetail();
+  }
 }
 
 function toggleEnvoisDetail(){

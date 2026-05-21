@@ -829,9 +829,9 @@ function renderHistory(){
     var t=String(b.created_at).localeCompare(String(a.created_at));
     return t;
   });
-  // Group by date
+  // Group by date — inclure TOUT (reçus + dépenses), pas seulement les dépenses
   var byDate={};
-  saisies.forEach(function(s){
+  all.forEach(function(s){
     if(!byDate[s.date]) byDate[s.date]=[];
     byDate[s.date].push(s);
   });
