@@ -46,7 +46,7 @@ body{font-family:var(--font-main);background:var(--bg);color:var(--text);min-hei
 .login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;background:var(--bg)}
 .login-box{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-block);padding:40px 36px;width:100%;max-width:380px;box-shadow:0 4px 24px rgba(0,0,0,.05)}
 .login-logo{display:flex;justify-content:center;margin-bottom:24px}
-.login-logo img{height:70px}
+.login-logo img{height:90px;width:auto;object-fit:contain}
 .login-title{font-family:var(--font-main);font-size:18px;font-weight:600;text-align:center;margin-bottom:4px;color:var(--text)}
 .login-sub{font-size:13px;color:var(--muted);text-align:center;margin-bottom:28px}
 .lf label{display:block;font-size:10px;font-weight:700;font-family:var(--font-main);text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:6px}
@@ -57,8 +57,8 @@ body{font-family:var(--font-main);background:var(--bg);color:var(--text);min-hei
 .login-err{color:var(--signal);font-size:12px;text-align:center;margin-top:10px;display:none}
 
 /* ── Header (DS Touni) ── */
-.header{background:var(--surface);border-bottom:1px solid var(--border);padding:0 28px;height:64px;display:flex;align-items:center;gap:14px;position:sticky;top:0;z-index:100}
-.logo-img{height:52px;width:auto;object-fit:contain;flex-shrink:0}
+.header{background:var(--surface);border-bottom:1px solid var(--border);padding:0 28px;height:78px;display:flex;align-items:center;gap:14px;position:sticky;top:0;z-index:100}
+.logo-img{height:64px;width:auto;object-fit:contain;flex-shrink:0}
 .header-sep{width:1px;height:24px;background:var(--border)}
 .header-label{font-family:var(--font-main);font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.16em;color:var(--muted)}
 .nav{display:flex;gap:4px;margin-left:12px}
@@ -171,7 +171,7 @@ td{padding:12px 14px;vertical-align:middle}
 .del-btn:hover{color:var(--red);background:var(--red-bg)}
 
 /* ── Date range bar (DS Touni : section sombre #111) ── */
-.dr-bar{background:#111;border-bottom:1px solid #222;padding:14px 28px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;position:sticky;top:64px;z-index:99}
+.dr-bar{background:#111;border-bottom:1px solid #222;padding:14px 28px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;position:sticky;top:78px;z-index:99}
 .dr-btn{padding:8px 16px;border-radius:var(--radius-btn);border:1px solid rgba(255,255,255,.14);background:transparent;font-family:var(--font-main);font-size:12px;font-weight:600;letter-spacing:.3px;cursor:pointer;color:rgba(255,255,255,.65);transition:.25s ease;white-space:nowrap}
 .dr-btn:hover:not(.active){border-color:rgba(255,255,255,.32);background:rgba(255,255,255,.05);color:#fff}
 .dr-btn.active{background:var(--signal);color:#fff;border-color:var(--signal)}
@@ -181,7 +181,7 @@ td{padding:12px 14px;vertical-align:middle}
 .dr-custom input[type=date]{width:auto;padding:7px 12px;font-size:12px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.18);border-radius:var(--radius-btn);color:#fff;font-family:var(--font-main);font-weight:500}
 .dr-custom input[type=date]::-webkit-calendar-picker-indicator{filter:invert(1);opacity:.7}
 .charges-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-@media(max-width:600px){.dr-bar{top:56px;padding:10px 12px;gap:7px}.dr-btn{font-size:11px;padding:7px 13px}}
+@media(max-width:600px){.dr-bar{top:64px;padding:10px 12px;gap:7px}.dr-btn{font-size:11px;padding:7px 13px}}
 
 /* ── Responsive ── */
 @media(max-width:900px){
@@ -192,8 +192,8 @@ td{padding:12px 14px;vertical-align:middle}
 }
 @media(max-width:600px){
   body{padding-bottom:72px}
-  .header{padding:0 14px;height:56px}
-  .logo-img{height:40px}
+  .header{padding:0 14px;height:64px}
+  .logo-img{height:48px}
   .nav{display:none}
   .mobile-nav{display:block}
   .wrap{padding:14px 12px}
@@ -218,7 +218,7 @@ td{padding:12px 14px;vertical-align:middle}
 <div class="login-wrap" id="login-page">
   <div class="login-box">
     <div class="login-logo">
-      <img src="data:image/png;base64,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" alt="Touni">
+      <img src="/touni-logo.png" alt="Touni">
     </div>
     <div class="login-title">Touni Business Dashboard</div>
     <div class="login-sub">Gestion interne — accès réservé</div>
@@ -253,7 +253,7 @@ td{padding:12px 14px;vertical-align:middle}
 </div>
 
 <header class="header">
-  <img class="logo-img" src="data:image/png;base64,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" alt="Touni">
+  <img class="logo-img" src="/touni-logo.png" alt="Touni">
   <div class="header-sep"></div>
   <span class="header-label">Dashboard</span>
   <nav class="nav">
@@ -1701,15 +1701,50 @@ function renderFournisseurs(){
   if(!mRows.length){tb.innerHTML='<tr><td colspan="6" style="text-align:center;padding:30px;color:var(--muted)">Aucune saisie ce mois</td></tr>';return;}
   tb.innerHTML=mRows.map(function(r){
     var cpCmd=r.nb_commandes>0?(r.montant_mad/r.nb_commandes).toFixed(0)+' MAD':'—';
+    // Source badge (livreur vs admin)
+    var sourceBadge='';
+    if(r.source==='livreur'){
+      var name=r.livreur_name||'Livreur';
+      sourceBadge='<div style="display:inline-flex;align-items:center;gap:4px;margin-top:4px;padding:2px 8px;background:var(--bg-soft);border:1px solid var(--border);border-radius:var(--radius-btn);font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--secondary)">🚗 '+name+'</div>';
+    }
+    // Photo thumbnail
+    var photoTag='';
+    if(r.photo_url){
+      var safeUrl=String(r.photo_url).replace(/'/g,"\\'");
+      photoTag='<img onclick="openLightbox(\''+safeUrl+'\')" src="'+r.photo_url+'" alt="Photo" style="width:32px;height:32px;object-fit:cover;border-radius:var(--radius-btn);border:1px solid var(--border);cursor:pointer;margin-left:6px;vertical-align:middle" title="Voir photo justificative">';
+    }
+    // Détails par fournisseur
+    var detailsHtml='';
+    if(r.details_json && Array.isArray(r.details_json) && r.details_json.length){
+      detailsHtml='<div style="margin-top:6px;font-size:11px;color:var(--muted);line-height:1.5"><b style="color:var(--secondary)">Détail :</b> '
+        +r.details_json.map(function(d){return d.name+' ('+Math.round(d.amount)+' MAD)';}).join(' · ')
+        +'</div>';
+    }
+    var notesContent=(r.notes||'—')+detailsHtml;
     return '<tr>'
-      +'<td data-label="Date">'+fmtDate(r.date)+'</td>'
+      +'<td data-label="Date">'+fmtDate(r.date)+sourceBadge+'</td>'
       +'<td data-label="Montant"><b>'+Math.round(r.montant_mad).toLocaleString('fr-FR')+' MAD</b></td>'
       +'<td data-label="Nb Cdes">'+r.nb_commandes+'</td>'
       +'<td data-label="Coût/Cde">'+cpCmd+'</td>'
-      +'<td data-label="Notes" style="color:var(--muted);font-size:12px">'+(r.notes||'—')+'</td>'
+      +'<td data-label="Notes" style="color:var(--text);font-size:12px">'+notesContent+photoTag+'</td>'
       +'<td><button class="del-btn" onclick="delRow(\'depenses_fournisseurs\',\''+r.id+'\',\'fournisseurs\')">×</button></td>'
       +'</tr>';
   }).join('');
+}
+
+// ── Lightbox photo (clic sur thumbnail livreur) ──
+function openLightbox(url){
+  var lb=document.getElementById('lightbox-admin');
+  if(!lb){
+    lb=document.createElement('div');
+    lb.id='lightbox-admin';
+    lb.style.cssText='position:fixed;inset:0;background:rgba(5,5,5,.92);z-index:900;display:none;align-items:center;justify-content:center;padding:40px;backdrop-filter:blur(4px);cursor:zoom-out';
+    lb.innerHTML='<button style="position:absolute;top:18px;right:18px;background:rgba(255,255,255,.15);border:none;color:#fff;font-size:24px;width:44px;height:44px;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center">×</button><img id="lightbox-admin-img" src="" alt="" style="max-width:100%;max-height:90vh;object-fit:contain;border-radius:8px">';
+    lb.onclick=function(){lb.style.display='none';};
+    document.body.appendChild(lb);
+  }
+  document.getElementById('lightbox-admin-img').src=url;
+  lb.style.display='flex';
 }
 
 // ── VIREMENTS ──

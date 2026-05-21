@@ -5,7 +5,8 @@
     }
   },
   "rewrites": [
-    { "source": "/dashboard", "destination": "/dashboard.html" }
+    { "source": "/dashboard", "destination": "/dashboard.html" },
+    { "source": "/livreur", "destination": "/livreur.html" }
   ],
   "headers": [
     {
