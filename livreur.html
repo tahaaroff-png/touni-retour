@@ -191,7 +191,7 @@ html,body{font-family:var(--font-main);background:var(--bg);color:var(--text);mi
   <div class="today-sub">
     <span><b id="today-count">0</b> saisie<span id="today-count-s">s</span></span>
     <span>·</span>
-    <span><b id="today-cdes">0</b> commande<span id="today-cdes-s">s</span></span>
+    <span><b id="today-cdes">0</b> article<span id="today-cdes-s">s</span></span>
   </div>
 </div>
 
@@ -220,14 +220,8 @@ html,body{font-family:var(--font-main);background:var(--bg);color:var(--text);mi
       </div>
     </div>
 
-    <div class="fg autosuggest">
-      <label>Fournisseur principal (optionnel)</label>
-      <input type="text" id="f-fournisseur" placeholder="Ex: Casablanca Textile" autocapitalize="words" oninput="autosuggestInput(this)" onfocus="autosuggestInput(this)" onblur="setTimeout(function(){document.getElementById('as-list').classList.remove('open')},200)">
-      <div class="as-list" id="as-list"></div>
-    </div>
-
     <div class="fg">
-      <label>Nombre de commandes achetées</label>
+      <label>Nombre d'articles achetés</label>
       <input type="number" id="f-nb" placeholder="Ex: 12" min="0" step="1" inputmode="numeric">
     </div>
 
@@ -293,7 +287,6 @@ const H_GET={apikey:SB_KEY,Authorization:'Bearer '+SB_KEY};
 var saisies=[]; // depenses du livreur sur 7 derniers jours
 var selectedPhoto=null; // {file, dataUrl}
 var detailRows=[]; // [{id, name, amount}]
-var fournisseursList=[]; // for autosuggest
 
 // ── Auth ──
 function login(){
@@ -331,7 +324,6 @@ async function initApp(){
   }
   await loadHistory();
   renderToday();
-  buildFournisseursAutosuggest();
 }
 
 // ── Supabase ──
@@ -348,16 +340,6 @@ async function sbGet7Days(){
   if(!r.ok) throw new Error(await r.text());
   return r.json();
 }
-async function sbGetAllFournisseurs(){
-  // Récupère tous les fournisseurs des 60 derniers jours pour autosuggest
-  var d=new Date();d.setDate(d.getDate()-60);
-  var from=d.toISOString().split('T')[0];
-  var url=SB_URL+'/rest/v1/depenses_fournisseurs?select=notes&date=gte.'+from;
-  var r=await fetch(url,{headers:H_GET});
-  if(!r.ok) return [];
-  return r.json();
-}
-
 async function loadHistory(){
   try {
     saisies=await sbGet7Days();
@@ -366,19 +348,6 @@ async function loadHistory(){
     console.warn('Load history:', e.message);
     saisies=[];
   }
-}
-
-async function buildFournisseursAutosuggest(){
-  try {
-    var all=await sbGetAllFournisseurs();
-    var counts={};
-    all.forEach(function(r){
-      var n=(r.notes||'').trim();
-      if(!n) return;
-      counts[n]=(counts[n]||0)+1;
-    });
-    fournisseursList=Object.keys(counts).map(function(name){return {name:name,count:counts[name]};}).sort(function(a,b){return b.count-a.count;});
-  } catch(e){ fournisseursList=[]; }
 }
 
 // ── Today counter ──
@@ -401,26 +370,6 @@ function showPage(name){
   document.getElementById('page-'+name).classList.add('active');
   document.getElementById('tab-'+name).classList.add('active');
   if(name==='hist') loadHistory().then(renderHistory);
-}
-
-// ── Auto-suggest ──
-function autosuggestInput(input){
-  var q=input.value.trim().toLowerCase();
-  var list=document.getElementById('as-list');
-  if(!fournisseursList.length){ list.classList.remove('open'); return; }
-  var hits=fournisseursList.filter(function(f){return f.name.toLowerCase().includes(q);}).slice(0,8);
-  if(!hits.length){ list.classList.remove('open'); return; }
-  list.innerHTML=hits.map(function(f){
-    return '<div class="as-item" onmousedown="selectFournisseur(\''+f.name.replace(/'/g,"\\'")+'\')">'
-      +'<span>'+f.name+'</span>'
-      +'<span class="as-item-count">'+f.count+'×</span>'
-      +'</div>';
-  }).join('');
-  list.classList.add('open');
-}
-function selectFournisseur(name){
-  document.getElementById('f-fournisseur').value=name;
-  document.getElementById('as-list').classList.remove('open');
 }
 
 // ── Détails par fournisseur ──
@@ -511,8 +460,7 @@ async function uploadPhoto(file){
 // ── Submit ──
 async function submitSaisie(){
   var montant=parseFloat(document.getElementById('f-montant').value);
-  var fournisseur=document.getElementById('f-fournisseur').value.trim();
-  var nbCdes=parseInt(document.getElementById('f-nb').value)||0;
+  var nbArticles=parseInt(document.getElementById('f-nb').value)||0;
   var notesExtra=document.getElementById('f-notes').value.trim();
   var btn=document.getElementById('btn-submit');
 
@@ -530,10 +478,7 @@ async function submitSaisie(){
     document.getElementById('livreur-name-card').style.display='none';
   }
 
-  // Build notes : fournisseur + notes extra
-  var notes='';
-  if(fournisseur) notes=fournisseur;
-  if(notesExtra) notes=notes ? notes+' — '+notesExtra : notesExtra;
+  var notes=notesExtra||null;
 
   // Build details JSON if any rows
   var validDetails=detailRows.filter(function(d){return d.name && (+d.amount>0);});
@@ -555,8 +500,8 @@ async function submitSaisie(){
     var row=await sbInsert({
       date:today,
       montant_mad:montant,
-      nb_commandes:nbCdes,
-      notes:notes||null,
+      nb_commandes:nbArticles,
+      notes:notes,
       source:'livreur',
       livreur_name:livreurName,
       photo_url:photoUrl,
@@ -580,7 +525,6 @@ async function submitSaisie(){
 
 function resetForm(){
   document.getElementById('f-montant').value='';
-  document.getElementById('f-fournisseur').value='';
   document.getElementById('f-nb').value='';
   document.getElementById('f-notes').value='';
   detailRows=[]; renderDetailRows();
