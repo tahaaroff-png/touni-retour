@@ -4,151 +4,181 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Touni Dashboard — Gestion Business</title>
-<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800;900&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Jost:wght@400;500;600;700;800&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
-  --bg:#f5f5f5;--surface:#fff;--border:#e4e4e4;--border2:#ccc;
-  --text:#0a0a0a;--muted:#777;--muted2:#bbb;
-  --green:#16a34a;--green-bg:#f0fdf4;--green-border:#86efac;
-  --red:#dc2626;--red-bg:#fef2f2;--red-border:#fca5a5;
-  --blue:#2563eb;--blue-bg:#eff6ff;--blue-border:#bfdbfe;
-  --orange:#ea580c;--orange-bg:#fff7ed;--orange-border:#fed7aa;
-  --purple:#7c3aed;--purple-bg:#f5f3ff;--purple-border:#ddd6fe;
-  --radius:12px;--shadow:0 1px 4px rgba(0,0,0,.06);
-}
-body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+  /* ─ DS Touni — Surfaces ─ */
+  --bg:#ffffff;--surface:#ffffff;--bg-soft:#f5f5f5;
+  --border:#e5e5e5;--border2:#cccccc;--border-strong:#151515;
 
-/* ── Login ── */
-.login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
-.login-box{background:var(--surface);border:1.5px solid var(--border);border-radius:20px;padding:40px 36px;width:100%;max-width:380px;box-shadow:0 8px 32px rgba(0,0,0,.08)}
+  /* ─ DS Touni — Texte ─ */
+  --ink:#050505;--text:#151515;--secondary:#363535;--muted:#858585;--muted2:#bfbec8;
+
+  /* ─ DS Touni — Accent rouge (UNIQUE) ─ */
+  --signal:#f52c2c;--signal-dark:#cc1212;
+  --red:#f52c2c;--red-bg:#fafafa;--red-border:#e5e5e5;
+
+  /* ─ Sémantique (sobre, conformes DS) ─ */
+  --green:#428445;--green-bg:#f7faf7;--green-border:#e5e5e5;
+  --warning:#e0b252;--warning-bg:#fafaf7;--warning-border:#e5e5e5;
+  --error:#EB001B;
+  /* Couleurs legacy mappées vers neutres DS — bleu/orange/violet retirés visuellement */
+  --blue:#151515;--blue-bg:#fafafa;--blue-border:#e5e5e5;
+  --orange:#363535;--orange-bg:#fafafa;--orange-border:#e5e5e5;
+  --purple:#363535;--purple-bg:#fafafa;--purple-border:#e5e5e5;
+
+  /* ─ Radius DS Touni ─ */
+  --radius:8px;--radius-btn:4px;--radius-block:10px;
+
+  /* ─ Shadows DS Touni ─ */
+  --shadow:0 1px 3px rgba(0,0,0,.06);
+  --shadow-hover:0 4px 16px rgba(0,0,0,.12);
+
+  /* ─ Fonts ─ */
+  --font-main:'Jost',sans-serif;--font-display:'Libre Baskerville',serif;
+}
+body{font-family:var(--font-main);background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased}
+
+/* ── Login (DS Touni) ── */
+.login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;background:var(--bg)}
+.login-box{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-block);padding:40px 36px;width:100%;max-width:380px;box-shadow:0 4px 24px rgba(0,0,0,.05)}
 .login-logo{display:flex;justify-content:center;margin-bottom:24px}
 .login-logo img{height:70px}
-.login-title{font-family:'Montserrat',sans-serif;font-size:17px;font-weight:800;text-align:center;margin-bottom:4px}
+.login-title{font-family:var(--font-main);font-size:18px;font-weight:600;text-align:center;margin-bottom:4px;color:var(--text)}
 .login-sub{font-size:13px;color:var(--muted);text-align:center;margin-bottom:28px}
-.lf label{display:block;font-size:10px;font-weight:700;font-family:'Montserrat',sans-serif;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:6px}
-.lf input{width:100%;padding:11px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;outline:none}
-.lf input:focus{border-color:#999}
-.btn-login{width:100%;background:var(--text);color:#fff;border:none;border-radius:8px;padding:12px;font-family:'Montserrat',sans-serif;font-size:13px;font-weight:800;cursor:pointer;margin-top:14px}
-.login-err{color:var(--red);font-size:12px;text-align:center;margin-top:10px;display:none}
+.lf label{display:block;font-size:10px;font-weight:700;font-family:var(--font-main);text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:6px}
+.lf input{width:100%;padding:12px 14px;border:1px solid var(--border);border-radius:var(--radius-btn);font-size:14px;outline:none;font-family:var(--font-main);transition:border-color .3s}
+.lf input:focus{border-color:var(--border-strong)}
+.btn-login{width:100%;background:#222;color:#fff;border:none;border-radius:var(--radius-btn);padding:14px;font-family:var(--font-main);font-size:14px;font-weight:600;cursor:pointer;margin-top:14px;height:48px;transition:.3s ease-in-out;letter-spacing:.02em}
+.btn-login:hover{background:#050505}
+.login-err{color:var(--signal);font-size:12px;text-align:center;margin-top:10px;display:none}
 
-/* ── Header ── */
-.header{background:var(--surface);border-bottom:1.5px solid var(--border);padding:0 28px;height:64px;display:flex;align-items:center;gap:14px;position:sticky;top:0;z-index:100;box-shadow:var(--shadow)}
+/* ── Header (DS Touni) ── */
+.header{background:var(--surface);border-bottom:1px solid var(--border);padding:0 28px;height:64px;display:flex;align-items:center;gap:14px;position:sticky;top:0;z-index:100}
 .logo-img{height:52px;width:auto;object-fit:contain;flex-shrink:0}
-.header-sep{width:1px;height:28px;background:var(--border)}
-.header-label{font-family:'Montserrat',sans-serif;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:2px;color:var(--muted)}
+.header-sep{width:1px;height:24px;background:var(--border)}
+.header-label{font-family:var(--font-main);font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.16em;color:var(--muted)}
 .nav{display:flex;gap:4px;margin-left:12px}
-.nav-btn{padding:7px 14px;border-radius:20px;border:1.5px solid transparent;background:transparent;font-family:'Montserrat',sans-serif;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;cursor:pointer;color:var(--muted);transition:all .15s;white-space:nowrap}
-.nav-btn.active{background:var(--text);color:#fff}
-.nav-btn:hover:not(.active){background:var(--bg);border-color:var(--border2)}
+.nav-btn{padding:8px 16px;border-radius:var(--radius-btn);border:1px solid transparent;background:transparent;font-family:var(--font-main);font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;cursor:pointer;color:var(--muted);transition:.3s ease;white-space:nowrap}
+.nav-btn.active{background:#151515;color:#fff}
+.nav-btn:hover:not(.active){color:var(--text);background:var(--bg-soft)}
 .header-right{margin-left:auto;display:flex;gap:8px;align-items:center}
-.sync-dot{width:8px;height:8px;border-radius:50%;background:#ccc;flex-shrink:0}
-.sync-dot.ok{background:var(--green)}.sync-dot.err{background:var(--red)}.sync-dot.loading{background:#f59e0b;animation:pulse 1s infinite}
+.sync-dot{width:8px;height:8px;border-radius:50%;background:var(--muted2);flex-shrink:0;transition:background .3s}
+.sync-dot.ok{background:var(--green)}.sync-dot.err{background:var(--signal)}.sync-dot.loading{background:var(--warning);animation:pulse 1s infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
-.btn-logout{background:none;border:1.5px solid var(--border);border-radius:20px;padding:5px 12px;font-family:'Montserrat',sans-serif;font-size:10px;font-weight:700;cursor:pointer;color:var(--muted)}
+.btn-logout{background:none;border:1px solid var(--border);border-radius:var(--radius-btn);padding:7px 14px;font-family:var(--font-main);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;cursor:pointer;color:var(--muted);transition:.3s ease}
+.btn-logout:hover{color:var(--signal);border-color:var(--signal)}
 
 /* ── Layout ── */
 .page{display:none}.page.active{display:block}
-.wrap{max-width:1100px;margin:0 auto;padding:24px 20px}
-.section-title{font-family:'Montserrat',sans-serif;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:2px;color:var(--muted);margin-bottom:14px}
+.wrap{max-width:1200px;margin:0 auto;padding:28px 20px}
+.section-title{font-family:var(--font-main);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:var(--muted);margin-bottom:14px}
 
-/* ── Cards ── */
-.card{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--radius);padding:22px 24px;box-shadow:var(--shadow)}
-.card-sm{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--radius);padding:18px 20px;box-shadow:var(--shadow)}
+/* ── Cards (DS Touni : radius 8-10px, border 1px, hover lift) ── */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:22px 24px;box-shadow:var(--shadow);transition:.3s ease}
+.card-sm{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px 20px;box-shadow:var(--shadow)}
 
-/* ── KPI Grid ── */
+/* ── KPI Grid (DS Touni : neutres par défaut, accent rouge pour pertes/alertes) ── */
 .kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:22px}
-.kpi{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--radius);padding:20px;box-shadow:var(--shadow);position:relative;overflow:hidden}
-.kpi-val{font-family:'Montserrat',sans-serif;font-size:28px;font-weight:900;line-height:1;color:var(--text)}
-.kpi-lbl{font-family:'Montserrat',sans-serif;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted);margin-top:8px}
+.kpi{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:22px;box-shadow:var(--shadow);position:relative;overflow:hidden;transition:.3s ease}
+.kpi:hover{box-shadow:var(--shadow-hover);transform:translateY(-2px)}
+.kpi-val{font-family:var(--font-main);font-size:30px;font-weight:700;line-height:1;color:var(--text);letter-spacing:-.01em}
+.kpi-lbl{font-family:var(--font-main);font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.12em;color:var(--muted);margin-top:10px}
 .kpi-sub{font-size:11px;color:var(--muted);margin-top:4px}
 .kpi.green .kpi-val{color:var(--green)}
-.kpi.red .kpi-val{color:var(--red)}
-.kpi.blue .kpi-val{color:var(--blue)}
-.kpi.orange .kpi-val{color:var(--orange)}
-.kpi-icon{position:absolute;right:16px;top:16px;font-size:28px;opacity:.15}
+.kpi.red .kpi-val{color:var(--signal)}
+.kpi.blue .kpi-val{color:var(--text)}
+.kpi.orange .kpi-val{color:var(--secondary)}
+.kpi-icon{position:absolute;right:16px;top:16px;font-size:24px;opacity:.12}
 
 /* ── P&L ── */
 .pl-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:22px}
-.pl-section{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--radius);padding:20px;box-shadow:var(--shadow)}
-.pl-title{font-family:'Montserrat',sans-serif;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted);margin-bottom:14px}
-.pl-row{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--border);font-size:13px}
+.pl-section{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:22px;box-shadow:var(--shadow)}
+.pl-title{font-family:var(--font-main);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:var(--muted);margin-bottom:14px}
+.pl-row{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border);font-size:13px}
 .pl-row:last-child{border-bottom:none}
-.pl-row.total{font-weight:700;font-size:14px;padding-top:12px;border-top:2px solid var(--border);border-bottom:none;margin-top:4px}
-.pl-row.total .pl-amt{font-family:'Montserrat',sans-serif;font-size:16px;font-weight:900}
+.pl-row.total{font-weight:600;font-size:14px;padding-top:14px;border-top:1px solid var(--ink);border-bottom:none;margin-top:6px}
+.pl-row.total .pl-amt{font-family:var(--font-main);font-size:16px;font-weight:700}
 .pl-lbl{color:var(--text)}
 .pl-lbl-muted{color:var(--muted);font-size:12px}
-.pl-amt{font-weight:600;font-family:'Montserrat',sans-serif}
+.pl-amt{font-weight:600;font-family:var(--font-main);font-variant-numeric:tabular-nums}
 .pl-amt.pos{color:var(--green)}
-.pl-amt.neg{color:var(--red)}
+.pl-amt.neg{color:var(--signal)}
 
-/* ── Result Banner ── */
-.result-banner{border-radius:var(--radius);padding:24px 28px;display:flex;justify-content:space-between;align-items:center;margin-bottom:22px}
-.result-banner.profit{background:var(--green-bg);border:1.5px solid var(--green-border)}
-.result-banner.loss{background:var(--red-bg);border:1.5px solid var(--red-border)}
-.rb-label{font-family:'Montserrat',sans-serif;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:1.5px}
-.rb-label.profit{color:var(--green)}
-.rb-label.loss{color:var(--red)}
-.rb-val{font-family:'Montserrat',sans-serif;font-size:36px;font-weight:900}
-.rb-val.profit{color:var(--green)}
-.rb-val.loss{color:var(--red)}
-.rb-margin{font-size:13px;color:var(--muted);margin-top:4px}
+/* ── Result Banner (DS Touni : profit en noir, perte en rouge signal) ── */
+.result-banner{border-radius:var(--radius-block);padding:28px 32px;display:flex;justify-content:space-between;align-items:center;margin-bottom:22px;border:1px solid var(--border);transition:.3s ease}
+.result-banner.profit{background:#111;border-color:#111;color:#fff}
+.result-banner.loss{background:#fff;border:1px solid var(--signal)}
+.rb-label{font-family:var(--font-main);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.12em}
+.rb-label.profit{color:rgba(255,255,255,.6)}
+.rb-label.loss{color:var(--signal)}
+.rb-val{font-family:var(--font-main);font-size:40px;font-weight:700;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.rb-val.profit{color:#fff}
+.rb-val.loss{color:var(--signal)}
+.rb-margin{font-size:13px;color:rgba(255,255,255,.55);margin-top:6px}
+.result-banner.loss .rb-margin{color:var(--muted)}
 
-/* ── Forms ── */
+/* ── Forms (DS Touni : input border 1px, focus #151515) ── */
 .form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:14px}
-.fg label{display:block;font-family:'Montserrat',sans-serif;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:5px}
-input,select,textarea{width:100%;padding:9px 12px;background:var(--bg);border:1.5px solid var(--border);border-radius:8px;color:var(--text);font-family:'Inter',sans-serif;font-size:13px;outline:none;transition:border-color .15s}
-input:focus,select:focus{border-color:#999;background:var(--surface)}
+.fg label{display:block;font-family:var(--font-main);font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:6px}
+input,select,textarea{width:100%;padding:10px 14px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-btn);color:var(--text);font-family:var(--font-main);font-size:14px;outline:none;transition:border-color .3s}
+input:focus,select:focus{border-color:var(--border-strong)}
 input::placeholder{color:var(--muted2)}
-.btn-primary{background:var(--text);color:#fff;border:none;border-radius:8px;padding:10px 22px;font-family:'Montserrat',sans-serif;font-size:12px;font-weight:800;cursor:pointer;transition:opacity .15s;white-space:nowrap}
-.btn-primary:hover{opacity:.82}
-.btn-secondary{background:none;border:1.5px solid var(--border2);border-radius:8px;padding:10px 18px;font-family:'Montserrat',sans-serif;font-size:12px;font-weight:700;cursor:pointer;color:var(--muted)}
-.btn-danger{background:var(--red-bg);color:var(--red);border:1.5px solid var(--red-border);border-radius:8px;padding:6px 12px;font-family:'Montserrat',sans-serif;font-size:11px;font-weight:700;cursor:pointer}
+.btn-primary{background:#222;color:#fff;border:none;border-radius:var(--radius-btn);padding:0 22px;font-family:var(--font-main);font-size:13px;font-weight:600;cursor:pointer;transition:.3s ease-in-out;white-space:nowrap;height:42px;letter-spacing:.02em}
+.btn-primary:hover{background:#050505}
+.btn-secondary{background:transparent;border:1px solid var(--border);border-radius:var(--radius-btn);padding:0 18px;font-family:var(--font-main);font-size:12px;font-weight:600;cursor:pointer;color:var(--secondary);height:42px;transition:.3s ease}
+.btn-secondary:hover{border-color:var(--border-strong);color:var(--text)}
+.btn-danger{background:transparent;color:var(--signal);border:1px solid var(--signal);border-radius:var(--radius-btn);padding:6px 14px;font-family:var(--font-main);font-size:11px;font-weight:600;cursor:pointer;transition:.3s ease}
+.btn-danger:hover{background:var(--signal);color:#fff}
 
 /* ── Table ── */
-.tbl-wrap{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--radius);overflow:hidden;box-shadow:var(--shadow)}
+.tbl-wrap{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
 table{width:100%;border-collapse:collapse;font-size:13px}
-thead th{background:var(--bg);padding:10px 14px;text-align:left;font-family:'Montserrat',sans-serif;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted);border-bottom:1.5px solid var(--border);white-space:nowrap}
-tbody tr{border-bottom:1px solid var(--border);transition:background .1s}
+thead th{background:var(--bg-soft);padding:12px 14px;text-align:left;font-family:var(--font-main);font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);border-bottom:1px solid var(--border);white-space:nowrap}
+tbody tr{border-bottom:1px solid var(--border);transition:background .2s}
 tbody tr:last-child{border-bottom:none}
-tbody tr:hover{background:#fafafa}
-td{padding:10px 14px;vertical-align:middle}
+tbody tr:hover{background:var(--bg-soft)}
+td{padding:12px 14px;vertical-align:middle}
 
-/* ── Badge ── */
-.badge{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:20px;font-family:'Montserrat',sans-serif;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;white-space:nowrap}
-.b-livre{background:var(--green-bg);color:var(--green);border:1.5px solid var(--green-border)}
-.b-retour{background:var(--red-bg);color:var(--red);border:1.5px solid var(--red-border)}
-.b-envoye{background:var(--blue-bg);color:var(--blue);border:1.5px solid var(--blue-border)}
-.b-annule{background:var(--bg);color:var(--muted);border:1.5px solid var(--border2)}
+/* ── Badge (DS Touni : noir/gris/rouge uniquement) ── */
+.badge{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:var(--radius-btn);font-family:var(--font-main);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;white-space:nowrap}
+.b-livre{background:transparent;color:var(--green);border:1px solid var(--green)}
+.b-retour{background:transparent;color:var(--signal);border:1px solid var(--signal)}
+.b-envoye{background:#151515;color:#fff;border:1px solid #151515}
+.b-annule{background:var(--bg-soft);color:var(--muted);border:1px solid var(--border)}
 
-/* ── Tabs ── */
-.tabs{display:flex;gap:4px;border-bottom:1.5px solid var(--border);margin-bottom:22px}
-.tab{padding:10px 18px;border:none;background:none;font-family:'Montserrat',sans-serif;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);cursor:pointer;border-bottom:2.5px solid transparent;margin-bottom:-1.5px;transition:all .15s}
-.tab.active{color:var(--text);border-bottom-color:var(--text)}
+/* ── Tabs (DS Touni : underline noir) ── */
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--border);margin-bottom:22px}
+.tab{padding:12px 18px;border:none;background:none;font-family:var(--font-main);font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;transition:.3s ease}
+.tab:hover{color:var(--text)}
+.tab.active{color:var(--text);border-bottom-color:var(--ink)}
 
-/* ── Alert ── */
-.alert{border-radius:10px;padding:14px 18px;font-size:13px;display:flex;gap:10px;align-items:flex-start;margin-bottom:14px}
-.alert.info{background:var(--blue-bg);border:1.5px solid var(--blue-border);color:var(--blue)}
-.alert.warn{background:var(--orange-bg);border:1.5px solid var(--orange-border);color:var(--orange)}
+/* ── Alert (DS Touni : pas de bleu, pas d'orange criard) ── */
+.alert{border-radius:var(--radius-btn);padding:14px 18px;font-size:13px;display:flex;gap:10px;align-items:flex-start;margin-bottom:14px;background:var(--bg-soft);border:1px solid var(--border);color:var(--text);line-height:1.5}
+.alert.info{background:var(--bg-soft);border:1px solid var(--border);color:var(--text)}
+.alert.warn{background:#fffbef;border:1px solid var(--warning);color:#7a5d1e}
 
 /* ── Mobile nav ── */
 .mobile-nav{display:none;position:fixed;bottom:0;left:0;right:0;background:var(--surface);border-top:1.5px solid var(--border);z-index:200;padding:8px 0 max(8px,env(safe-area-inset-bottom))}
 .mobile-nav-inner{display:flex;justify-content:space-around}
-.mnb{display:flex;flex-direction:column;align-items:center;gap:3px;background:none;border:none;cursor:pointer;padding:4px 8px;color:var(--muted);font-family:'Montserrat',sans-serif;font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:.5px}
+.mnb{display:flex;flex-direction:column;align-items:center;gap:3px;background:none;border:none;cursor:pointer;padding:4px 8px;color:var(--muted);font-family:'Jost',sans-serif;font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:.5px}
 .mnb .mni{font-size:22px;line-height:1}
 .mnb.active{color:var(--text)}
 .del-btn{background:none;border:none;color:var(--muted2);cursor:pointer;font-size:16px;width:28px;height:28px;border-radius:6px;display:flex;align-items:center;justify-content:center}
 .del-btn:hover{color:var(--red);background:var(--red-bg)}
 
-/* ── Date range bar ── */
-.dr-bar{background:linear-gradient(135deg,#1a1a2e 0%,#16213e 100%);border-bottom:2px solid #0f3460;padding:14px 28px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;position:sticky;top:64px;z-index:99;box-shadow:0 3px 12px rgba(0,0,0,.25)}
-.dr-btn{padding:9px 18px;border-radius:8px;border:1.5px solid rgba(255,255,255,.15);background:rgba(255,255,255,.07);font-family:'Montserrat',sans-serif;font-size:12px;font-weight:700;letter-spacing:.4px;cursor:pointer;color:rgba(255,255,255,.7);transition:all .15s;white-space:nowrap}
-.dr-btn:hover:not(.active){border-color:rgba(255,255,255,.35);background:rgba(255,255,255,.14);color:#fff}
-.dr-btn.active{background:#e63946;color:#fff;border-color:#e63946;box-shadow:0 2px 8px rgba(230,57,70,.45)}
-.dr-sep{width:1px;height:28px;background:rgba(255,255,255,.15);margin:0 4px}
-.dr-label{font-family:'Montserrat',sans-serif;font-size:12px;font-weight:800;color:#fff;margin-left:4px;background:rgba(255,255,255,.1);padding:6px 14px;border-radius:6px;border:1px solid rgba(255,255,255,.15)}
+/* ── Date range bar (DS Touni : section sombre #111) ── */
+.dr-bar{background:#111;border-bottom:1px solid #222;padding:14px 28px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;position:sticky;top:64px;z-index:99}
+.dr-btn{padding:8px 16px;border-radius:var(--radius-btn);border:1px solid rgba(255,255,255,.14);background:transparent;font-family:var(--font-main);font-size:12px;font-weight:600;letter-spacing:.3px;cursor:pointer;color:rgba(255,255,255,.65);transition:.25s ease;white-space:nowrap}
+.dr-btn:hover:not(.active){border-color:rgba(255,255,255,.32);background:rgba(255,255,255,.05);color:#fff}
+.dr-btn.active{background:var(--signal);color:#fff;border-color:var(--signal)}
+.dr-sep{width:1px;height:24px;background:rgba(255,255,255,.12);margin:0 4px}
+.dr-label{font-family:var(--font-main);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:rgba(255,255,255,.6);margin-left:4px;padding:6px 12px;border:1px solid rgba(255,255,255,.14);border-radius:var(--radius-btn)}
 .dr-custom{display:none;align-items:center;gap:8px;flex-wrap:wrap}
-.dr-custom input[type=date]{width:auto;padding:7px 12px;font-size:12px;background:rgba(255,255,255,.1);border:1.5px solid rgba(255,255,255,.25);border-radius:7px;color:#fff;font-family:'Montserrat',sans-serif;font-weight:600}
+.dr-custom input[type=date]{width:auto;padding:7px 12px;font-size:12px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.18);border-radius:var(--radius-btn);color:#fff;font-family:var(--font-main);font-weight:500}
 .dr-custom input[type=date]::-webkit-calendar-picker-indicator{filter:invert(1);opacity:.7}
 .charges-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 @media(max-width:600px){.dr-bar{top:56px;padding:10px 12px;gap:7px}.dr-btn{font-size:11px;padding:7px 13px}}
@@ -177,7 +207,7 @@ td{padding:10px 14px;vertical-align:middle}
   table tbody tr{display:block;background:var(--surface);border:1.5px solid var(--border);border-radius:10px;margin-bottom:10px;padding:12px}
   table td{display:flex;align-items:center;padding:5px 0;border-bottom:1px solid var(--border);font-size:13px}
   table td:last-child{border-bottom:none}
-  table td::before{content:attr(data-label);font-family:'Montserrat',sans-serif;font-size:9px;font-weight:700;text-transform:uppercase;color:var(--muted);width:80px;flex-shrink:0}
+  table td::before{content:attr(data-label);font-family:'Jost',sans-serif;font-size:9px;font-weight:700;text-transform:uppercase;color:var(--muted);width:80px;flex-shrink:0}
   .tbl-wrap{border:none;background:transparent;box-shadow:none}
 }
 </style>
@@ -261,11 +291,11 @@ td{padding:10px 14px;vertical-align:middle}
     </div>
     <div style="display:flex;align-items:center;gap:16px">
       <div class="rb-val profit" id="result-val">— MAD</div>
-      <button id="btn-snapshot" onclick="saveSnapshot()" title="Sauvegarder les données de cette période" style="background:rgba(255,255,255,.25);border:1.5px solid rgba(255,255,255,.4);border-radius:8px;padding:8px 12px;font-family:Montserrat,sans-serif;font-size:10px;font-weight:700;cursor:pointer;color:inherit;white-space:nowrap">📸 Sauvegarder</button>
+      <button id="btn-snapshot" onclick="saveSnapshot()" title="Sauvegarder les données de cette période" style="background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.25);border-radius:var(--radius-btn);padding:9px 14px;font-family:var(--font-main);font-size:11px;font-weight:600;cursor:pointer;color:inherit;white-space:nowrap;text-transform:uppercase;letter-spacing:.06em;transition:.3s ease">📸 Sauvegarder</button>
     </div>
   </div>
-  <div id="snapshot-banner" style="display:none;margin-top:-14px;margin-bottom:14px;padding:10px 18px;background:#fef9c3;border:1.5px solid #fde68a;border-radius:var(--radius);font-size:12px;color:#92400e;display:flex;justify-content:space-between;align-items:center"></div>
-  <div id="result-perso-info" style="display:none;margin-top:-14px;margin-bottom:22px;padding:10px 18px;background:var(--purple-bg);border:1.5px solid var(--purple-border);border-radius:var(--radius)"></div>
+  <div id="snapshot-banner" style="display:none;margin-top:-14px;margin-bottom:14px;padding:10px 18px;background:#fffbef;border:1px solid var(--warning);border-radius:var(--radius-btn);font-size:12px;color:#7a5d1e;display:flex;justify-content:space-between;align-items:center"></div>
+  <div id="result-perso-info" style="display:none;margin-top:-14px;margin-bottom:22px;padding:10px 18px;background:var(--bg-soft);border:1px solid var(--border);border-radius:var(--radius-btn)"></div>
 
   <!-- KPIs -->
   <div class="kpi-grid">
@@ -299,16 +329,16 @@ td{padding:10px 14px;vertical-align:middle}
   <div class="card" style="margin-bottom:16px;padding:16px 20px;border:1.5px dashed var(--border)">
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
       <div style="flex:1;min-width:200px">
-        <div style="font-family:'Montserrat',sans-serif;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);margin-bottom:6px">
+        <div style="font-family:'Jost',sans-serif;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);margin-bottom:6px">
           🧮 Simulateur — Remplacer le CA automatique
         </div>
         <div style="display:flex;align-items:center;gap:8px">
           <input type="number" id="ca-ozone-input" placeholder="—" min="0" step="1"
-            style="font-family:'Montserrat',sans-serif;font-size:22px;font-weight:800;color:var(--text);border:1.5px solid var(--border);border-radius:8px;background:var(--bg);width:180px;outline:none;padding:6px 10px"
+            style="font-family:'Jost',sans-serif;font-size:22px;font-weight:800;color:var(--text);border:1.5px solid var(--border);border-radius:8px;background:var(--bg);width:180px;outline:none;padding:6px 10px"
             oninput="saveCaOzone(true)" onchange="saveCaOzone(true)">
           <span style="font-size:12px;color:var(--muted)">MAD</span>
           <button onclick="resetCaOzone()" title="Revenir au calcul automatique"
-            style="background:none;border:1.5px solid var(--border);border-radius:8px;padding:6px 12px;font-family:'Montserrat',sans-serif;font-size:11px;font-weight:700;cursor:pointer;color:var(--muted)">↩ Auto</button>
+            style="background:none;border:1.5px solid var(--border);border-radius:8px;padding:6px 12px;font-family:'Jost',sans-serif;font-size:11px;font-weight:700;cursor:pointer;color:var(--muted)">↩ Auto</button>
         </div>
         <div style="font-size:10px;color:var(--muted);margin-top:5px" id="ca-sim-hint">Laissez vide pour utiliser le calcul automatique eGrow</div>
       </div>
@@ -427,7 +457,7 @@ td{padding:10px 14px;vertical-align:middle}
       <div id="meta-api-status" style="display:flex;align-items:center;gap:10px;margin-bottom:16px;padding:12px 14px;border-radius:10px;background:var(--bg);font-size:13px">
         <span id="meta-api-dot" style="width:9px;height:9px;border-radius:50%;background:#ccc;flex-shrink:0"></span>
         <span id="meta-api-msg">Non configuré — entrez vos identifiants ci-dessous</span>
-        <button onclick="fetchMetaAPI(true)" style="margin-left:auto;background:none;border:1.5px solid var(--border);border-radius:8px;padding:5px 12px;font-size:11px;font-family:Montserrat,sans-serif;font-weight:700;cursor:pointer">🔄 Tester</button>
+        <button onclick="fetchMetaAPI(true)" style="margin-left:auto;background:none;border:1.5px solid var(--border);border-radius:8px;padding:5px 12px;font-size:11px;font-family:'Jost',sans-serif;font-weight:700;cursor:pointer">🔄 Tester</button>
       </div>
       <div class="form-grid">
         <div class="fg">
@@ -448,7 +478,7 @@ td{padding:10px 14px;vertical-align:middle}
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:4px">
         <button class="btn-primary" onclick="fetchMetaAPI(true)">📡 Importer dépenses Meta (mois en cours)</button>
         <a href="https://developers.facebook.com/tools/explorer/" target="_blank" style="text-decoration:none">
-          <button style="background:none;border:1.5px solid var(--border);border-radius:8px;padding:9px 16px;font-family:Montserrat,sans-serif;font-size:11px;font-weight:700;cursor:pointer">🔑 Obtenir un token</button>
+          <button style="background:none;border:1.5px solid var(--border);border-radius:8px;padding:9px 16px;font-family:'Jost',sans-serif;font-size:11px;font-weight:700;cursor:pointer">🔑 Obtenir un token</button>
         </a>
       </div>
       <div id="meta-api-result" style="margin-top:10px;font-size:12px;color:var(--muted);display:none"></div>
@@ -487,8 +517,8 @@ td{padding:10px 14px;vertical-align:middle}
   <!-- Status eGrow + Ozone -->
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:10px">
     <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">
-      <span id="egrow-status" style="font-family:Montserrat,sans-serif;font-size:12px;font-weight:700;color:var(--muted)">⏳ Chargement eGrow…</span>
-      <span id="ozone-status" style="font-family:Montserrat,sans-serif;font-size:12px;font-weight:700;color:var(--muted);display:none"></span>
+      <span id="egrow-status" style="font-family:'Jost',sans-serif;font-size:12px;font-weight:700;color:var(--muted)">⏳ Chargement eGrow…</span>
+      <span id="ozone-status" style="font-family:'Jost',sans-serif;font-size:12px;font-weight:700;color:var(--muted);display:none"></span>
     </div>
     <span style="font-size:11px;color:var(--muted)">1000 dernières commandes · filtre mensuel côté client</span>
   </div>
@@ -542,17 +572,17 @@ td{padding:10px 14px;vertical-align:middle}
   <div class="card" style="margin-bottom:20px;display:flex;gap:32px;flex-wrap:wrap">
     <div>
       <div class="section-title" style="margin-bottom:4px">Taux de livraison</div>
-      <div style="font-family:Montserrat,sans-serif;font-size:32px;font-weight:900;color:var(--green)" id="taux-livraison">—%</div>
+      <div style="font-family:'Jost',sans-serif;font-size:32px;font-weight:900;color:var(--green)" id="taux-livraison">—%</div>
       <div style="font-size:12px;color:var(--muted)">Livrées / Envoyées</div>
     </div>
     <div>
       <div class="section-title" style="margin-bottom:4px">Taux de retour</div>
-      <div style="font-family:Montserrat,sans-serif;font-size:32px;font-weight:900;color:var(--orange)" id="taux-retour">—%</div>
+      <div style="font-family:'Jost',sans-serif;font-size:32px;font-weight:900;color:var(--orange)" id="taux-retour">—%</div>
       <div style="font-size:12px;color:var(--muted)">Retours / Envoyées</div>
     </div>
     <div>
       <div class="section-title" style="margin-bottom:4px">Commission confirmation</div>
-      <div style="font-family:Montserrat,sans-serif;font-size:32px;font-weight:900;color:var(--purple)" id="commission-calc">— MAD</div>
+      <div style="font-family:'Jost',sans-serif;font-size:32px;font-weight:900;color:var(--purple)" id="commission-calc">— MAD</div>
       <div style="font-size:12px;color:var(--muted)">Fixe + commissions livrées</div>
     </div>
   </div>
@@ -580,7 +610,7 @@ td{padding:10px 14px;vertical-align:middle}
   <div class="card" style="margin-bottom:20px">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
       <div class="section-title" style="margin:0">Charges fixes mensuelles</div>
-      <button onclick="addCustomFixed()" style="background:var(--text);color:#fff;border:none;border-radius:8px;padding:8px 14px;font-family:Montserrat,sans-serif;font-size:11px;font-weight:700;cursor:pointer">+ Ajouter</button>
+      <button onclick="addCustomFixed()" style="background:var(--text);color:#fff;border:none;border-radius:8px;padding:8px 14px;font-family:'Jost',sans-serif;font-size:11px;font-weight:700;cursor:pointer">+ Ajouter</button>
     </div>
     <div id="custom-fixed-list" style="display:flex;flex-direction:column;gap:12px"></div>
     <div style="margin-top:10px;font-size:11px;color:var(--muted)">Proratisées selon la période sélectionnée (base 30 jours).</div>
@@ -593,7 +623,7 @@ td{padding:10px 14px;vertical-align:middle}
         <div class="section-title" style="margin:0">Charges variables (par commande expédiée)</div>
         <div style="font-size:11px;color:var(--muted);margin-top:4px">Calculé sur les commandes passées par Ozone (Expédier + transit). Ex : emballage 13 MAD/cde.</div>
       </div>
-      <button onclick="addCustomVar()" style="background:var(--text);color:#fff;border:none;border-radius:8px;padding:8px 14px;font-family:Montserrat,sans-serif;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0">+ Ajouter</button>
+      <button onclick="addCustomVar()" style="background:var(--text);color:#fff;border:none;border-radius:8px;padding:8px 14px;font-family:'Jost',sans-serif;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0">+ Ajouter</button>
     </div>
     <!-- Commission confirmation (calculée par tranche de prix) -->
     <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px;background:#eff6ff;border:1px solid var(--blue-border);border-radius:10px;margin-bottom:12px;flex-wrap:wrap;gap:10px">
@@ -601,12 +631,12 @@ td{padding:10px 14px;vertical-align:middle}
       <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center">
         <div style="display:flex;align-items:center;gap:6px">
           <span style="font-size:12px;color:var(--muted);white-space:nowrap">≥ 300 MAD :</span>
-          <input type="number" id="cfg-comm-high" value="5" min="0" style="width:60px;text-align:right;font-weight:700;font-family:Montserrat,sans-serif" onchange="saveCommConfig()">
+          <input type="number" id="cfg-comm-high" value="5" min="0" style="width:60px;text-align:right;font-weight:700;font-family:'Jost',sans-serif" onchange="saveCommConfig()">
           <span style="font-size:12px;color:var(--muted)">MAD/cde</span>
         </div>
         <div style="display:flex;align-items:center;gap:6px">
           <span style="font-size:12px;color:var(--muted);white-space:nowrap">&lt; 300 MAD :</span>
-          <input type="number" id="cfg-comm-low" value="2" min="0" style="width:60px;text-align:right;font-weight:700;font-family:Montserrat,sans-serif" onchange="saveCommConfig()">
+          <input type="number" id="cfg-comm-low" value="2" min="0" style="width:60px;text-align:right;font-weight:700;font-family:'Jost',sans-serif" onchange="saveCommConfig()">
           <span style="font-size:12px;color:var(--muted)">MAD/cde</span>
         </div>
       </div>
@@ -617,40 +647,40 @@ td{padding:10px 14px;vertical-align:middle}
   </div>
 
   <!-- ── Consommation personnelle ── -->
-  <div class="card" style="margin-bottom:20px;border:1.5px solid var(--purple,#7c3aed)22">
+  <div class="card" style="margin-bottom:20px;border:1px solid var(--border);background:var(--bg-soft)">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
       <div>
         <div class="section-title" style="margin:0">👤 Consommation personnelle</div>
         <div style="font-size:11px;color:var(--muted);margin-top:4px">Calculée séparément — n'affecte pas le résultat business. Affichée à titre informatif dans le P&L.</div>
       </div>
-      <button onclick="addPersoEntry()" style="background:#7c3aed;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-family:Montserrat,sans-serif;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0">+ Ajouter</button>
+      <button onclick="addPersoEntry()" style="background:#222;color:#fff;border:none;border-radius:var(--radius-btn);padding:9px 16px;font-family:var(--font-main);font-size:12px;font-weight:600;cursor:pointer;flex-shrink:0;transition:.3s ease">+ Ajouter</button>
     </div>
     <div id="perso-list" style="display:flex;flex-direction:column;gap:12px">
       <div style="font-size:12px;color:var(--muted);padding:8px">Aucune dépense personnelle. Ex : loyer, alimentation, transport...</div>
     </div>
-    <div style="margin-top:12px;padding:10px 14px;background:#f5f3ff;border-radius:8px;font-size:12px;color:#7c3aed;font-weight:600" id="perso-total-display" style="display:none"></div>
+    <div style="margin-top:12px;padding:10px 14px;background:var(--bg-soft);border-radius:var(--radius-btn);font-size:12px;color:var(--text);font-weight:600" id="perso-total-display" style="display:none"></div>
   </div>
 
   <div class="card">
     <div class="section-title">Ozone Express — Frais de livraison</div>
-    <div class="alert" style="background:var(--orange-bg);border:1.5px solid var(--orange-border);border-radius:10px;padding:14px 16px;display:flex;gap:10px;align-items:flex-start;font-size:13px">
+    <div class="alert" style="background:var(--bg-soft);border:1px solid var(--border);border-radius:var(--radius-btn);padding:14px 16px;display:flex;gap:10px;align-items:flex-start;font-size:13px">
       <span>🟠</span>
       <span><b>Frais Ozone calculés automatiquement</b> depuis les données eGrow (champ <code>deal_shipping_price</code> par colis expédié). Le tarif actuel est <b>35 MAD/colis</b> pour votre compte #7803. Aucune saisie manuelle nécessaire.</span>
     </div>
     <div style="margin-top:14px;padding:12px;background:var(--bg);border-radius:10px;display:flex;gap:32px;flex-wrap:wrap">
       <div>
-        <div style="font-size:10px;font-weight:700;font-family:Montserrat,sans-serif;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:4px">Tarif constaté</div>
-        <div style="font-family:Montserrat,sans-serif;font-size:22px;font-weight:900;color:var(--orange)">35 MAD</div>
+        <div style="font-size:10px;font-weight:700;font-family:'Jost',sans-serif;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:4px">Tarif constaté</div>
+        <div style="font-family:'Jost',sans-serif;font-size:22px;font-weight:900;color:var(--orange)">35 MAD</div>
         <div style="font-size:11px;color:var(--muted)">par colis (livraison + retour)</div>
       </div>
       <div>
-        <div style="font-size:10px;font-weight:700;font-family:Montserrat,sans-serif;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:4px">Compte Ozone</div>
-        <div style="font-family:Montserrat,sans-serif;font-size:22px;font-weight:900;color:var(--text)">#7803</div>
+        <div style="font-size:10px;font-weight:700;font-family:'Jost',sans-serif;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:4px">Compte Ozone</div>
+        <div style="font-family:'Jost',sans-serif;font-size:22px;font-weight:900;color:var(--text)">#7803</div>
         <div style="font-size:11px;color:var(--muted)">ID client Ozone Express</div>
       </div>
       <div>
-        <div style="font-size:10px;font-weight:700;font-family:Montserrat,sans-serif;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:4px">Source données</div>
-        <div style="font-family:Montserrat,sans-serif;font-size:14px;font-weight:700;color:var(--green)">eGrow → deal_shipping_price</div>
+        <div style="font-size:10px;font-weight:700;font-family:'Jost',sans-serif;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:4px">Source données</div>
+        <div style="font-family:'Jost',sans-serif;font-size:14px;font-weight:700;color:var(--green)">eGrow → deal_shipping_price</div>
         <div style="font-size:11px;color:var(--muted)">Synchronisé en temps réel</div>
       </div>
     </div>
@@ -685,15 +715,15 @@ td{padding:10px 14px;vertical-align:middle}
           <div class="section-title" style="margin:0">🏷️ Correspondances noms → catégories</div>
           <div style="font-size:11px;color:var(--muted);margin-top:4px">Entrez les noms exacts qui apparaissent dans votre relevé (partiel suffit). Ex : "DUPONT" → Fournisseur.</div>
         </div>
-        <button onclick="addMappingRow()" style="background:var(--text);color:#fff;border:none;border-radius:8px;padding:8px 14px;font-family:Montserrat,sans-serif;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0">+ Ajouter</button>
+        <button onclick="addMappingRow()" style="background:var(--text);color:#fff;border:none;border-radius:8px;padding:8px 14px;font-family:'Jost',sans-serif;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0">+ Ajouter</button>
       </div>
       <!-- Catégories personnalisées -->
       <div style="margin-bottom:14px;padding:12px 14px;background:var(--bg);border-radius:10px">
-        <div style="font-size:11px;font-weight:700;font-family:Montserrat,sans-serif;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:8px">Catégories personnalisées</div>
+        <div style="font-size:11px;font-weight:700;font-family:'Jost',sans-serif;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:8px">Catégories personnalisées</div>
         <div id="custom-cat-list" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px"></div>
         <div style="display:flex;gap:8px">
           <input id="new-cat-name" placeholder="Ex: Frais douane, Packaging premium…" style="flex:1;font-size:13px" onkeydown="if(event.key==='Enter') addCustomCategory()">
-          <button onclick="addCustomCategory()" style="background:var(--blue);color:#fff;border:none;border-radius:8px;padding:8px 14px;font-family:Montserrat,sans-serif;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">+ Catégorie</button>
+          <button onclick="addCustomCategory()" style="background:var(--blue);color:#fff;border:none;border-radius:8px;padding:8px 14px;font-family:'Jost',sans-serif;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">+ Catégorie</button>
         </div>
       </div>
       <div id="mapping-list" style="display:flex;flex-direction:column;gap:10px"></div>
@@ -702,16 +732,16 @@ td{padding:10px 14px;vertical-align:middle}
     <!-- Upload PDFs (multi-fichiers) -->
     <div class="card" style="margin-bottom:20px">
       <div class="section-title" style="margin-bottom:14px">📄 Relevés bancaires — déposez un ou plusieurs PDF</div>
-      <div id="pdf-drop" onclick="document.getElementById('pdf-file-input').click()" style="border:2.5px dashed var(--border2);border-radius:12px;padding:36px;text-align:center;cursor:pointer;transition:all .15s" ondragover="event.preventDefault();this.style.background='#eff6ff';this.style.borderColor='var(--blue)'" ondragleave="this.style.background='';this.style.borderColor='var(--border2)'" ondrop="handlePdfDrop(event)">
+      <div id="pdf-drop" onclick="document.getElementById('pdf-file-input').click()" style="border:1.5px dashed var(--border);border-radius:var(--radius-block);padding:36px;text-align:center;cursor:pointer;transition:.3s ease" ondragover="event.preventDefault();this.style.background='var(--bg-soft)';this.style.borderColor='var(--ink)'" ondragleave="this.style.background='';this.style.borderColor='var(--border)'" ondrop="handlePdfDrop(event)">
         <div style="font-size:36px;margin-bottom:8px">📂</div>
-        <div style="font-family:Montserrat,sans-serif;font-weight:700;font-size:13px">Glissez vos relevés PDF ici ou cliquez</div>
+        <div style="font-family:'Jost',sans-serif;font-weight:700;font-size:13px">Glissez vos relevés PDF ici ou cliquez</div>
         <div style="font-size:11px;color:var(--muted);margin-top:4px">Plusieurs fichiers acceptés — un relevé par mois, ou plusieurs banques</div>
       </div>
       <input type="file" id="pdf-file-input" accept="application/pdf" multiple style="display:none" onchange="handlePdfFiles(this.files)">
       <!-- Liste des fichiers chargés -->
       <div id="pdf-file-list" style="margin-top:14px;display:flex;flex-direction:column;gap:8px"></div>
       <div style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-        <button id="btn-analyze" onclick="analyzeReleve()" style="background:#7c3aed;color:#fff;border:none;border-radius:8px;padding:11px 24px;font-family:Montserrat,sans-serif;font-size:12px;font-weight:700;cursor:pointer;opacity:.4" disabled>🤖 Lancer l'audit complet</button>
+        <button id="btn-analyze" onclick="analyzeReleve()" style="background:#222;color:#fff;border:none;border-radius:var(--radius-btn);padding:0 24px;font-family:var(--font-main);font-size:13px;font-weight:600;cursor:pointer;opacity:.4;height:44px;transition:.3s ease" disabled>🤖 Lancer l'audit complet</button>
         <button onclick="clearPdfs()" style="background:none;border:1.5px solid var(--border);border-radius:8px;padding:10px 14px;font-size:12px;cursor:pointer;color:var(--muted)">🗑 Vider</button>
         <div id="releve-status" style="font-size:12px;color:var(--muted)"></div>
       </div>
@@ -746,13 +776,13 @@ var relevePdfs=[];   // [{name, size, text, pages, status}]
 var releveResults=null;
 
 var RELEVE_CATEGORIES=[
-  {id:'fournisseurs',  label:'Fournisseurs',           color:'var(--orange)'},
-  {id:'flocking',      label:'Flocking / Impression',  color:'var(--purple)'},
-  {id:'contenu',       label:'Création de contenu',    color:'#0891b2'},
-  {id:'ramassage',     label:'Ramassage / Pickup',     color:'var(--blue)'},
-  {id:'pub',           label:'Publicité (Meta/TikTok)',color:'#1877f2'},
+  {id:'fournisseurs',  label:'Fournisseurs',           color:'var(--signal)'},
+  {id:'flocking',      label:'Flocking / Impression',  color:'var(--ink)'},
+  {id:'contenu',       label:'Création de contenu',    color:'var(--secondary)'},
+  {id:'ramassage',     label:'Ramassage / Pickup',     color:'var(--ink)'},
+  {id:'pub',           label:'Publicité (Meta/TikTok)',color:'var(--signal)'},
   {id:'loyer',         label:'Loyer / Bureau',         color:'var(--green)'},
-  {id:'salaires',      label:'Salaires / Personnel',   color:'#64748b'},
+  {id:'salaires',      label:'Salaires / Personnel',   color:'var(--secondary)'},
   {id:'abonnements',   label:'Abonnements / SaaS',     color:'var(--muted)'},
   {id:'autre',         label:'Autre / Non catégorisé', color:'var(--muted2)'}
 ];
@@ -1060,20 +1090,20 @@ function renderReleveResults(){
   var html='';
 
   // En-tête résumé
-  html+='<div class="card" style="margin-bottom:16px;background:linear-gradient(135deg,#1e1e2e,#2d2d44);color:#fff;border:none">'
+  html+='<div class="card" style="margin-bottom:16px;background:#111;color:#fff;border:none">'
     +'<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:16px">'
-    +'<div><div style="font-family:Montserrat,sans-serif;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:2px;opacity:.6;margin-bottom:6px">Audit Financier — '+periodes+'</div>'
-    +'<div style="font-family:Montserrat,sans-serif;font-size:32px;font-weight:900;color:#f87171">−'+Math.round(grandTotal).toLocaleString('fr-FR')+' MAD</div>'
-    +'<div style="font-size:12px;opacity:.7;margin-top:4px">Total dépenses détectées</div></div>'
+    +'<div><div style="font-family:var(--font-main);font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.12em;opacity:.55;margin-bottom:8px">Audit Financier — '+periodes+'</div>'
+    +'<div style="font-family:var(--font-main);font-size:36px;font-weight:700;color:var(--signal);letter-spacing:-.02em">−'+Math.round(grandTotal).toLocaleString('fr-FR')+' MAD</div>'
+    +'<div style="font-size:12px;opacity:.55;margin-top:6px">Total dépenses détectées</div></div>'
     +'<div style="display:flex;gap:24px;flex-wrap:wrap">'
-    +(resume.total_credits?'<div><div style="font-family:Montserrat,sans-serif;font-size:18px;font-weight:800;color:#4ade80">+'+Math.round(resume.total_credits).toLocaleString('fr-FR')+' MAD</div><div style="font-size:11px;opacity:.6">Entrées</div></div>':'')
-    +'<div><div style="font-family:Montserrat,sans-serif;font-size:18px;font-weight:800;color:#93c5fd">'+relevePdfs.filter(function(p){return p.status==='ready';}).length+' relevé(s)</div><div style="font-size:11px;opacity:.6">Analysés</div></div>'
+    +(resume.total_credits?'<div><div style="font-family:var(--font-main);font-size:18px;font-weight:600;color:#86efac">+'+Math.round(resume.total_credits).toLocaleString('fr-FR')+' MAD</div><div style="font-size:11px;opacity:.55;text-transform:uppercase;letter-spacing:.08em;margin-top:2px">Entrées</div></div>':'')
+    +'<div><div style="font-family:var(--font-main);font-size:18px;font-weight:600;color:#fff">'+relevePdfs.filter(function(p){return p.status==='ready';}).length+' relevé(s)</div><div style="font-size:11px;opacity:.55;text-transform:uppercase;letter-spacing:.08em;margin-top:2px">Analysés</div></div>'
     +'</div></div></div>';
 
   // Alertes
   if(alertes.length){
     html+='<div class="card" style="margin-bottom:16px;border-color:var(--orange-border);background:var(--orange-bg)">'
-      +'<div style="font-family:Montserrat,sans-serif;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:1.5px;color:var(--orange);margin-bottom:10px">⚠️ Alertes</div>'
+      +'<div style="font-family:'Jost',sans-serif;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:1.5px;color:var(--orange);margin-bottom:10px">⚠️ Alertes</div>'
       +alertes.map(function(a){return '<div style="font-size:13px;padding:6px 0;border-bottom:1px solid var(--orange-border)">'+a+'</div>';}).join('')
       +'</div>';
   }
@@ -1081,7 +1111,7 @@ function renderReleveResults(){
   // Insights DG
   if(insights.length){
     html+='<div class="card" style="margin-bottom:16px;border-color:var(--blue-border);background:var(--blue-bg)">'
-      +'<div style="font-family:Montserrat,sans-serif;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:1.5px;color:var(--blue);margin-bottom:10px">💡 Observations stratégiques</div>'
+      +'<div style="font-family:'Jost',sans-serif;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:1.5px;color:var(--blue);margin-bottom:10px">💡 Observations stratégiques</div>'
       +insights.map(function(ins){return '<div style="font-size:13px;padding:8px 0;border-bottom:1px solid var(--blue-border);line-height:1.6">'+ins+'</div>';}).join('')
       +'</div>';
   }
@@ -1091,8 +1121,8 @@ function renderReleveResults(){
     var recTotal=recurrents.reduce(function(s,r){return s+(+r.montant||0);},0);
     html+='<div class="card" style="margin-bottom:16px">'
       +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">'
-      +'<div style="font-family:Montserrat,sans-serif;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:1.5px;color:var(--purple)">🔄 Charges récurrentes identifiées</div>'
-      +'<div style="font-family:Montserrat,sans-serif;font-weight:900;color:var(--red)">−'+Math.round(recTotal).toLocaleString('fr-FR')+' MAD/mois</div>'
+      +'<div style="font-family:'Jost',sans-serif;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:1.5px;color:var(--purple)">🔄 Charges récurrentes identifiées</div>'
+      +'<div style="font-family:'Jost',sans-serif;font-weight:900;color:var(--red)">−'+Math.round(recTotal).toLocaleString('fr-FR')+' MAD/mois</div>'
       +'</div>'
       +'<div style="display:flex;flex-wrap:wrap;gap:8px">'
       +recurrents.map(function(r){
@@ -1113,8 +1143,8 @@ function renderReleveResults(){
     var pct=grandTotal>0?((tot/grandTotal)*100).toFixed(0):0;
     html+='<div class="card" style="padding:18px">'
       +'<div style="display:flex;justify-content:space-between;margin-bottom:8px">'
-      +'<span style="font-family:Montserrat,sans-serif;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:'+cat.color+'">'+cat.label+'</span>'
-      +'<span style="font-family:Montserrat,sans-serif;font-weight:900;color:var(--red)">−'+Math.round(tot).toLocaleString('fr-FR')+'</span>'
+      +'<span style="font-family:'Jost',sans-serif;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:'+cat.color+'">'+cat.label+'</span>'
+      +'<span style="font-family:'Jost',sans-serif;font-weight:900;color:var(--red)">−'+Math.round(tot).toLocaleString('fr-FR')+'</span>'
       +'</div>'
       +'<div style="background:var(--border);border-radius:4px;height:6px;margin-bottom:10px"><div style="background:'+cat.color+';height:6px;border-radius:4px;width:'+pct+'%"></div></div>'
       +'<div style="font-size:11px;color:var(--muted);margin-bottom:8px">'+pct+'% des dépenses · '+items.length+' transaction'+(items.length>1?'s':'')+'</div>'
@@ -1419,7 +1449,7 @@ function renderCustomCharges(){
       +'<input value="'+item.name+'" style="flex:1;min-width:120px;font-weight:600;font-size:13px;border:none;border-bottom:1.5px solid var(--border);background:transparent;outline:none;padding:2px 4px" '
       +'onchange="updateCustom(\''+type+'\',\''+item.id+'\',\'name\',this.value)">'
       +'<div style="display:flex;align-items:center;gap:6px">'
-      +'<input type="number" value="'+item.amount+'" min="0" style="width:90px;text-align:right;font-weight:700;font-family:Montserrat,sans-serif" '
+      +'<input type="number" value="'+item.amount+'" min="0" style="width:90px;text-align:right;font-weight:700;font-family:'Jost',sans-serif" '
       +'onchange="updateCustom(\''+type+'\',\''+item.id+'\',\'amount\',+this.value)">'
       +'<span style="font-size:12px;color:var(--muted)">'+(type==='fixed'?'MAD/mois':'MAD/cde')+'</span>'
       +'<button onclick="deleteCustom(\''+type+'\',\''+item.id+'\')" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:18px;line-height:1;padding:0 4px">×</button>'
@@ -1477,7 +1507,7 @@ function renderPersoList(){
         +'<input value="'+e.name+'" style="flex:1;min-width:120px;font-weight:600;font-size:13px;border:none;border-bottom:1.5px solid var(--border);background:transparent;outline:none;padding:2px 4px" '
         +'onchange="updatePerso(\''+e.id+'\',\'name\',this.value)">'
         +'<div style="display:flex;align-items:center;gap:6px">'
-        +'<input type="number" value="'+e.amount+'" min="0" style="width:90px;text-align:right;font-weight:700;font-family:Montserrat,sans-serif" '
+        +'<input type="number" value="'+e.amount+'" min="0" style="width:90px;text-align:right;font-weight:700;font-family:'Jost',sans-serif" '
         +'onchange="updatePerso(\''+e.id+'\',\'amount\',+this.value)">'
         +'<span style="font-size:12px;color:var(--muted)">MAD/mois</span>'
         +'<button onclick="deletePerso(\''+e.id+'\')" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:18px;line-height:1;padding:0 4px">×</button>'
@@ -1760,7 +1790,7 @@ async function fetchMetaAPI(manual){
     +'&time_range={"since":"'+since+'","until":"'+until+'"}'
     +'&level=account'
     +'&access_token='+encodeURIComponent(cfg.token);
-  if(dot) dot.style.background='#f59e0b';
+  if(dot) dot.style.background='var(--warning)';
   if(msg) msg.textContent='⏳ Récupération dépenses Meta…';
   try{
     var r=await fetch(url);
@@ -1892,7 +1922,7 @@ function renderCommandes(){
     var pct=((count/eg.total)*100).toFixed(0);
     return '<tr>'
       +'<td data-label="Catégorie"><b style="color:'+color+'">'+label+'</b></td>'
-      +'<td data-label="Nb"><b style="font-family:Montserrat,sans-serif;font-size:15px">'+count+'</b></td>'
+      +'<td data-label="Nb"><b style="font-family:'Jost',sans-serif;font-size:15px">'+count+'</b></td>'
       +'<td data-label="%"><div style="display:flex;align-items:center;gap:8px"><div style="background:var(--border);border-radius:4px;height:8px;flex:1;min-width:60px"><div style="background:'+color+';height:8px;border-radius:4px;width:'+pct+'%"></div></div>'+pct+'%</div></td>'
       +'</tr>';
   }
@@ -2007,7 +2037,7 @@ function showSnapshotBanner(msg,showLoad,snap){
   if(!el) return;
   el.style.display='flex';
   el.innerHTML='<span>'+msg+'</span>'
-    +(showLoad&&snap?'<button onclick="applySnapshot()" style="background:#92400e;color:#fff;border:none;border-radius:6px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:Montserrat,sans-serif;flex-shrink:0">Afficher snapshot</button>':'');
+    +(showLoad&&snap?'<button onclick="applySnapshot()" style="background:var(--ink);color:#fff;border:none;border-radius:var(--radius-btn);padding:6px 12px;font-size:11px;font-weight:600;cursor:pointer;font-family:var(--font-main);flex-shrink:0;text-transform:uppercase;letter-spacing:.06em">Afficher snapshot</button>':'');
   if(showLoad&&snap) window._lastSnap=snap;
 }
 
