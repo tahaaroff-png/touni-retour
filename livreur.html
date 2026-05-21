@@ -468,6 +468,11 @@ async function initApp(){
     document.getElementById('livreur-name-card').style.display='block';
     document.getElementById('livreur-name-disp').textContent='Non défini';
   }
+  // Restaurer la page et le type actifs (persistance refresh)
+  var savedTab=localStorage.getItem('touni_livreur_tab');
+  if(savedTab && ['add','hist'].indexOf(savedTab)>=0) showPage(savedTab,true);
+  var savedType=localStorage.getItem('touni_livreur_type');
+  if(savedType && ['recu','dep'].indexOf(savedType)>=0) setType(savedType,true);
   await loadAll();
 }
 
@@ -541,27 +546,31 @@ function renderBalance(){
   document.getElementById('bal-period-detail').textContent=reste>=0?'tout l’historique':'⚠ découvert';
 }
 
-// ── Tabs ──
-function showPage(name){
+// ── Tabs (avec persistance) ──
+function showPage(name,fromInit){
   document.querySelectorAll('.page').forEach(function(p){p.classList.remove('active');});
   document.querySelectorAll('.tab').forEach(function(t){t.classList.remove('active');});
-  document.getElementById('page-'+name).classList.add('active');
-  document.getElementById('tab-'+name).classList.add('active');
+  var pg=document.getElementById('page-'+name); if(pg) pg.classList.add('active');
+  var tb=document.getElementById('tab-'+name); if(tb) tb.classList.add('active');
+  if(!fromInit) localStorage.setItem('touni_livreur_tab', name);
   if(name==='hist') loadAll();
 }
 
-// ── Type switch (Argent reçu / Dépense) ──
-function setType(t){
+// ── Type switch (Argent reçu / Dépense — avec persistance) ──
+function setType(t,fromInit){
   currentType=t;
   document.querySelectorAll('.ts-btn').forEach(function(b){b.classList.remove('active');});
-  document.querySelector('.ts-'+t).classList.add('active');
-  document.getElementById('form-recu').style.display=t==='recu'?'block':'none';
-  document.getElementById('form-dep').style.display=t==='dep'?'block':'none';
-  // Focus auto sur le montant
-  setTimeout(function(){
-    var inp=document.getElementById((t==='recu'?'r':'d')+'-montant');
-    if(inp) inp.focus();
-  },100);
+  var btn=document.querySelector('.ts-'+t); if(btn) btn.classList.add('active');
+  var fr=document.getElementById('form-recu'); if(fr) fr.style.display=t==='recu'?'block':'none';
+  var fd=document.getElementById('form-dep'); if(fd) fd.style.display=t==='dep'?'block':'none';
+  if(!fromInit) localStorage.setItem('touni_livreur_type', t);
+  // Focus auto sur le montant (sauf à l'init pour éviter d'ouvrir le clavier)
+  if(!fromInit){
+    setTimeout(function(){
+      var inp=document.getElementById((t==='recu'?'r':'d')+'-montant');
+      if(inp) inp.focus();
+    },100);
+  }
 }
 
 // ── Détails par fournisseur ──

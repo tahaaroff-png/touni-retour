@@ -1434,6 +1434,8 @@ async function initApp(){
   // Restaurer la page active après le chargement complet
   var savedPage=localStorage.getItem('touni_activepage')||'overview';
   restorePageNav(savedPage);
+  // Restaurer le sous-onglet Finances si on est sur Finances
+  if(savedPage==='finances') restoreFinTab();
 }
 
 function setDefaultDates(){
@@ -2480,8 +2482,20 @@ function finTab(name,btn){
   ['fournisseurs','virements','meta'].forEach(function(t){
     document.getElementById('tab-'+t).style.display=t===name?'block':'none';
   });
-  document.querySelectorAll('.tab').forEach(function(b){b.classList.remove('active');});
-  btn.classList.add('active');
+  document.querySelectorAll('.tabs .tab').forEach(function(b){b.classList.remove('active');});
+  if(btn) btn.classList.add('active');
+  else {
+    // Restauré sans clic : retrouver le bon bouton
+    var idx={fournisseurs:0,virements:1,meta:2}[name];
+    var tabs=document.querySelectorAll('#page-finances .tabs .tab');
+    if(tabs[idx]) tabs[idx].classList.add('active');
+  }
+  localStorage.setItem('touni_fintab', name);
+}
+function restoreFinTab(){
+  var saved=localStorage.getItem('touni_fintab')||'fournisseurs';
+  if(['fournisseurs','virements','meta'].indexOf(saved)===-1) saved='fournisseurs';
+  finTab(saved,null);
 }
 
 // ── Utils ──
