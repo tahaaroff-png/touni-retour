@@ -203,15 +203,24 @@ html,body{font-family:var(--font-main);background:var(--bg);color:var(--text);mi
 .hist-amt-pos{color:var(--green)}
 .hist-amt-neg{color:var(--signal)}
 
-/* Lightbox photo (clic photo dans historique) */
-.lightbox{position:fixed;inset:0;background:rgba(5,5,5,.92);z-index:900;display:none;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(4px)}
+/* Lightbox (modal compact + bande thumbnails) */
+.lightbox{position:fixed;inset:0;background:rgba(5,5,5,.75);z-index:900;display:none;align-items:center;justify-content:center;padding:16px;backdrop-filter:blur(4px);transition:opacity .15s ease}
 .lightbox.open{display:flex}
-.lightbox img{max-width:100%;max-height:90vh;object-fit:contain;border-radius:var(--radius)}
-.lightbox-close{position:absolute;top:14px;right:14px;background:rgba(255,255,255,.15);border:none;color:#fff;font-size:24px;width:42px;height:42px;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:2}
-.lightbox-nav{position:absolute;top:50%;transform:translateY(-50%);background:rgba(255,255,255,.15);border:none;color:#fff;font-size:32px;width:48px;height:48px;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:2;line-height:1}
-.lightbox-nav.prev{left:14px}
-.lightbox-nav.next{right:14px}
-.lightbox-counter{position:absolute;bottom:24px;left:50%;transform:translateX(-50%);background:rgba(5,5,5,.7);color:#fff;padding:6px 14px;border-radius:20px;font-family:var(--font-main);font-size:12px;font-weight:600;letter-spacing:.04em;backdrop-filter:blur(4px);z-index:2}
+.lightbox-modal{background:#fff;border-radius:12px;max-width:560px;width:100%;max-height:90vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 24px 64px rgba(0,0,0,.25)}
+.lightbox-head{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--border);background:var(--surface);flex-shrink:0}
+.lightbox-counter-text{font-family:var(--font-main);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.lightbox-close{background:var(--bg-soft);border:1px solid var(--border);color:var(--text);font-size:20px;width:34px;height:34px;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1;font-family:var(--font-main);padding:0;touch-action:manipulation;transition:.2s ease}
+.lightbox-close:active{background:var(--signal);color:#fff;border-color:var(--signal)}
+.lightbox-imgwrap{position:relative;background:#111;display:flex;align-items:center;justify-content:center;min-height:200px;flex:1;overflow:hidden}
+.lightbox-imgwrap img{max-width:100%;max-height:55vh;object-fit:contain;display:block}
+.lightbox-nav{position:absolute;top:50%;transform:translateY(-50%);background:rgba(255,255,255,.9);border:none;color:#111;font-size:28px;width:40px;height:40px;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:2;line-height:1;font-family:var(--font-main);padding:0;box-shadow:0 2px 8px rgba(0,0,0,.2);touch-action:manipulation}
+.lightbox-nav.prev{left:10px}
+.lightbox-nav.next{right:10px}
+.lightbox-strip{display:flex;gap:6px;padding:10px 14px;background:var(--surface);border-top:1px solid var(--border);overflow-x:auto;flex-shrink:0}
+.lightbox-strip::-webkit-scrollbar{height:4px}
+.lightbox-strip::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+.lightbox-strip img{width:56px;height:56px;object-fit:cover;border-radius:6px;cursor:pointer;flex-shrink:0;transition:.2s ease;border:2px solid transparent;opacity:.55}
+.lightbox-strip img.active{border-color:var(--ink);opacity:1}
 
 @media (min-width:768px){
   body{background:var(--bg-soft)}
@@ -392,12 +401,19 @@ html,body{font-family:var(--font-main);background:var(--bg);color:var(--text);mi
 <div class="toast" id="toast"><span class="toast-ic">✓</span><span id="toast-msg"></span></div>
 
 <!-- Lightbox photo -->
-<div class="lightbox" id="lightbox" onclick="if(event.target===this)this.classList.remove('open')">
-  <button class="lightbox-close" onclick="document.getElementById('lightbox').classList.remove('open')">×</button>
-  <button class="lightbox-nav prev" onclick="event.stopPropagation();lightboxNav(-1)">‹</button>
-  <button class="lightbox-nav next" onclick="event.stopPropagation();lightboxNav(1)">›</button>
-  <img id="lightbox-img" src="" alt="">
-  <div class="lightbox-counter" id="lightbox-counter" style="display:none"></div>
+<div class="lightbox" id="lightbox">
+  <div class="lightbox-modal">
+    <div class="lightbox-head">
+      <span class="lightbox-counter-text">📷 <span id="lightbox-counter">1 / 1</span></span>
+      <button type="button" class="lightbox-close" id="lightbox-close">×</button>
+    </div>
+    <div class="lightbox-imgwrap">
+      <button type="button" class="lightbox-nav prev" id="lightbox-prev">‹</button>
+      <button type="button" class="lightbox-nav next" id="lightbox-next">›</button>
+      <img id="lightbox-img" src="" alt="">
+    </div>
+    <div class="lightbox-strip" id="lightbox-strip"></div>
+  </div>
 </div>
 
 <script>
@@ -872,30 +888,83 @@ function renderHistory(){
   content.innerHTML=html;
 }
 
-// ── Lightbox (gallery navigable) ──
+// ── Lightbox (gallery navigable, modal compact + thumbnails) ──
 var lightboxList=[], lightboxIdx=0;
 function openLightbox(url){ openLightboxGallery([url]); }
-function openLightboxGallery(urls){
+function openLightboxGallery(urls,startIdx){
   if(!urls||!urls.length) return;
-  lightboxList=urls; lightboxIdx=0;
+  lightboxList=urls; lightboxIdx=startIdx||0;
   renderLightbox();
-  document.getElementById('lightbox').classList.add('open');
+  var lb=document.getElementById('lightbox');
+  lb.classList.add('open');
+  lb.style.opacity=''; lb.style.pointerEvents='';
+}
+function closeLightboxLivreur(){
+  var lb=document.getElementById('lightbox');
+  if(!lb) return;
+  // Anti click-through iOS : opacity 0 + pointer-events none avant remove class
+  lb.style.pointerEvents='none';
+  lb.style.opacity='0';
+  setTimeout(function(){
+    lb.classList.remove('open');
+    lb.style.opacity=''; lb.style.pointerEvents='';
+  },150);
 }
 function renderLightbox(){
-  var img=document.getElementById('lightbox-img');
-  img.src=lightboxList[lightboxIdx];
+  document.getElementById('lightbox-img').src=lightboxList[lightboxIdx];
   var counter=document.getElementById('lightbox-counter');
-  if(counter){
-    if(lightboxList.length>1){
-      counter.textContent=(lightboxIdx+1)+' / '+lightboxList.length;
-      counter.style.display='block';
-    } else counter.style.display='none';
+  var prev=document.getElementById('lightbox-prev'); var next=document.getElementById('lightbox-next');
+  if(lightboxList.length>1){
+    counter.textContent=(lightboxIdx+1)+' / '+lightboxList.length;
+    prev.style.display='flex'; next.style.display='flex';
+  } else {
+    counter.textContent='1 / 1';
+    prev.style.display='none'; next.style.display='none';
+  }
+  var strip=document.getElementById('lightbox-strip');
+  if(lightboxList.length>1){
+    strip.style.display='flex';
+    strip.innerHTML=lightboxList.map(function(url,i){
+      return '<img data-idx="'+i+'" src="'+url+'" class="'+(i===lightboxIdx?'active':'')+'">';
+    }).join('');
+    Array.from(strip.querySelectorAll('img')).forEach(function(t){
+      var go=function(e){e.preventDefault();e.stopPropagation();lightboxIdx=parseInt(t.dataset.idx);renderLightbox();};
+      t.addEventListener('touchend',go,{passive:false});
+      t.addEventListener('click',go);
+    });
+  } else {
+    strip.style.display='none';
   }
 }
 function lightboxNav(dir){
   lightboxIdx=(lightboxIdx+dir+lightboxList.length)%lightboxList.length;
   renderLightbox();
 }
+
+// Handlers anti click-through sur la lightbox livreur (attachés au boot)
+function attachLightboxHandlers(){
+  var lb=document.getElementById('lightbox');
+  var closeBtn=document.getElementById('lightbox-close');
+  var prev=document.getElementById('lightbox-prev');
+  var next=document.getElementById('lightbox-next');
+  if(!lb||!closeBtn) return;
+  var stopAndClose=function(e){e.preventDefault();e.stopPropagation();closeLightboxLivreur();};
+  closeBtn.addEventListener('touchend',stopAndClose,{passive:false});
+  closeBtn.addEventListener('click',stopAndClose);
+  var stopAndPrev=function(e){e.preventDefault();e.stopPropagation();lightboxNav(-1);};
+  prev.addEventListener('touchend',stopAndPrev,{passive:false});
+  prev.addEventListener('click',stopAndPrev);
+  var stopAndNext=function(e){e.preventDefault();e.stopPropagation();lightboxNav(1);};
+  next.addEventListener('touchend',stopAndNext,{passive:false});
+  next.addEventListener('click',stopAndNext);
+  // Clic backdrop = close (mais pas clic sur modal)
+  lb.addEventListener('click',function(e){
+    if(e.target===lb) closeLightboxLivreur();
+  });
+}
+document.addEventListener('DOMContentLoaded',attachLightboxHandlers);
+// Attache aussi tout de suite au cas où DOMContentLoaded est déjà passé
+if(document.readyState!=='loading') attachLightboxHandlers();
 
 // ── Toast ──
 var toastTimer;
