@@ -9,6 +9,8 @@
 <link href="https://fonts.googleapis.com/css2?family=Jost:wght@400;500;600;700;800&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+/* Désactive l'overlay iOS Image Playground / BÊTA sur les photos */
+img{-webkit-touch-callout:none}
 :root{
   /* ─ DS Touni — Surfaces ─ */
   --bg:#ffffff;--surface:#ffffff;--bg-soft:#f5f5f5;
@@ -415,9 +417,12 @@ td{padding:12px 14px;vertical-align:middle}
           <div style="font-family:var(--font-main);font-size:30px;font-weight:700;color:#fff;font-variant-numeric:tabular-nums" id="liv-bal-reste">— MAD</div>
         </div>
       </div>
-      <button onclick="toggleEnvoisDetail()" id="liv-envois-toggle" style="width:100%;background:var(--bg-soft);border:none;border-top:1px solid var(--border);padding:11px;font-family:var(--font-main);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--secondary);cursor:pointer;transition:.3s ease">
-        Voir le détail des envois ▾
-      </button>
+      <div style="display:flex;background:var(--bg-soft);border-top:1px solid var(--border)">
+        <button onclick="toggleEnvoisDetail()" id="liv-envois-toggle" style="flex:1;background:transparent;border:none;padding:11px;font-family:var(--font-main);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--secondary);cursor:pointer;transition:.3s ease">
+          Voir le détail des envois ▾
+        </button>
+        <button onclick="refreshLivreurData()" id="liv-refresh-btn" title="Actualiser" style="background:transparent;border:none;border-left:1px solid var(--border);padding:0 18px;font-size:16px;cursor:pointer;color:var(--secondary);transition:.3s ease">↻</button>
+      </div>
       <div id="liv-envois-detail" style="display:none;padding:14px 20px;background:var(--bg-soft);border-top:1px solid var(--border);max-height:280px;overflow-y:auto"></div>
     </div>
 
@@ -1671,6 +1676,23 @@ async function deleteRecu(id){
     livreurRecus=livreurRecus.filter(function(r){return r.id!==id;});
     renderLivreurBalance();
   }catch(e){ alert('Erreur : '+e.message); }
+}
+
+// ── Refresh manuel des données livreur (recus + depenses) ──
+async function refreshLivreurData(){
+  var btn=document.getElementById('liv-refresh-btn');
+  if(btn){btn.style.transform='rotate(360deg)';btn.style.transition='transform .6s';}
+  try{
+    var res=await Promise.all([
+      sbGet('depenses_fournisseurs'),
+      sbGet('livreur_recus').catch(function(){return [];})
+    ]);
+    fournisseurs=res[0]; livreurRecus=res[1];
+    renderFournisseurs();
+    renderLivreurBalance();
+    renderOverview();
+  }catch(e){ console.warn('Refresh livreur:', e.message); }
+  setTimeout(function(){if(btn){btn.style.transform='';btn.style.transition='';}},700);
 }
 
 // ── OVERVIEW ──
