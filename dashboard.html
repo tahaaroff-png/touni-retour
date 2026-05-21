@@ -236,24 +236,6 @@ td{padding:12px 14px;vertical-align:middle}
 <!-- ══ APP ══════════════════════════════════════════════════════════ -->
 <div id="app-page" style="display:none">
 
-<!-- ── Date range bar (global) ── -->
-<div class="dr-bar" id="dr-bar">
-  <button class="dr-btn" id="dr-btn-day"       onclick="setFilter('day')">Aujourd'hui</button>
-  <button class="dr-btn" id="dr-btn-week"      onclick="setFilter('week')">Cette semaine</button>
-  <button class="dr-btn active" id="dr-btn-month" onclick="setFilter('month')">Ce mois</button>
-  <button class="dr-btn" id="dr-btn-prevmonth" onclick="setFilter('prevmonth')">Mois préc.</button>
-  <div class="dr-sep"></div>
-  <button class="dr-btn" id="dr-btn-custom"    onclick="setFilter('custom')">📅 Personnalisé</button>
-  <div class="dr-custom" id="dr-custom">
-    <input type="date" id="dr-from" onchange="applyCustom()">
-    <span style="color:var(--muted);font-size:12px">→</span>
-    <input type="date" id="dr-to"   onchange="applyCustom()">
-  </div>
-  <div class="dr-sep"></div>
-  <span class="dr-label" id="dr-label">—</span>
-  <span style="margin-left:auto;font-size:11px;color:var(--muted)">Dernier calcul : <span id="last-calc">—</span></span>
-</div>
-
 <header class="header">
   <img class="logo-img" src="/touni-logo.png" alt="Touni">
   <div class="header-sep"></div>
@@ -271,6 +253,24 @@ td{padding:12px 14px;vertical-align:middle}
     <button class="btn-logout" onclick="logout()">Déconnexion</button>
   </div>
 </header>
+
+<!-- ── Date range bar (global, sticky sous le header) ── -->
+<div class="dr-bar" id="dr-bar">
+  <button class="dr-btn" id="dr-btn-day"       onclick="setFilter('day')">Aujourd'hui</button>
+  <button class="dr-btn" id="dr-btn-week"      onclick="setFilter('week')">Cette semaine</button>
+  <button class="dr-btn active" id="dr-btn-month" onclick="setFilter('month')">Ce mois</button>
+  <button class="dr-btn" id="dr-btn-prevmonth" onclick="setFilter('prevmonth')">Mois préc.</button>
+  <div class="dr-sep"></div>
+  <button class="dr-btn" id="dr-btn-custom"    onclick="setFilter('custom')">📅 Personnalisé</button>
+  <div class="dr-custom" id="dr-custom">
+    <input type="date" id="dr-from" onchange="applyCustom()">
+    <span style="color:rgba(255,255,255,.5);font-size:12px">→</span>
+    <input type="date" id="dr-to"   onchange="applyCustom()">
+  </div>
+  <div class="dr-sep"></div>
+  <span class="dr-label" id="dr-label">—</span>
+  <span style="margin-left:auto;font-size:11px;color:rgba(255,255,255,.5)">Dernier calcul : <span id="last-calc">—</span></span>
+</div>
 
 <nav class="mobile-nav">
   <div class="mobile-nav-inner">
@@ -1622,22 +1622,27 @@ function renderAll(){
 function renderLivreurBalance(){
   var elRecu=document.getElementById('liv-bal-recu');
   if(!elRecu) return;
-  var totalRecu=(livreurRecus||[]).reduce(function(s,r){return s+(+r.montant_mad||0);},0);
-  var livDep=(fournisseurs||[]).filter(function(r){return r.source==='livreur';});
-  var totalDep=livDep.reduce(function(s,r){return s+(+r.montant_mad||0);},0);
+  // Filtre date : seulement les reçus + dépenses dans la période sélectionnée
+  var recusInRange=(livreurRecus||[]).filter(function(r){return inDateRange(r.date);});
+  var depInRange=(fournisseurs||[]).filter(function(r){return r.source==='livreur' && inDateRange(r.date);});
+  var totalRecu=recusInRange.reduce(function(s,r){return s+(+r.montant_mad||0);},0);
+  var totalDep=depInRange.reduce(function(s,r){return s+(+r.montant_mad||0);},0);
   var reste=totalRecu-totalDep;
   elRecu.textContent=Math.round(totalRecu).toLocaleString('fr-FR')+' MAD';
   document.getElementById('liv-bal-dep').textContent=Math.round(totalDep).toLocaleString('fr-FR')+' MAD';
   var elReste=document.getElementById('liv-bal-reste');
   elReste.textContent=(reste>=0?'':'−')+Math.abs(Math.round(reste)).toLocaleString('fr-FR')+' MAD';
   elReste.style.color=reste<0?'#fda4a4':'#fff';
-  // Auto-affiche le détail des envois s'il y a au moins 1 reçu (avec justificatifs)
+  // Auto-affiche le détail des envois s'il y a au moins 1 reçu dans la période
   var det=document.getElementById('liv-envois-detail');
   var btn=document.getElementById('liv-envois-toggle');
-  if(det && btn && (livreurRecus||[]).length){
+  if(det && btn && recusInRange.length){
     det.style.display='block';
     btn.innerHTML='Masquer le détail ▴';
     renderEnvoisDetail();
+  } else if(det && btn){
+    det.style.display='none';
+    btn.innerHTML='Voir le détail des envois ▾';
   }
 }
 
@@ -1657,9 +1662,10 @@ function toggleEnvoisDetail(){
 function renderEnvoisDetail(){
   var det=document.getElementById('liv-envois-detail');
   if(!det) return;
-  var recus=(livreurRecus||[]).slice().sort(function(a,b){return String(b.created_at).localeCompare(String(a.created_at));});
+  // Filtre date : ne montrer que les reçus de la période sélectionnée
+  var recus=(livreurRecus||[]).filter(function(r){return inDateRange(r.date);}).slice().sort(function(a,b){return String(b.created_at).localeCompare(String(a.created_at));});
   if(!recus.length){
-    det.innerHTML='<div style="text-align:center;padding:20px;color:var(--muted);font-size:12px">Aucun envoi enregistré par le livreur</div>';
+    det.innerHTML='<div style="text-align:center;padding:20px;color:var(--muted);font-size:12px">Aucun envoi sur cette période</div>';
     return;
   }
   det.innerHTML=recus.map(function(r){

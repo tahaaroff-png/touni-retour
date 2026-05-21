@@ -312,6 +312,12 @@ html,body{font-family:var(--font-main);background:var(--bg);color:var(--text);mi
 
   <!-- ─ Form ARGENT REÇU ─ -->
   <form id="form-recu" onsubmit="event.preventDefault();submitRecu()">
+    <div class="fg">
+      <label>Date de la saisie</label>
+      <input type="date" id="r-date" class="date-input">
+      <div class="hint" style="font-size:11px;color:var(--muted);margin-top:6px">Par défaut aujourd'hui. Modifiez si vous saisissez en retard.</div>
+    </div>
+
     <div class="fg fg-money">
       <div class="suffix">
         <input type="number" id="r-montant" placeholder="0" min="0" step="1" inputmode="numeric">
@@ -340,6 +346,12 @@ html,body{font-family:var(--font-main);background:var(--bg);color:var(--text);mi
 
   <!-- ─ Form DÉPENSE (caché par défaut) ─ -->
   <form id="form-dep" style="display:none" onsubmit="event.preventDefault();submitDep()">
+    <div class="fg">
+      <label>Date de la saisie</label>
+      <input type="date" id="d-date" class="date-input">
+      <div class="hint" style="font-size:11px;color:var(--muted);margin-top:6px">Par défaut aujourd'hui. Modifiez si vous saisissez en retard.</div>
+    </div>
+
     <div class="fg fg-money">
       <div class="suffix">
         <input type="number" id="d-montant" placeholder="0" min="0" step="1" inputmode="numeric">
@@ -468,6 +480,10 @@ async function initApp(){
     document.getElementById('livreur-name-card').style.display='block';
     document.getElementById('livreur-name-disp').textContent='Non défini';
   }
+  // Pré-remplir les dates avec aujourd'hui (modifiable par le livreur)
+  var today=new Date().toISOString().split('T')[0];
+  var rDate=document.getElementById('r-date'); if(rDate) rDate.value=today;
+  var dDate=document.getElementById('d-date'); if(dDate) dDate.value=today;
   // Restaurer la page et le type actifs (persistance refresh)
   var savedTab=localStorage.getItem('touni_livreur_tab');
   if(savedTab && ['add','hist'].indexOf(savedTab)>=0) showPage(savedTab,true);
@@ -734,8 +750,10 @@ async function submitRecu(){
     }
     btn.textContent='Enregistrement…';
     var today=new Date().toISOString().split('T')[0];
+    var dateInput=document.getElementById('r-date').value;
+    var saisieDate=dateInput||today;
     var row=await sbInsertRecu({
-      date:today, montant_mad:montant, livreur_name:livreurName,
+      date:saisieDate, montant_mad:montant, livreur_name:livreurName,
       photo_url:photoUrls[0]||null,
       photos_json:photoUrls.length?photoUrls:null,
       notes:notes||null
@@ -773,8 +791,10 @@ async function submitDep(){
     }
     btn.textContent='Enregistrement…';
     var today=new Date().toISOString().split('T')[0];
+    var dateInput=document.getElementById('d-date').value;
+    var saisieDate=dateInput||today;
     var row=await sbInsertDepense({
-      date:today, montant_mad:montant, nb_commandes:nbArticles,
+      date:saisieDate, montant_mad:montant, nb_commandes:nbArticles,
       notes:notes||null, source:'livreur', livreur_name:livreurName,
       photo_url:photoUrls[0]||null,
       photos_json:photoUrls.length?photoUrls:null,
@@ -795,6 +815,9 @@ async function submitDep(){
 function resetRecu(){
   document.getElementById('r-montant').value='';
   document.getElementById('r-notes').value='';
+  // Re-remplir la date avec aujourd'hui
+  var today=new Date().toISOString().split('T')[0];
+  document.getElementById('r-date').value=today;
   recuPhotos=[];
   document.getElementById('r-photo-input').value='';
   renderPhotoPreview('recu');
@@ -803,6 +826,9 @@ function resetDep(){
   document.getElementById('d-montant').value='';
   document.getElementById('d-nb').value='';
   document.getElementById('d-notes').value='';
+  // Re-remplir la date avec aujourd'hui
+  var today=new Date().toISOString().split('T')[0];
+  document.getElementById('d-date').value=today;
   detailRows=[]; renderDetailRows();
   document.getElementById('details-box').classList.remove('open');
   document.getElementById('details-toggle').classList.remove('open');
