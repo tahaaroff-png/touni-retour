@@ -1652,7 +1652,8 @@ function renderEnvoisDetail(){
   }
   det.innerHTML=recus.map(function(r){
     var dt=new Date(r.date+'T12:00:00').toLocaleDateString('fr-FR',{day:'2-digit',month:'short'});
-    var photoTag=r.photo_url?'<button onclick="event.stopPropagation();openLightbox(\''+String(r.photo_url).replace(/'/g,"\\'")+'\')" style="background:transparent;border:1px solid var(--border);border-radius:var(--radius-btn);padding:4px 10px;font-size:11px;font-family:var(--font-main);font-weight:600;color:var(--text);cursor:pointer">📷 Capture</button>':'';
+    var rUrls=(r.photos_json && Array.isArray(r.photos_json) && r.photos_json.length)?r.photos_json:(r.photo_url?[r.photo_url]:[]);
+    var photoTag=rUrls.length?'<button onclick="event.stopPropagation();openLightboxGallery('+JSON.stringify(rUrls).replace(/"/g,'&quot;')+')" style="background:transparent;border:1px solid var(--border);border-radius:var(--radius-btn);padding:4px 10px;font-size:11px;font-family:var(--font-main);font-weight:600;color:var(--text);cursor:pointer">📷 '+(rUrls.length>1?rUrls.length+' captures':'Capture')+'</button>':'';
     var notes=r.notes?'<div style="font-size:11px;color:var(--muted);margin-top:3px">'+r.notes+'</div>':'';
     return '<div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border)">'
       +'<div style="font-size:11px;color:var(--muted);min-width:60px">'+dt+'</div>'
@@ -1796,11 +1797,15 @@ function renderFournisseurs(){
       var name=r.livreur_name||'Livreur';
       sourceBadge='<div style="display:inline-flex;align-items:center;gap:4px;margin-top:4px;padding:2px 8px;background:var(--bg-soft);border:1px solid var(--border);border-radius:var(--radius-btn);font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--secondary)">🚗 '+name+'</div>';
     }
-    // Photo thumbnail
+    // Photo thumbnail (premier + badge "+N" si multi)
     var photoTag='';
-    if(r.photo_url){
-      var safeUrl=String(r.photo_url).replace(/'/g,"\\'");
-      photoTag='<img onclick="openLightbox(\''+safeUrl+'\')" src="'+r.photo_url+'" alt="Photo" style="width:32px;height:32px;object-fit:cover;border-radius:var(--radius-btn);border:1px solid var(--border);cursor:pointer;margin-left:6px;vertical-align:middle" title="Voir photo justificative">';
+    var photoUrls=(r.photos_json && Array.isArray(r.photos_json) && r.photos_json.length)?r.photos_json:(r.photo_url?[r.photo_url]:[]);
+    if(photoUrls.length){
+      var thumb=photoUrls[0];
+      var extraBadge=photoUrls.length>1?'<span style="position:absolute;bottom:-2px;right:-2px;background:#151515;color:#fff;font-size:9px;font-weight:700;padding:1px 5px;border-radius:8px;border:1.5px solid #fff;line-height:1.3;font-variant-numeric:tabular-nums">+'+(photoUrls.length-1)+'</span>':'';
+      photoTag='<span style="position:relative;display:inline-block;margin-left:6px;vertical-align:middle">'
+        +'<img onclick="event.stopPropagation();openLightboxGallery('+JSON.stringify(photoUrls).replace(/"/g,'&quot;')+')" src="'+thumb+'" alt="Photo" style="width:32px;height:32px;object-fit:cover;border-radius:var(--radius-btn);border:1px solid var(--border);cursor:pointer;display:block" title="Voir photos">'
+        +extraBadge+'</span>';
     }
     // Détails par fournisseur
     var detailsHtml='';
@@ -1831,7 +1836,7 @@ function openDepenseDetail(id){
   var reste=totalRecu-totalDep;
   var dt=new Date(r.date+'T12:00:00').toLocaleDateString('fr-FR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});
   var time=new Date(r.created_at).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
-  var safeUrl=r.photo_url?String(r.photo_url).replace(/'/g,"\\'"):'';
+  var modalUrls=(r.photos_json && Array.isArray(r.photos_json) && r.photos_json.length)?r.photos_json:(r.photo_url?[r.photo_url]:[]);
   var detailsList='';
   if(r.details_json && Array.isArray(r.details_json) && r.details_json.length){
     detailsList='<div style="margin-top:14px"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:8px">Détail par fournisseur</div>'
@@ -1844,9 +1849,17 @@ function openDepenseDetail(id){
       }).join('')
       +'</div></div>';
   }
-  var photoSection=r.photo_url
-    ? '<div style="margin-top:14px"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:8px">Photo justificative</div><img src="'+r.photo_url+'" onclick="openLightbox(\''+safeUrl+'\')" style="width:100%;max-height:280px;object-fit:cover;border-radius:var(--radius);border:1px solid var(--border);cursor:zoom-in"></div>'
-    : '<div style="margin-top:14px;padding:14px;background:var(--bg-soft);border-radius:var(--radius-btn);text-align:center;font-size:12px;color:var(--muted)">Aucune photo justificative</div>';
+  var photoSection;
+  if(modalUrls.length){
+    var galleryStr=JSON.stringify(modalUrls).replace(/"/g,'&quot;');
+    var photosHtml=modalUrls.map(function(u,i){
+      return '<img src="'+u+'" onclick="openLightboxGallery('+galleryStr+','+i+')" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:var(--radius-btn);border:1px solid var(--border);cursor:zoom-in;display:block">';
+    }).join('');
+    var gridCols=modalUrls.length===1?'1fr':(modalUrls.length===2?'1fr 1fr':'1fr 1fr 1fr');
+    photoSection='<div style="margin-top:14px"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:8px;display:flex;justify-content:space-between"><span>Photos justificatives</span><span style="color:var(--text)">'+modalUrls.length+'</span></div><div style="display:grid;grid-template-columns:'+gridCols+';gap:6px">'+photosHtml+'</div></div>';
+  } else {
+    photoSection='<div style="margin-top:14px;padding:14px;background:var(--bg-soft);border-radius:var(--radius-btn);text-align:center;font-size:12px;color:var(--muted)">Aucune photo justificative</div>';
+  }
   var html='<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:18px;gap:14px">'
     +'<div><div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)">'+dt+' · '+time+'</div>'
     +'<div style="margin-top:4px;display:inline-flex;align-items:center;gap:6px;padding:3px 10px;background:var(--bg-soft);border:1px solid var(--border);border-radius:var(--radius-btn);font-size:11px;font-weight:600;color:var(--secondary);text-transform:uppercase;letter-spacing:.06em">🚗 '+(r.livreur_name||'Livreur')+'</div></div>'
@@ -1885,19 +1898,44 @@ function closeDepenseDetail(){
   if(modal) modal.style.display='none';
 }
 
-// ── Lightbox photo (clic sur thumbnail livreur) ──
-function openLightbox(url){
+// ── Lightbox photo gallery (clic sur thumbnail / button) ──
+var lightboxList=[], lightboxIdx=0;
+function openLightbox(url){ openLightboxGallery([url]); }
+function openLightboxGallery(urls,startIdx){
+  if(!urls||!urls.length) return;
+  lightboxList=urls; lightboxIdx=startIdx||0;
   var lb=document.getElementById('lightbox-admin');
   if(!lb){
     lb=document.createElement('div');
     lb.id='lightbox-admin';
-    lb.style.cssText='position:fixed;inset:0;background:rgba(5,5,5,.92);z-index:900;display:none;align-items:center;justify-content:center;padding:40px;backdrop-filter:blur(4px);cursor:zoom-out';
-    lb.innerHTML='<button style="position:absolute;top:18px;right:18px;background:rgba(255,255,255,.15);border:none;color:#fff;font-size:24px;width:44px;height:44px;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center">×</button><img id="lightbox-admin-img" src="" alt="" style="max-width:100%;max-height:90vh;object-fit:contain;border-radius:8px">';
-    lb.onclick=function(){lb.style.display='none';};
+    lb.style.cssText='position:fixed;inset:0;background:rgba(5,5,5,.92);z-index:900;display:none;align-items:center;justify-content:center;padding:40px;backdrop-filter:blur(4px)';
+    lb.innerHTML='<button onclick="document.getElementById(\'lightbox-admin\').style.display=\'none\'" style="position:absolute;top:18px;right:18px;background:rgba(255,255,255,.15);border:none;color:#fff;font-size:24px;width:44px;height:44px;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:2">×</button>'
+      +'<button onclick="event.stopPropagation();lightboxNavAdmin(-1)" style="position:absolute;top:50%;left:18px;transform:translateY(-50%);background:rgba(255,255,255,.15);border:none;color:#fff;font-size:32px;width:48px;height:48px;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:2;line-height:1" id="lb-prev">‹</button>'
+      +'<button onclick="event.stopPropagation();lightboxNavAdmin(1)" style="position:absolute;top:50%;right:18px;transform:translateY(-50%);background:rgba(255,255,255,.15);border:none;color:#fff;font-size:32px;width:48px;height:48px;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:2;line-height:1" id="lb-next">›</button>'
+      +'<img id="lightbox-admin-img" src="" alt="" style="max-width:100%;max-height:90vh;object-fit:contain;border-radius:8px">'
+      +'<div id="lb-counter" style="position:absolute;bottom:30px;left:50%;transform:translateX(-50%);background:rgba(5,5,5,.7);color:#fff;padding:7px 16px;border-radius:20px;font-family:var(--font-main);font-size:12px;font-weight:600;letter-spacing:.04em;display:none"></div>';
+    lb.onclick=function(e){if(e.target===lb) lb.style.display='none';};
     document.body.appendChild(lb);
   }
-  document.getElementById('lightbox-admin-img').src=url;
+  renderLightboxAdmin();
   lb.style.display='flex';
+}
+function renderLightboxAdmin(){
+  document.getElementById('lightbox-admin-img').src=lightboxList[lightboxIdx];
+  var counter=document.getElementById('lb-counter');
+  var prev=document.getElementById('lb-prev'); var next=document.getElementById('lb-next');
+  if(lightboxList.length>1){
+    counter.textContent=(lightboxIdx+1)+' / '+lightboxList.length;
+    counter.style.display='block';
+    prev.style.display='flex'; next.style.display='flex';
+  } else {
+    counter.style.display='none';
+    prev.style.display='none'; next.style.display='none';
+  }
+}
+function lightboxNavAdmin(dir){
+  lightboxIdx=(lightboxIdx+dir+lightboxList.length)%lightboxList.length;
+  renderLightboxAdmin();
 }
 
 // ── VIREMENTS ──

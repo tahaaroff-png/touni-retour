@@ -79,13 +79,24 @@ html,body{font-family:var(--font-main);background:var(--bg);color:var(--text);mi
 .btn-dep{background:#222}
 .btn-dep:active{background:#050505}
 
-/* ── Tabs (3 : Reçu / Dépense / Historique) ── */
+/* ── Tabs (2 : Saisir / Historique) ── */
 .tabs{background:var(--surface);border-bottom:1px solid var(--border);display:flex;position:sticky;top:70px;z-index:50}
-.tab{flex:1;padding:14px 8px;border:none;background:transparent;font-family:var(--font-main);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-1px;transition:.3s ease;white-space:nowrap}
+.tab{flex:1;padding:14px 8px;border:none;background:transparent;font-family:var(--font-main);font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;transition:.3s ease;white-space:nowrap}
 .tab.active{color:var(--text);border-bottom-color:var(--ink)}
-.tab.tab-recu.active{color:var(--green);border-bottom-color:var(--green)}
-.tab.tab-dep.active{color:var(--ink);border-bottom-color:var(--ink)}
-.tab .badge-count{display:inline-block;margin-left:4px;background:var(--signal);color:#fff;font-size:10px;font-weight:700;padding:1px 6px;border-radius:10px;min-width:18px;text-align:center}
+
+/* ── Type switch (gros cadres Reçu / Dépense — version visuelle) ── */
+.type-switch{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:20px}
+.ts-btn{background:var(--surface);border:2px solid var(--border);border-radius:var(--radius);padding:24px 12px;cursor:pointer;font-family:var(--font-main);transition:.3s ease;display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center;min-height:130px}
+.ts-btn:active{transform:scale(.98)}
+.ts-btn .ts-ic{font-size:34px;line-height:1}
+.ts-btn .ts-lbl{font-size:15px;font-weight:700;color:var(--text);text-transform:uppercase;letter-spacing:.04em}
+.ts-btn .ts-sub{font-size:11px;color:var(--muted);font-weight:500}
+.ts-btn.ts-recu.active{background:var(--green);border-color:var(--green)}
+.ts-btn.ts-recu.active .ts-lbl,.ts-btn.ts-recu.active .ts-sub,.ts-btn.ts-recu.active .ts-ic{color:#fff}
+.ts-btn.ts-recu.active .ts-sub{opacity:.85}
+.ts-btn.ts-dep.active{background:#151515;border-color:#151515}
+.ts-btn.ts-dep.active .ts-lbl,.ts-btn.ts-dep.active .ts-sub,.ts-btn.ts-dep.active .ts-ic{color:#fff}
+.ts-btn.ts-dep.active .ts-sub{opacity:.85}
 
 /* ── Pages ── */
 .page{display:none;padding:18px 16px 100px}
@@ -127,16 +138,21 @@ html,body{font-family:var(--font-main);background:var(--bg);color:var(--text);mi
 .btn-add-detail{background:transparent;border:1px dashed var(--border);color:var(--muted);width:100%;padding:10px;border-radius:var(--radius-btn);font-family:var(--font-main);font-size:12px;font-weight:600;cursor:pointer;text-transform:uppercase;letter-spacing:.06em;transition:.3s ease}
 .btn-add-detail:active{border-color:var(--border-strong);color:var(--text)}
 
-/* Photo uploader */
+/* Photo uploader (support multi-photos) */
 .photo-uploader{border:1.5px dashed var(--border);border-radius:var(--radius);padding:18px;text-align:center;cursor:pointer;transition:.3s ease;background:var(--bg-soft);margin-bottom:8px}
 .photo-uploader:active{background:var(--border)}
-.photo-uploader.has-photo{padding:0;background:transparent;border-style:solid;overflow:hidden}
 .photo-uploader-ic{font-size:32px;margin-bottom:6px;opacity:.4}
 .photo-uploader-txt{font-size:13px;font-weight:600;color:var(--text)}
 .photo-uploader-sub{font-size:11px;color:var(--muted);margin-top:3px}
-.photo-preview{width:100%;max-height:240px;object-fit:cover;display:block}
-.photo-bar{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:var(--surface);border-top:1px solid var(--border);font-size:12px;color:var(--muted)}
-.photo-bar button{background:none;border:none;color:var(--signal);font-family:var(--font-main);font-size:12px;font-weight:600;cursor:pointer;text-transform:uppercase;letter-spacing:.06em}
+.photo-gallery{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px;margin-bottom:8px}
+.photo-thumb{position:relative;aspect-ratio:1;border-radius:var(--radius-btn);overflow:hidden;border:1px solid var(--border);background:var(--bg-soft)}
+.photo-thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.photo-thumb-del{position:absolute;top:4px;right:4px;width:24px;height:24px;border-radius:50%;background:rgba(5,5,5,.7);color:#fff;border:none;font-size:16px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)}
+.photo-add-more{aspect-ratio:1;border:1.5px dashed var(--border);border-radius:var(--radius-btn);background:var(--bg-soft);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;font-family:var(--font-main);font-size:11px;font-weight:600;color:var(--muted);cursor:pointer;transition:.3s ease}
+.photo-add-more:active{border-color:var(--border-strong);color:var(--text)}
+.photo-add-more .add-ic{font-size:22px;opacity:.5;line-height:1}
+.photo-count{font-size:11px;color:var(--muted);text-align:center;font-weight:500;margin-top:4px}
+.photo-count b{color:var(--text);font-weight:700}
 
 /* Bouton envoyer (gros, sticky bottom optionnel) */
 .btn-submit{background:#222;color:#fff;border:none;border-radius:var(--radius-btn);padding:18px;width:100%;font-family:var(--font-main);font-size:15px;font-weight:600;cursor:pointer;transition:.3s ease-in-out;height:56px;letter-spacing:.02em;margin-top:8px}
@@ -184,7 +200,11 @@ html,body{font-family:var(--font-main);background:var(--bg);color:var(--text);mi
 .lightbox{position:fixed;inset:0;background:rgba(5,5,5,.92);z-index:900;display:none;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(4px)}
 .lightbox.open{display:flex}
 .lightbox img{max-width:100%;max-height:90vh;object-fit:contain;border-radius:var(--radius)}
-.lightbox-close{position:absolute;top:14px;right:14px;background:rgba(255,255,255,.15);border:none;color:#fff;font-size:24px;width:42px;height:42px;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.lightbox-close{position:absolute;top:14px;right:14px;background:rgba(255,255,255,.15);border:none;color:#fff;font-size:24px;width:42px;height:42px;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:2}
+.lightbox-nav{position:absolute;top:50%;transform:translateY(-50%);background:rgba(255,255,255,.15);border:none;color:#fff;font-size:32px;width:48px;height:48px;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:2;line-height:1}
+.lightbox-nav.prev{left:14px}
+.lightbox-nav.next{right:14px}
+.lightbox-counter{position:absolute;bottom:24px;left:50%;transform:translateX(-50%);background:rgba(5,5,5,.7);color:#fff;padding:6px 14px;border-radius:20px;font-family:var(--font-main);font-size:12px;font-weight:600;letter-spacing:.04em;backdrop-filter:blur(4px);z-index:2}
 
 @media (min-width:768px){
   body{background:var(--bg-soft)}
@@ -243,33 +263,38 @@ html,body{font-family:var(--font-main);background:var(--bg);color:var(--text);mi
   <span id="bal-period">Solde global · <b id="bal-period-detail">tout l'historique</b></span>
 </div>
 
-<!-- Tabs : Reçu / Dépense / Historique -->
+<!-- Tabs : Saisir / Historique -->
 <div class="tabs">
-  <button class="tab tab-recu active" id="tab-recu" onclick="showPage('recu')">💰 Reçu</button>
-  <button class="tab tab-dep" id="tab-dep" onclick="showPage('dep')">💸 Dépense</button>
+  <button class="tab active" id="tab-add" onclick="showPage('add')">+ Saisir</button>
   <button class="tab" id="tab-hist" onclick="showPage('hist')">Historique 7j</button>
 </div>
 
-<!-- Identité livreur (1ʳᵉ fois uniquement, affichée au-dessus des tabs si non défini) -->
-<div id="livreur-name-card" style="display:none;padding:18px 16px 0">
-  <div class="fg">
+<!-- ── PAGE SAISIE ── -->
+<div class="page active" id="page-add">
+
+  <!-- Identité livreur (1ʳᵉ fois uniquement) -->
+  <div id="livreur-name-card" style="display:none" class="fg">
     <label>Votre prénom (1 seule fois)</label>
     <input type="text" id="livreur-name-input" placeholder="Ex: Hamza" autocapitalize="words">
     <div class="hint" style="font-size:11px;color:var(--muted);margin-top:6px">Identifie vos saisies dans le dashboard admin</div>
   </div>
-</div>
 
-<!-- ── PAGE ARGENT REÇU ── -->
-<div class="page active" id="page-recu">
-  <form class="form-section recu-section" onsubmit="event.preventDefault();submitRecu()">
-    <div class="section-head">
-      <span class="section-ic">💰</span>
-      <div>
-        <div class="section-title-big">Argent reçu</div>
-        <div class="section-subtitle">Touni vous a envoyé de l'argent</div>
-      </div>
-    </div>
+  <!-- Gros cadres switch : Argent reçu / Dépense -->
+  <div class="type-switch">
+    <button type="button" class="ts-btn ts-recu active" onclick="setType('recu')">
+      <span class="ts-ic">💰</span>
+      <span class="ts-lbl">Argent reçu</span>
+      <span class="ts-sub">De Touni</span>
+    </button>
+    <button type="button" class="ts-btn ts-dep" onclick="setType('dep')">
+      <span class="ts-ic">💸</span>
+      <span class="ts-lbl">Dépense</span>
+      <span class="ts-sub">Chez fournisseur</span>
+    </button>
+  </div>
 
+  <!-- ─ Form ARGENT REÇU ─ -->
+  <form id="form-recu" onsubmit="event.preventDefault();submitRecu()">
     <div class="fg fg-money">
       <div class="suffix">
         <input type="number" id="r-montant" placeholder="0" min="0" step="1" inputmode="numeric">
@@ -277,13 +302,15 @@ html,body{font-family:var(--font-main);background:var(--bg);color:var(--text);mi
     </div>
 
     <div class="fg">
-      <label>Capture du virement WhatsApp</label>
+      <label>Captures du virement WhatsApp</label>
+      <div id="r-gallery-wrap"></div>
       <div class="photo-uploader" id="r-photo-uploader" onclick="document.getElementById('r-photo-input').click()">
         <div class="photo-uploader-ic">📷</div>
-        <div class="photo-uploader-txt">Ajouter la capture</div>
-        <div class="photo-uploader-sub">Screenshot WhatsApp du virement</div>
+        <div class="photo-uploader-txt">Ajouter une ou plusieurs captures</div>
+        <div class="photo-uploader-sub">Screenshots WhatsApp · jusqu'à 10 photos</div>
       </div>
-      <input type="file" id="r-photo-input" accept="image/*" style="display:none" onchange="handlePhotoSelect(this.files[0],'recu')">
+      <input type="file" id="r-photo-input" accept="image/*" multiple style="display:none" onchange="handlePhotoSelect(this.files,'recu')">
+      <div class="photo-count" id="r-photo-count" style="display:none"></div>
     </div>
 
     <div class="fg">
@@ -293,19 +320,9 @@ html,body{font-family:var(--font-main);background:var(--bg);color:var(--text);mi
 
     <button type="submit" class="btn-submit btn-recu" id="btn-submit-recu">Enregistrer le reçu</button>
   </form>
-</div>
 
-<!-- ── PAGE DÉPENSE ── -->
-<div class="page" id="page-dep">
-  <form class="form-section dep-section" onsubmit="event.preventDefault();submitDep()">
-    <div class="section-head">
-      <span class="section-ic">💸</span>
-      <div>
-        <div class="section-title-big">Dépense</div>
-        <div class="section-subtitle">Chez un fournisseur</div>
-      </div>
-    </div>
-
+  <!-- ─ Form DÉPENSE (caché par défaut) ─ -->
+  <form id="form-dep" style="display:none" onsubmit="event.preventDefault();submitDep()">
     <div class="fg fg-money">
       <div class="suffix">
         <input type="number" id="d-montant" placeholder="0" min="0" step="1" inputmode="numeric">
@@ -327,13 +344,15 @@ html,body{font-family:var(--font-main);background:var(--bg);color:var(--text);mi
     </div>
 
     <div class="fg">
-      <label>Photo justificative</label>
+      <label>Photos justificatives</label>
+      <div id="d-gallery-wrap"></div>
       <div class="photo-uploader" id="d-photo-uploader" onclick="document.getElementById('d-photo-input').click()">
         <div class="photo-uploader-ic">📷</div>
-        <div class="photo-uploader-txt">Ajouter une photo</div>
-        <div class="photo-uploader-sub">Reçu, ticket de caisse…</div>
+        <div class="photo-uploader-txt">Ajouter une ou plusieurs photos</div>
+        <div class="photo-uploader-sub">Reçus, tickets, captures · jusqu'à 10 photos</div>
       </div>
-      <input type="file" id="d-photo-input" accept="image/*" style="display:none" onchange="handlePhotoSelect(this.files[0],'dep')">
+      <input type="file" id="d-photo-input" accept="image/*" multiple style="display:none" onchange="handlePhotoSelect(this.files,'dep')">
+      <div class="photo-count" id="d-photo-count" style="display:none"></div>
     </div>
 
     <div class="fg">
@@ -361,9 +380,12 @@ html,body{font-family:var(--font-main);background:var(--bg);color:var(--text);mi
 <div class="toast" id="toast"><span class="toast-ic">✓</span><span id="toast-msg"></span></div>
 
 <!-- Lightbox photo -->
-<div class="lightbox" id="lightbox" onclick="this.classList.remove('open')">
-  <button class="lightbox-close">×</button>
+<div class="lightbox" id="lightbox" onclick="if(event.target===this)this.classList.remove('open')">
+  <button class="lightbox-close" onclick="document.getElementById('lightbox').classList.remove('open')">×</button>
+  <button class="lightbox-nav prev" onclick="event.stopPropagation();lightboxNav(-1)">‹</button>
+  <button class="lightbox-nav next" onclick="event.stopPropagation();lightboxNav(1)">›</button>
   <img id="lightbox-img" src="" alt="">
+  <div class="lightbox-counter" id="lightbox-counter" style="display:none"></div>
 </div>
 
 <script>
@@ -377,8 +399,10 @@ const H_GET={apikey:SB_KEY,Authorization:'Bearer '+SB_KEY};
 
 // ── State ──
 var saisies=[]; // depenses du livreur sur 7 derniers jours
-var recuPhoto=null, depPhoto=null; // {file, dataUrl} par section
+var recuPhotos=[], depPhotos=[]; // array de {file, dataUrl} par section
 var detailRows=[]; // [{id, name, amount}]
+var MAX_PHOTOS=10;
+var currentType='recu'; // 'recu' ou 'dep'
 
 // ── Auth ──
 function login(){
@@ -498,6 +522,20 @@ function showPage(name){
   if(name==='hist') loadAll();
 }
 
+// ── Type switch (Argent reçu / Dépense) ──
+function setType(t){
+  currentType=t;
+  document.querySelectorAll('.ts-btn').forEach(function(b){b.classList.remove('active');});
+  document.querySelector('.ts-'+t).classList.add('active');
+  document.getElementById('form-recu').style.display=t==='recu'?'block':'none';
+  document.getElementById('form-dep').style.display=t==='dep'?'block':'none';
+  // Focus auto sur le montant
+  setTimeout(function(){
+    var inp=document.getElementById((t==='recu'?'r':'d')+'-montant');
+    if(inp) inp.focus();
+  },100);
+}
+
 // ── Détails par fournisseur ──
 function toggleDetails(){
   var box=document.getElementById('details-box');
@@ -532,48 +570,71 @@ function renderDetailRows(){
   }).join('');
 }
 
-// ── Photo (2 uploaders : 'recu' et 'dep') ──
-function getPhotoState(type){return type==='recu'?recuPhoto:depPhoto;}
-function setPhotoState(type,v){if(type==='recu') recuPhoto=v; else depPhoto=v;}
+// ── Photos multi (2 uploaders : 'recu' et 'dep') ──
+function getPhotoList(type){return type==='recu'?recuPhotos:depPhotos;}
+function setPhotoList(type,arr){if(type==='recu') recuPhotos=arr; else depPhotos=arr;}
 
-function handlePhotoSelect(file,type){
-  if(!file) return;
-  if(file.size>5*1024*1024){
-    showToast('Photo trop lourde (max 5 MB)','err');
-    return;
+function handlePhotoSelect(fileList,type){
+  if(!fileList||!fileList.length) return;
+  var current=getPhotoList(type);
+  var added=0, rejected=0;
+  Array.from(fileList).forEach(function(file){
+    if(current.length+added >= MAX_PHOTOS){ rejected++; return; }
+    if(file.size>5*1024*1024){ rejected++; return; }
+    if(!file.type||file.type.indexOf('image/')!==0){ rejected++; return; }
+    var reader=new FileReader();
+    reader.onload=function(e){
+      current.push({file:file,dataUrl:e.target.result});
+      setPhotoList(type,current);
+      renderPhotoPreview(type);
+    };
+    reader.readAsDataURL(file);
+    added++;
+  });
+  if(rejected>0){
+    var msg=current.length>=MAX_PHOTOS
+      ? 'Limite atteinte ('+MAX_PHOTOS+' photos max)'
+      : rejected+' fichier'+(rejected>1?'s':'')+' ignoré'+(rejected>1?'s':'')+' (trop lourd ou pas une image)';
+    showToast(msg,'err');
   }
-  var reader=new FileReader();
-  reader.onload=function(e){
-    setPhotoState(type,{file:file,dataUrl:e.target.result});
-    renderPhotoPreview(type);
-  };
-  reader.readAsDataURL(file);
-}
-function renderPhotoPreview(type){
-  var prefix=type==='recu'?'r':'d';
-  var up=document.getElementById(prefix+'-photo-uploader');
-  if(!up) return;
-  var photo=getPhotoState(type);
-  if(!photo){
-    up.classList.remove('has-photo');
-    var defaultTxt=type==='recu'?'Ajouter la capture':'Ajouter une photo';
-    var defaultSub=type==='recu'?'Screenshot WhatsApp du virement':'Reçu, ticket de caisse…';
-    up.innerHTML='<div class="photo-uploader-ic">📷</div>'
-      +'<div class="photo-uploader-txt">'+defaultTxt+'</div>'
-      +'<div class="photo-uploader-sub">'+defaultSub+'</div>';
-    return;
-  }
-  up.classList.add('has-photo');
-  up.innerHTML='<img class="photo-preview" src="'+photo.dataUrl+'" alt="">'
-    +'<div class="photo-bar">'
-    +'<span>Photo prête à envoyer</span>'
-    +'<button type="button" onclick="event.stopPropagation();removePhoto(\''+type+'\')">Retirer</button>'
-    +'</div>';
-}
-function removePhoto(type){
-  setPhotoState(type,null);
+  // Reset input pour permettre la re-sélection des mêmes fichiers
   var prefix=type==='recu'?'r':'d';
   document.getElementById(prefix+'-photo-input').value='';
+}
+
+function renderPhotoPreview(type){
+  var prefix=type==='recu'?'r':'d';
+  var wrap=document.getElementById(prefix+'-gallery-wrap');
+  var counter=document.getElementById(prefix+'-photo-count');
+  if(!wrap) return;
+  var list=getPhotoList(type);
+  if(!list.length){
+    wrap.innerHTML='';
+    counter.style.display='none';
+    return;
+  }
+  var html='<div class="photo-gallery">';
+  list.forEach(function(p,i){
+    html+='<div class="photo-thumb">'
+      +'<img src="'+p.dataUrl+'" alt="">'
+      +'<button type="button" class="photo-thumb-del" onclick="removePhoto(\''+type+'\','+i+')">×</button>'
+      +'</div>';
+  });
+  if(list.length<MAX_PHOTOS){
+    html+='<div class="photo-add-more" onclick="document.getElementById(\''+prefix+'-photo-input\').click()">'
+      +'<span class="add-ic">+</span><span>Ajouter</span>'
+      +'</div>';
+  }
+  html+='</div>';
+  wrap.innerHTML=html;
+  counter.style.display='block';
+  counter.innerHTML='<b>'+list.length+'</b> / '+MAX_PHOTOS+' photo'+(list.length>1?'s':'')+' sélectionnée'+(list.length>1?'s':'');
+}
+
+function removePhoto(type,index){
+  var list=getPhotoList(type);
+  list.splice(index,1);
+  setPhotoList(type,list);
   renderPhotoPreview(type);
 }
 
@@ -607,6 +668,17 @@ function ensureLivreurName(){
   return livreurName;
 }
 
+// ── Upload séquentiel d'un array de photos ──
+async function uploadAllPhotos(list,onProgress){
+  var urls=[];
+  for(var i=0;i<list.length;i++){
+    if(onProgress) onProgress(i+1,list.length);
+    var url=await uploadPhoto(list[i].file);
+    urls.push(url);
+  }
+  return urls;
+}
+
 // ── Submit ARGENT REÇU ──
 async function submitRecu(){
   var montant=parseFloat(document.getElementById('r-montant').value);
@@ -617,13 +689,19 @@ async function submitRecu(){
   if(livreurName===null) return;
   btn.disabled=true; btn.classList.add('loading'); btn.textContent='Envoi en cours…';
   try {
-    var photoUrl=null;
-    if(recuPhoto){ btn.textContent='Upload photo…'; photoUrl=await uploadPhoto(recuPhoto.file); }
+    var photoUrls=[];
+    if(recuPhotos.length){
+      photoUrls=await uploadAllPhotos(recuPhotos,function(i,n){
+        btn.textContent='Upload photo '+i+' / '+n+'…';
+      });
+    }
     btn.textContent='Enregistrement…';
     var today=new Date().toISOString().split('T')[0];
     var row=await sbInsertRecu({
       date:today, montant_mad:montant, livreur_name:livreurName,
-      photo_url:photoUrl, notes:notes||null
+      photo_url:photoUrls[0]||null,
+      photos_json:photoUrls.length?photoUrls:null,
+      notes:notes||null
     });
     recus.unshift(row);
     allRecus.unshift({montant_mad:montant});
@@ -650,14 +728,20 @@ async function submitDep(){
   var detailsJson=validDetails.length ? validDetails.map(function(d){return {name:d.name.trim(),amount:+d.amount};}) : null;
   btn.disabled=true; btn.classList.add('loading'); btn.textContent='Envoi en cours…';
   try {
-    var photoUrl=null;
-    if(depPhoto){ btn.textContent='Upload photo…'; photoUrl=await uploadPhoto(depPhoto.file); }
+    var photoUrls=[];
+    if(depPhotos.length){
+      photoUrls=await uploadAllPhotos(depPhotos,function(i,n){
+        btn.textContent='Upload photo '+i+' / '+n+'…';
+      });
+    }
     btn.textContent='Enregistrement…';
     var today=new Date().toISOString().split('T')[0];
     var row=await sbInsertDepense({
       date:today, montant_mad:montant, nb_commandes:nbArticles,
       notes:notes||null, source:'livreur', livreur_name:livreurName,
-      photo_url:photoUrl, details_json:detailsJson
+      photo_url:photoUrls[0]||null,
+      photos_json:photoUrls.length?photoUrls:null,
+      details_json:detailsJson
     });
     saisies.unshift(row);
     allDepenses.unshift({montant_mad:montant});
@@ -674,7 +758,7 @@ async function submitDep(){
 function resetRecu(){
   document.getElementById('r-montant').value='';
   document.getElementById('r-notes').value='';
-  recuPhoto=null;
+  recuPhotos=[];
   document.getElementById('r-photo-input').value='';
   renderPhotoPreview('recu');
 }
@@ -685,7 +769,7 @@ function resetDep(){
   detailRows=[]; renderDetailRows();
   document.getElementById('details-box').classList.remove('open');
   document.getElementById('details-toggle').classList.remove('open');
-  depPhoto=null;
+  depPhotos=[];
   document.getElementById('d-photo-input').value='';
   renderPhotoPreview('dep');
 }
@@ -706,8 +790,8 @@ function renderHistory(){
   var content=document.getElementById('hist-content');
   // Fusionner reçus + dépenses avec un champ _type
   var all=[]
-    .concat(recus.map(function(r){return {_type:'recu', date:r.date, created_at:r.created_at, montant_mad:r.montant_mad, photo_url:r.photo_url, notes:r.notes};}))
-    .concat(saisies.map(function(s){return {_type:'depense', date:s.date, created_at:s.created_at, montant_mad:s.montant_mad, photo_url:s.photo_url, notes:s.notes, nb_commandes:s.nb_commandes, details_json:s.details_json};}));
+    .concat(recus.map(function(r){return {_type:'recu', date:r.date, created_at:r.created_at, montant_mad:r.montant_mad, photo_url:r.photo_url, photos_json:r.photos_json, notes:r.notes};}))
+    .concat(saisies.map(function(s){return {_type:'depense', date:s.date, created_at:s.created_at, montant_mad:s.montant_mad, photo_url:s.photo_url, photos_json:s.photos_json, notes:s.notes, nb_commandes:s.nb_commandes, details_json:s.details_json};}));
   if(!all.length){
     content.innerHTML='<div class="hist-empty"><div class="ic">📋</div>Aucune saisie sur les 7 derniers jours</div>';
     return;
@@ -749,9 +833,11 @@ function renderHistory(){
         details='<div class="hist-meta" style="margin-top:6px"><b>Détail :</b> '+s.details_json.map(function(d){return d.name+' ('+Math.round(d.amount)+' MAD)';}).join(', ')+'</div>';
       }
       var photoTag='';
-      if(s.photo_url){
-        var photoLbl=isRecu?'📷 Voir capture virement':'📷 Voir photo';
-        photoTag='<a class="hist-photo" onclick="event.preventDefault();openLightbox(\''+s.photo_url+'\')" href="#">'+photoLbl+'</a>';
+      var urls=(s.photos_json && Array.isArray(s.photos_json) && s.photos_json.length) ? s.photos_json : (s.photo_url?[s.photo_url]:[]);
+      if(urls.length){
+        var photoLbl=isRecu?'📷 Voir capture':'📷 Voir photo';
+        if(urls.length>1) photoLbl=(isRecu?'📷 ':'📷 ')+urls.length+' photos';
+        photoTag='<a class="hist-photo" onclick="event.preventDefault();openLightboxGallery('+JSON.stringify(urls).replace(/"/g,'&quot;')+')" href="#">'+photoLbl+'</a>';
       }
       var notes=(s.notes||'').trim();
       var cdeLine=(!isRecu && s.nb_commandes)?'<div class="hist-meta"><span><b>'+s.nb_commandes+'</b> article'+(s.nb_commandes>1?'s':'')+'</span>'+(s.nb_commandes>0&&s.montant_mad?'<span>·</span><span><b>'+Math.round(s.montant_mad/s.nb_commandes)+'</b> MAD/article</span>':'')+'</div>':'';
@@ -774,10 +860,29 @@ function renderHistory(){
   content.innerHTML=html;
 }
 
-// ── Lightbox ──
-function openLightbox(url){
-  document.getElementById('lightbox-img').src=url;
+// ── Lightbox (gallery navigable) ──
+var lightboxList=[], lightboxIdx=0;
+function openLightbox(url){ openLightboxGallery([url]); }
+function openLightboxGallery(urls){
+  if(!urls||!urls.length) return;
+  lightboxList=urls; lightboxIdx=0;
+  renderLightbox();
   document.getElementById('lightbox').classList.add('open');
+}
+function renderLightbox(){
+  var img=document.getElementById('lightbox-img');
+  img.src=lightboxList[lightboxIdx];
+  var counter=document.getElementById('lightbox-counter');
+  if(counter){
+    if(lightboxList.length>1){
+      counter.textContent=(lightboxIdx+1)+' / '+lightboxList.length;
+      counter.style.display='block';
+    } else counter.style.display='none';
+  }
+}
+function lightboxNav(dir){
+  lightboxIdx=(lightboxIdx+dir+lightboxList.length)%lightboxList.length;
+  renderLightbox();
 }
 
 // ── Toast ──
