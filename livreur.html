@@ -12,6 +12,8 @@
 <link href="https://fonts.googleapis.com/css2?family=Jost:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+button,.tab,.photo-uploader,.details-toggle,.btn-add-detail,.del-detail,.ts-btn,.bal-cell,a{-webkit-tap-highlight-color:transparent;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+input,textarea{-webkit-user-select:text;user-select:text}
 :root{
   --bg:#ffffff;--surface:#ffffff;--bg-soft:#f5f5f5;
   --border:#e5e5e5;--border-strong:#151515;
@@ -64,19 +66,18 @@ html,body{font-family:var(--font-main);background:var(--bg);color:var(--text);mi
 .balance-sub{background:#0a0a0a;color:rgba(255,255,255,.5);font-size:11px;text-align:center;padding:8px 12px;font-weight:500;letter-spacing:.04em}
 .balance-sub b{color:#fff;font-weight:600}
 
-/* ── Type switch (Argent reçu / Dépense) ── */
-.type-switch{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:20px}
-.ts-btn{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--radius);padding:18px 12px;cursor:pointer;font-family:var(--font-main);transition:.3s ease;display:flex;flex-direction:column;align-items:center;gap:4px;text-align:center}
-.ts-btn:active{transform:scale(.98)}
-.ts-btn .ts-ic{font-size:26px;line-height:1}
-.ts-btn .ts-lbl{font-size:14px;font-weight:600;color:var(--text);text-transform:uppercase;letter-spacing:.04em}
-.ts-btn .ts-sub{font-size:11px;color:var(--muted);font-weight:500}
-.ts-btn.ts-recu.active{background:#0a3a18;border-color:#0a3a18;color:#fff}
-.ts-btn.ts-recu.active .ts-lbl,.ts-btn.ts-recu.active .ts-sub{color:#fff}
-.ts-btn.ts-recu.active .ts-sub{opacity:.7}
-.ts-btn.ts-dep.active{background:#111;border-color:#111;color:#fff}
-.ts-btn.ts-dep.active .ts-lbl,.ts-btn.ts-dep.active .ts-sub{color:#fff}
-.ts-btn.ts-dep.active .ts-sub{opacity:.7}
+/* ── Section forms (Reçu + Dépense côte à côte) ── */
+.form-section{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px;margin-bottom:18px;box-shadow:var(--shadow)}
+.recu-section{border-left:4px solid var(--green)}
+.dep-section{border-left:4px solid #151515}
+.section-head{display:flex;align-items:center;gap:12px;margin-bottom:18px;padding-bottom:14px;border-bottom:1px solid var(--border)}
+.section-ic{font-size:30px;line-height:1;flex-shrink:0}
+.section-title-big{font-family:var(--font-main);font-size:17px;font-weight:700;color:var(--text);letter-spacing:-.01em;line-height:1.2}
+.section-subtitle{font-size:12px;color:var(--muted);margin-top:2px;font-weight:500}
+.btn-recu{background:var(--green)}
+.btn-recu:active{background:#2c6230}
+.btn-dep{background:#222}
+.btn-dep:active{background:#050505}
 
 /* ── Tabs ── */
 .tabs{background:var(--surface);border-bottom:1px solid var(--border);display:flex;position:sticky;top:70px;z-index:50}
@@ -256,62 +257,86 @@ html,body{font-family:var(--font-main);background:var(--bg);color:var(--text);mi
     <div class="hint">Pour identifier vos saisies dans le dashboard</div>
   </div>
 
-  <!-- Type de saisie : argent reçu OU dépense -->
-  <div class="type-switch">
-    <button type="button" class="ts-btn ts-recu active" onclick="setType('recu')">
-      <span class="ts-ic">💰</span>
-      <span class="ts-lbl">Argent reçu</span>
-      <span class="ts-sub">De Touni</span>
-    </button>
-    <button type="button" class="ts-btn ts-dep" onclick="setType('depense')">
-      <span class="ts-ic">💸</span>
-      <span class="ts-lbl">Dépense</span>
-      <span class="ts-sub">Chez fournisseur</span>
-    </button>
-  </div>
+  <!-- SECTION 1 : ARGENT REÇU -->
+  <form class="form-section recu-section" onsubmit="event.preventDefault();submitRecu()">
+    <div class="section-head">
+      <span class="section-ic">💰</span>
+      <div>
+        <div class="section-title-big">Argent reçu</div>
+        <div class="section-subtitle">Touni vous a envoyé de l'argent</div>
+      </div>
+    </div>
 
-  <form id="saisie-form" onsubmit="event.preventDefault();submitSaisie()">
-
-    <!-- MONTANT (commun) -->
-    <div class="section-title" id="amount-title">Montant reçu</div>
     <div class="fg fg-money">
       <div class="suffix">
-        <input type="number" id="f-montant" placeholder="0" min="0" step="1" inputmode="numeric" required>
+        <input type="number" id="r-montant" placeholder="0" min="0" step="1" inputmode="numeric">
       </div>
     </div>
 
-    <!-- DÉPENSE UNIQUEMENT : nb articles + détails fournisseurs -->
-    <div id="dep-only" style="display:none">
-      <div class="fg">
-        <label>Nombre d'articles achetés</label>
-        <input type="number" id="f-nb" placeholder="Ex: 12" min="0" step="1" inputmode="numeric">
+    <div class="fg">
+      <label>Capture du virement WhatsApp</label>
+      <div class="photo-uploader" id="r-photo-uploader" onclick="document.getElementById('r-photo-input').click()">
+        <div class="photo-uploader-ic">📷</div>
+        <div class="photo-uploader-txt">Ajouter la capture</div>
+        <div class="photo-uploader-sub">Screenshot WhatsApp du virement</div>
       </div>
-
-      <button type="button" class="details-toggle" id="details-toggle" onclick="toggleDetails()">
-        <span>+ Détailler par fournisseur (optionnel)</span>
-        <span class="chev">▾</span>
-      </button>
-      <div class="details-box" id="details-box">
-        <div id="details-list"></div>
-        <button type="button" class="btn-add-detail" onclick="addDetailRow()">+ Ajouter un fournisseur</button>
-      </div>
+      <input type="file" id="r-photo-input" accept="image/*" style="display:none" onchange="handlePhotoSelect(this.files[0],'recu')">
     </div>
 
-    <!-- Photo (commune mais label dynamique) -->
-    <div class="section-title" id="photo-title" style="margin-top:18px">Capture du virement WhatsApp</div>
-    <div class="photo-uploader" id="photo-uploader" onclick="document.getElementById('photo-input').click()">
-      <div class="photo-uploader-ic">📷</div>
-      <div class="photo-uploader-txt" id="photo-txt">Prendre / choisir la capture</div>
-      <div class="photo-uploader-sub" id="photo-sub">Screenshot WhatsApp du virement reçu</div>
-    </div>
-    <input type="file" id="photo-input" accept="image/*" style="display:none" onchange="handlePhotoSelect(this.files[0])">
-
-    <div class="fg" style="margin-top:14px">
+    <div class="fg">
       <label>Note (optionnel)</label>
-      <textarea id="f-notes" rows="2" placeholder="Précision…"></textarea>
+      <textarea id="r-notes" rows="2" placeholder="Précision…"></textarea>
     </div>
 
-    <button type="submit" class="btn-submit" id="btn-submit">Envoyer</button>
+    <button type="submit" class="btn-submit btn-recu" id="btn-submit-recu">Enregistrer le reçu</button>
+  </form>
+
+  <!-- SECTION 2 : DÉPENSE -->
+  <form class="form-section dep-section" onsubmit="event.preventDefault();submitDep()">
+    <div class="section-head">
+      <span class="section-ic">💸</span>
+      <div>
+        <div class="section-title-big">Dépense</div>
+        <div class="section-subtitle">Chez un fournisseur</div>
+      </div>
+    </div>
+
+    <div class="fg fg-money">
+      <div class="suffix">
+        <input type="number" id="d-montant" placeholder="0" min="0" step="1" inputmode="numeric">
+      </div>
+    </div>
+
+    <div class="fg">
+      <label>Nombre d'articles achetés</label>
+      <input type="number" id="d-nb" placeholder="Ex: 12" min="0" step="1" inputmode="numeric">
+    </div>
+
+    <button type="button" class="details-toggle" id="details-toggle" onclick="toggleDetails()">
+      <span>+ Détailler par fournisseur (optionnel)</span>
+      <span class="chev">▾</span>
+    </button>
+    <div class="details-box" id="details-box">
+      <div id="details-list"></div>
+      <button type="button" class="btn-add-detail" onclick="addDetailRow()">+ Ajouter un fournisseur</button>
+    </div>
+
+    <div class="fg">
+      <label>Photo justificative</label>
+      <div class="photo-uploader" id="d-photo-uploader" onclick="document.getElementById('d-photo-input').click()">
+        <div class="photo-uploader-ic">📷</div>
+        <div class="photo-uploader-txt">Ajouter une photo</div>
+        <div class="photo-uploader-sub">Reçu, ticket de caisse…</div>
+      </div>
+      <input type="file" id="d-photo-input" accept="image/*" style="display:none" onchange="handlePhotoSelect(this.files[0],'dep')">
+    </div>
+
+    <div class="fg">
+      <label>Note (optionnel)</label>
+      <textarea id="d-notes" rows="2" placeholder="Précision sur l'achat…"></textarea>
+    </div>
+
+    <button type="submit" class="btn-submit btn-dep" id="btn-submit-dep">Enregistrer la dépense</button>
   </form>
 </div>
 
@@ -347,7 +372,7 @@ const H_GET={apikey:SB_KEY,Authorization:'Bearer '+SB_KEY};
 
 // ── State ──
 var saisies=[]; // depenses du livreur sur 7 derniers jours
-var selectedPhoto=null; // {file, dataUrl}
+var recuPhoto=null, depPhoto=null; // {file, dataUrl} par section
 var detailRows=[]; // [{id, name, amount}]
 
 // ── Auth ──
@@ -375,7 +400,6 @@ function showApp(){
 }
 
 // ── Init ──
-var currentType='recu'; // 'recu' ou 'depense'
 var recus=[]; // argent reçu (7 derniers jours pour historique)
 var allRecus=[], allDepenses=[]; // toutes les saisies pour balance globale
 
@@ -387,23 +411,7 @@ async function initApp(){
     document.getElementById('livreur-name-card').style.display='block';
     document.getElementById('livreur-name-disp').textContent='Non défini';
   }
-  setType('recu'); // type par défaut
   await loadAll();
-}
-
-// ── Type switch ──
-function setType(t){
-  currentType=t;
-  document.querySelectorAll('.ts-btn').forEach(function(b){b.classList.remove('active');});
-  document.querySelector('.ts-'+t).classList.add('active');
-  var isRecu=t==='recu';
-  document.getElementById('amount-title').textContent=isRecu?'Montant reçu':'Montant dépensé';
-  document.getElementById('photo-title').textContent=isRecu?'Capture du virement WhatsApp':'Photo justificative (reçu / ticket)';
-  document.getElementById('photo-txt').textContent=isRecu?'Prendre / choisir la capture':'Prendre une photo / choisir une image';
-  document.getElementById('photo-sub').textContent=isRecu?'Screenshot WhatsApp du virement reçu':'Reçu, ticket de caisse, capture WhatsApp…';
-  document.getElementById('dep-only').style.display=isRecu?'none':'block';
-  document.getElementById('btn-submit').textContent=isRecu?'Enregistrer le reçu':'Enregistrer la dépense';
-  document.getElementById('f-montant').focus();
 }
 
 // ── Supabase ──
@@ -519,8 +527,11 @@ function renderDetailRows(){
   }).join('');
 }
 
-// ── Photo ──
-function handlePhotoSelect(file){
+// ── Photo (2 uploaders : 'recu' et 'dep') ──
+function getPhotoState(type){return type==='recu'?recuPhoto:depPhoto;}
+function setPhotoState(type,v){if(type==='recu') recuPhoto=v; else depPhoto=v;}
+
+function handlePhotoSelect(file,type){
   if(!file) return;
   if(file.size>5*1024*1024){
     showToast('Photo trop lourde (max 5 MB)','err');
@@ -528,31 +539,37 @@ function handlePhotoSelect(file){
   }
   var reader=new FileReader();
   reader.onload=function(e){
-    selectedPhoto={file:file,dataUrl:e.target.result};
-    renderPhotoPreview();
+    setPhotoState(type,{file:file,dataUrl:e.target.result});
+    renderPhotoPreview(type);
   };
   reader.readAsDataURL(file);
 }
-function renderPhotoPreview(){
-  var up=document.getElementById('photo-uploader');
-  if(!selectedPhoto){
+function renderPhotoPreview(type){
+  var prefix=type==='recu'?'r':'d';
+  var up=document.getElementById(prefix+'-photo-uploader');
+  if(!up) return;
+  var photo=getPhotoState(type);
+  if(!photo){
     up.classList.remove('has-photo');
+    var defaultTxt=type==='recu'?'Ajouter la capture':'Ajouter une photo';
+    var defaultSub=type==='recu'?'Screenshot WhatsApp du virement':'Reçu, ticket de caisse…';
     up.innerHTML='<div class="photo-uploader-ic">📷</div>'
-      +'<div class="photo-uploader-txt">Prendre une photo / choisir une image</div>'
-      +'<div class="photo-uploader-sub">Reçu, ticket de caisse, capture WhatsApp…</div>';
+      +'<div class="photo-uploader-txt">'+defaultTxt+'</div>'
+      +'<div class="photo-uploader-sub">'+defaultSub+'</div>';
     return;
   }
   up.classList.add('has-photo');
-  up.innerHTML='<img class="photo-preview" src="'+selectedPhoto.dataUrl+'" alt="">'
+  up.innerHTML='<img class="photo-preview" src="'+photo.dataUrl+'" alt="">'
     +'<div class="photo-bar">'
     +'<span>Photo prête à envoyer</span>'
-    +'<button type="button" onclick="event.stopPropagation();removePhoto()">Retirer</button>'
+    +'<button type="button" onclick="event.stopPropagation();removePhoto(\''+type+'\')">Retirer</button>'
     +'</div>';
 }
-function removePhoto(){
-  selectedPhoto=null;
-  document.getElementById('photo-input').value='';
-  renderPhotoPreview();
+function removePhoto(type){
+  setPhotoState(type,null);
+  var prefix=type==='recu'?'r':'d';
+  document.getElementById(prefix+'-photo-input').value='';
+  renderPhotoPreview(type);
 }
 
 // ── Upload photo to Supabase Storage ──
@@ -570,95 +587,102 @@ async function uploadPhoto(file){
   return SB_URL+'/storage/v1/object/public/'+BUCKET+'/'+path;
 }
 
-// ── Submit ──
-async function submitSaisie(){
-  var montant=parseFloat(document.getElementById('f-montant').value);
-  var notesExtra=document.getElementById('f-notes').value.trim();
-  var btn=document.getElementById('btn-submit');
-  var isRecu=currentType==='recu';
-
-  if(!montant||montant<=0){ showToast('Entrez un montant valide','err'); return; }
-
-  // Vérifier que le nom du livreur est défini
+// ── Helper : récupérer/sauvegarder le prénom livreur ──
+function ensureLivreurName(){
   var livreurName=localStorage.getItem('touni_livreur_name')||'';
   var nameInput=document.getElementById('livreur-name-input');
   if(!livreurName && nameInput){
     var n=nameInput.value.trim();
-    if(!n){ showToast('Indiquez votre prénom','err'); nameInput.focus(); return; }
+    if(!n){ showToast('Indiquez d’abord votre prénom en haut','err'); nameInput.focus(); return null; }
     livreurName=n;
     localStorage.setItem('touni_livreur_name',livreurName);
     document.getElementById('livreur-name-disp').textContent=livreurName;
     document.getElementById('livreur-name-card').style.display='none';
   }
+  return livreurName;
+}
 
+// ── Submit ARGENT REÇU ──
+async function submitRecu(){
+  var montant=parseFloat(document.getElementById('r-montant').value);
+  var notes=document.getElementById('r-notes').value.trim();
+  var btn=document.getElementById('btn-submit-recu');
+  if(!montant||montant<=0){ showToast('Entrez un montant valide','err'); return; }
+  var livreurName=ensureLivreurName();
+  if(livreurName===null) return;
   btn.disabled=true; btn.classList.add('loading'); btn.textContent='Envoi en cours…';
-
   try {
-    // 1. Upload photo si présente
     var photoUrl=null;
-    if(selectedPhoto){
-      btn.textContent='Upload photo…';
-      photoUrl=await uploadPhoto(selectedPhoto.file);
-    }
-
-    // 2. Insert dans la bonne table selon le type
+    if(recuPhoto){ btn.textContent='Upload photo…'; photoUrl=await uploadPhoto(recuPhoto.file); }
     btn.textContent='Enregistrement…';
     var today=new Date().toISOString().split('T')[0];
-    var row;
-    if(isRecu){
-      row=await sbInsertRecu({
-        date:today,
-        montant_mad:montant,
-        livreur_name:livreurName,
-        photo_url:photoUrl,
-        notes:notesExtra||null
-      });
-      recus.unshift(row);
-      allRecus.unshift({montant_mad:montant});
-    } else {
-      var nbArticles=parseInt(document.getElementById('f-nb').value)||0;
-      var validDetails=detailRows.filter(function(d){return d.name && (+d.amount>0);});
-      var detailsJson=validDetails.length ? validDetails.map(function(d){return {name:d.name.trim(),amount:+d.amount};}) : null;
-      row=await sbInsertDepense({
-        date:today,
-        montant_mad:montant,
-        nb_commandes:nbArticles,
-        notes:notesExtra||null,
-        source:'livreur',
-        livreur_name:livreurName,
-        photo_url:photoUrl,
-        details_json:detailsJson
-      });
-      saisies.unshift(row);
-      allDepenses.unshift({montant_mad:montant});
-    }
-
-    // 3. Refresh UI
-    renderBalance();
-    renderHistory();
-    resetForm();
-    showToast(isRecu?'Argent reçu enregistré ✓':'Dépense enregistrée ✓');
-
+    var row=await sbInsertRecu({
+      date:today, montant_mad:montant, livreur_name:livreurName,
+      photo_url:photoUrl, notes:notes||null
+    });
+    recus.unshift(row);
+    allRecus.unshift({montant_mad:montant});
+    renderBalance(); renderHistory(); resetRecu();
+    showToast('Argent reçu enregistré ✓');
   } catch(e){
     console.error(e);
     showToast('Erreur : '+e.message,'err');
   } finally {
-    btn.disabled=false; btn.classList.remove('loading');
-    btn.textContent=isRecu?'Enregistrer le reçu':'Enregistrer la dépense';
+    btn.disabled=false; btn.classList.remove('loading'); btn.textContent='Enregistrer le reçu';
   }
 }
 
-function resetForm(){
-  document.getElementById('f-montant').value='';
-  document.getElementById('f-nb').value='';
-  document.getElementById('f-notes').value='';
+// ── Submit DÉPENSE ──
+async function submitDep(){
+  var montant=parseFloat(document.getElementById('d-montant').value);
+  var nbArticles=parseInt(document.getElementById('d-nb').value)||0;
+  var notes=document.getElementById('d-notes').value.trim();
+  var btn=document.getElementById('btn-submit-dep');
+  if(!montant||montant<=0){ showToast('Entrez un montant valide','err'); return; }
+  var livreurName=ensureLivreurName();
+  if(livreurName===null) return;
+  var validDetails=detailRows.filter(function(d){return d.name && (+d.amount>0);});
+  var detailsJson=validDetails.length ? validDetails.map(function(d){return {name:d.name.trim(),amount:+d.amount};}) : null;
+  btn.disabled=true; btn.classList.add('loading'); btn.textContent='Envoi en cours…';
+  try {
+    var photoUrl=null;
+    if(depPhoto){ btn.textContent='Upload photo…'; photoUrl=await uploadPhoto(depPhoto.file); }
+    btn.textContent='Enregistrement…';
+    var today=new Date().toISOString().split('T')[0];
+    var row=await sbInsertDepense({
+      date:today, montant_mad:montant, nb_commandes:nbArticles,
+      notes:notes||null, source:'livreur', livreur_name:livreurName,
+      photo_url:photoUrl, details_json:detailsJson
+    });
+    saisies.unshift(row);
+    allDepenses.unshift({montant_mad:montant});
+    renderBalance(); renderHistory(); resetDep();
+    showToast('Dépense enregistrée ✓');
+  } catch(e){
+    console.error(e);
+    showToast('Erreur : '+e.message,'err');
+  } finally {
+    btn.disabled=false; btn.classList.remove('loading'); btn.textContent='Enregistrer la dépense';
+  }
+}
+
+function resetRecu(){
+  document.getElementById('r-montant').value='';
+  document.getElementById('r-notes').value='';
+  recuPhoto=null;
+  document.getElementById('r-photo-input').value='';
+  renderPhotoPreview('recu');
+}
+function resetDep(){
+  document.getElementById('d-montant').value='';
+  document.getElementById('d-nb').value='';
+  document.getElementById('d-notes').value='';
   detailRows=[]; renderDetailRows();
   document.getElementById('details-box').classList.remove('open');
   document.getElementById('details-toggle').classList.remove('open');
-  selectedPhoto=null;
-  document.getElementById('photo-input').value='';
-  renderPhotoPreview();
-  document.getElementById('f-montant').focus();
+  depPhoto=null;
+  document.getElementById('d-photo-input').value='';
+  renderPhotoPreview('dep');
 }
 
 // ── Historique ──
