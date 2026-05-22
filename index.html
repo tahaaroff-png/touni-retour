@@ -931,29 +931,36 @@ function toggleNotifExpand(id){
 }
 
 // Diagnostic structuré d'un item "sans correspondance"
+// Diagnostic no-match : cause structurée → message lisible
 function noMatchDiag(it){
   var cause=it.cause||'unknown';
+  // Couleur saisie dans le champ taille
+  var sizeVal=it.size?String(it.size).toLowerCase().trim():'';
+  var colorWords=['black','white','rouge','blanc','bleu','vert','noir','jaune','orange','rose','violet','gris','brown','light brown','beige','gold','silver','or','argent'];
+  var isColorAsSize=sizeVal && colorWords.some(function(c){return sizeVal===c;});
+  if(isColorAsSize)
+    return {dot:'#ef4444',label:'Couleur saisie comme taille',fix:'Corrigez la fiche : mettez S/M/L/XL en taille'};
   if(cause==='no_cache'||it.candidates_count===0)
-    return {dot:'#f59e0b',title:'Absent du cache Shopify',fix:'Relancez "Sync Cache" pour importer les variantes Shopify'};
+    return {dot:'#f59e0b',label:'Absent de Shopify',fix:'Ce produit n\'existe pas sur la boutique ou le cache doit être mis à jour'};
   if(cause==='size_null'||!it.size)
-    return {dot:'#ef4444',title:'Taille non renseignée dans votre stock',fix:'Ouvrez la fiche article et renseignez la taille'};
+    return {dot:'#ef4444',label:'Taille manquante',fix:'Renseignez la taille dans la fiche article'};
   if(it.matched_shopify_title && it.matched_shopify_title!==it.product)
-    return {dot:'#f97316',title:'Titre flou — taille "'+it.size+'" introuvable',fix:'Shopify a trouvé "'+it.matched_shopify_title+'" mais pas la taille '+it.size+'. Vérifiez les variantes disponibles sur Shopify'};
-  return {dot:'#f97316',title:'Taille "'+it.size+'" introuvable sur Shopify',fix:'Vérifiez que la taille '+it.size+' existe bien sur Shopify pour ce produit'};
+    return {dot:'#f97316',label:'Taille "'+it.size+'" introuvable',fix:'Shopify a un produit similaire mais pas en '+it.size};
+  return {dot:'#f97316',label:'Taille "'+it.size+'" introuvable',fix:'La taille '+it.size+' n\'existe pas sur Shopify pour ce produit'};
 }
 
-// Diagnostic structuré d'une erreur technique
+// Diagnostic erreur technique → message lisible
 function errorDiag(it){
   var r=it.reason||'';
   if(r.indexOf('401')!==-1||r.indexOf('403')!==-1)
-    return {dot:'#ef4444',title:'Accès Shopify refusé (401/403)',fix:'Vérifiez que le token Shopify Admin a les scopes write_inventory et read_inventory'};
+    return {dot:'#ef4444',label:'Accès refusé',fix:'Vérifiez les scopes du token Shopify (write_inventory requis)'};
   if(r.indexOf('404')!==-1)
-    return {dot:'#f97316',title:'Variante introuvable sur Shopify (404)',fix:'Le produit existe dans le cache mais a peut-être été supprimé sur Shopify. Relancez "Sync Cache"'};
+    return {dot:'#f97316',label:'Variante introuvable',fix:'Le produit a peut-être été supprimé. Relancez Sync Cache'};
   if(r.indexOf('timeout')!==-1||r.indexOf('ETIMEDOUT')!==-1)
-    return {dot:'#f59e0b',title:'Timeout — Shopify n\'a pas répondu',fix:'Réessayez plus tard. Si ça persiste, vérifiez le statut Shopify'};
+    return {dot:'#f59e0b',label:'Timeout Shopify',fix:'Réessayez. Si ça persiste, vérifiez le statut Shopify'};
   if(r.indexOf('inventory_level introuvable')!==-1)
-    return {dot:'#f97316',title:'Niveau d\'inventaire introuvable',fix:'Ce variant n\'est peut-être pas attaché à votre location. Vérifiez dans Shopify Products → Inventory'};
-  return {dot:'#ef4444',title:'Erreur technique',fix:r.length>120?r.slice(0,120)+'…':r};
+    return {dot:'#f97316',label:'Inventaire introuvable',fix:'Le variant n\'est pas attaché à votre location Shopify'};
+  return {dot:'#ef4444',label:'Erreur',fix:r.length>100?r.slice(0,100)+'…':r};
 }
 
 function renderNotificationsList(){
@@ -961,7 +968,7 @@ function renderNotificationsList(){
   var hc=document.getElementById('notif-header-count');
   if(hc){ if(notifications.length>0){hc.style.display='inline';hc.textContent=notifications.length;}else{hc.style.display='none';} }
   if(!notifications.length){
-    list.innerHTML='<div style="padding:48px 20px;text-align:center;color:var(--muted);font-size:13px;line-height:1.6">Aucune notification en attente</div>';
+    list.innerHTML='<div style="padding:48px 20px;text-align:center;color:var(--muted);font-size:13px">Aucune notification</div>';
     return;
   }
   var SYNC_TYPES=['sync_shopify','sync_dry_run','rupture_shopify','rupture_dry_run'];
@@ -974,26 +981,26 @@ function renderNotificationsList(){
       var isRupture=n.type.indexOf('rupture')!==-1;
       var isDry=n.type.indexOf('dry_run')!==-1;
       var isExpanded=expandedNotifs.has(n.id);
-      var icon=isRupture?'🔴':'🔄';
       var label=isRupture?'Sync Rupture':'Sync Stock Retours';
       var accent=d.status==='succes'?'#16a34a':d.status==='partiel'?'#d97706':'#94a3b8';
-      var statusBg=d.status==='succes'?'#dcfce7':d.status==='partiel'?'#fef3c7':'#f1f5f9';
-      var statusTxt=d.status==='succes'?'#166534':d.status==='partiel'?'#92400e':'#475569';
-      var statusLbl=d.status==='succes'?'✓ Succès':d.status==='partiel'?'⚠ Partiel':'— Rien';
+      var statusTxt=d.status==='succes'?'#16a34a':d.status==='partiel'?'#d97706':'#94a3b8';
+      var statusLbl=d.status==='succes'?'Succès':d.status==='partiel'?'Partiel':'Rien à faire';
 
-      // ── Chips résumé (header de la carte) ──
-      var chips='<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:7px">';
+      // ── Ligne stats (résumé compact) ──
+      var stats='<div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:5px;font-size:11px;color:var(--muted)">';
       if(!isRupture){
-        if((d.pushed||0)>0) chips+='<span style="background:#dcfce7;color:#166534;border-radius:4px;padding:2px 8px;font-size:11px;font-weight:700">✅ '+d.pushed+' poussés</span>';
-        if((d.skipped_has_stock||0)>0) chips+='<span style="background:#f0fdf4;color:#15803d;border-radius:4px;padding:2px 8px;font-size:11px">📦 '+d.skipped_has_stock+' avec stock</span>';
-        if((d.skipped_no_match||0)>0) chips+='<span style="background:#fef9c3;color:#854d0e;border-radius:4px;padding:2px 8px;font-size:11px">🔍 '+d.skipped_no_match+' sans match</span>';
-        if((d.errors||0)>0) chips+='<span style="background:#fee2e2;color:#991b1b;border-radius:4px;padding:2px 8px;font-size:11px">❌ '+d.errors+' erreurs</span>';
+        stats+='<span><b style="color:var(--text)">'+(d.checked||0)+'</b> vérifiés</span>';
+        if((d.pushed||0)>0) stats+='<span>· <b style="color:#16a34a">'+d.pushed+'</b> poussés</span>';
+        if((d.skipped_has_stock||0)>0) stats+='<span>· <b style="color:var(--muted)">'+d.skipped_has_stock+'</b> avec stock</span>';
+        if((d.skipped_no_match||0)>0) stats+='<span>· <b style="color:#d97706">'+d.skipped_no_match+'</b> sans correspondance</span>';
+        if((d.errors||0)>0) stats+='<span>· <b style="color:#dc2626">'+d.errors+'</b> erreurs</span>';
       } else {
-        if((d.set_to_zero||0)>0) chips+='<span style="background:#fee2e2;color:#991b1b;border-radius:4px;padding:2px 8px;font-size:11px;font-weight:700">🔴 '+d.set_to_zero+' mis à 0</span>';
-        if((d.skipped_already_zero||0)>0) chips+='<span style="background:#f1f5f9;color:#475569;border-radius:4px;padding:2px 8px;font-size:11px">— '+d.skipped_already_zero+' déjà à 0</span>';
-        if((d.errors||0)>0) chips+='<span style="background:#fee2e2;color:#991b1b;border-radius:4px;padding:2px 8px;font-size:11px">❌ '+d.errors+' erreurs</span>';
+        stats+='<span><b style="color:var(--text)">'+(d.checked||0)+'</b> vérifiés</span>';
+        if((d.set_to_zero||0)>0) stats+='<span>· <b style="color:#dc2626">'+d.set_to_zero+'</b> mis à 0</span>';
+        if((d.skipped_already_zero||0)>0) stats+='<span>· <b style="color:var(--muted)">'+d.skipped_already_zero+'</b> déjà à 0</span>';
+        if((d.errors||0)>0) stats+='<span>· <b style="color:#dc2626">'+d.errors+'</b> erreurs</span>';
       }
-      chips+='</div>';
+      stats+='</div>';
 
       // ── Détail expansible ──
       var detail='';
@@ -1002,122 +1009,104 @@ function renderNotificationsList(){
         var noMatchList=d.no_match_items||[];
         var errList=d.error_items||[];
 
-        // Section ✅ Poussés / 🔴 Mis à 0
+        // Section Poussés / Mis à 0
         if(pushedList.length>0){
-          var secColor=isRupture?'#991b1b':'#166534';
-          var secBg=isRupture?'#fef2f2':'#f0fdf4';
-          var secTitle=isRupture?'🔴 Mis à 0 sur Shopify':'✅ Poussés vers Shopify';
-          detail+='<div style="margin-top:12px;border-top:1px solid var(--border);padding-top:10px">'
-            +'<div style="font-size:10px;font-weight:700;color:'+secColor+';text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">'+secTitle+' ('+pushedList.length+')</div>'
-            +'<div style="max-height:160px;overflow-y:auto;display:flex;flex-direction:column;gap:2px">';
+          var isZ=isRupture;
+          detail+='<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">'
+            +'<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:'+(isZ?'#dc2626':'#16a34a')+';margin-bottom:6px">'+(isZ?'Mis à 0 sur Shopify':'Poussés vers Shopify')+' ('+pushedList.length+')</div>'
+            +'<div style="max-height:140px;overflow-y:auto;display:flex;flex-direction:column;gap:1px">';
           detail+=pushedList.map(function(it){
-            return '<div style="font-size:12px;padding:5px 8px;background:'+secBg+';border-radius:4px;display:flex;justify-content:space-between;align-items:center">'
-              +'<span style="color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:320px"><b>'+it.product+'</b>'
-              +(it.size?' <span style="color:var(--muted)">'+it.size+'</span>':'')
-              +(it.color?' <span style="color:var(--muted)">/ '+it.color+'</span>':'')
-              +(it.fuzzy_score?' <span style="color:#9ca3af;font-size:10px">(~'+it.fuzzy_score+'%)</span>':'')+'</span>'
-              +(it.qty?'<b style="color:'+(isRupture?'#991b1b':'#16a34a')+';font-size:13px;flex-shrink:0;margin-left:8px">'+(isRupture?'→0':'+'+it.qty)+'</b>':'')
+            return '<div style="display:flex;align-items:center;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--border)">'
+              +'<span style="font-size:12px;color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:340px">'+it.product
+              +(it.size?' <span style="color:var(--muted);font-size:11px">'+it.size+'</span>':'')+'</span>'
+              +(it.qty?'<span style="font-size:11px;font-weight:700;color:'+(isZ?'#dc2626':'#16a34a')+';flex-shrink:0;margin-left:8px">'+(isZ?'→ 0':'+'+it.qty)+'</span>':'')
               +'</div>';
           }).join('');
           detail+='</div></div>';
         }
 
-        // Section 🔍 Sans correspondance — CLIQUABLE avec diagnostic
+        // Section Sans correspondance
         if(noMatchList.length>0){
-          detail+='<div style="margin-top:12px;border-top:1px solid var(--border);padding-top:10px">'
-            +'<div style="font-size:10px;font-weight:700;color:#92400e;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">🔍 Sans correspondance Shopify ('+noMatchList.length+')</div>'
-            +'<div style="max-height:260px;overflow-y:auto;display:flex;flex-direction:column;gap:4px">';
+          detail+='<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">'
+            +'<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:#d97706;margin-bottom:6px">Sans correspondance ('+noMatchList.length+')</div>'
+            +'<div style="max-height:240px;overflow-y:auto;display:flex;flex-direction:column;gap:0">';
           detail+=noMatchList.map(function(it){
             var diag=noMatchDiag(it);
             var sid=it.stock_ids&&it.stock_ids[0]?it.stock_ids[0]:null;
-            var clickAttr=sid?'onclick="event.stopPropagation();toggleNotifications();openModal(\''+sid+'\')" style="cursor:pointer"':'style="cursor:default"';
-            return '<div '+clickAttr+' style="background:#fffbeb;border:1px solid #fde68a;border-radius:5px;padding:7px 10px;transition:.12s" onmouseover="if('+!!sid+')this.style.background=\'#fef3c7\'" onmouseout="this.style.background=\'#fffbeb\'">'
-              // Ligne 1 : nom produit + taille + "→ Voir"
-              +'<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:4px">'
-              +  '<span style="font-size:12px;font-weight:600;color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+it.product+'</span>'
-              +  '<div style="display:flex;align-items:center;gap:5px;flex-shrink:0">'
-              +    (it.size?'<span style="background:#fde68a;color:#78350f;border-radius:3px;padding:1px 6px;font-size:10px;font-weight:700">'+it.size+'</span>':'<span style="background:#fee2e2;color:#991b1b;border-radius:3px;padding:1px 6px;font-size:10px;font-weight:700">sans taille</span>')
-              +    (sid?'<span style="font-size:10px;color:#854d0e;font-weight:600;text-decoration:underline">→ Voir</span>':'')
+            return '<div style="padding:6px 0;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;justify-content:space-between;gap:8px">'
+              +'<div style="min-width:0;flex:1">'
+              +  '<div style="display:flex;align-items:center;gap:5px;margin-bottom:2px">'
+              +    '<span style="width:6px;height:6px;border-radius:50%;background:'+diag.dot+';flex-shrink:0"></span>'
+              +    '<span style="font-size:12px;color:var(--text);font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+it.product+'</span>'
+              +    (it.size?'<span style="font-size:10px;background:var(--bg-soft);color:var(--muted);padding:1px 5px;border-radius:3px;font-weight:600;flex-shrink:0">'+it.size+'</span>':'<span style="font-size:10px;background:#fee2e2;color:#991b1b;padding:1px 5px;border-radius:3px;font-weight:600;flex-shrink:0">—</span>')
               +  '</div>'
+              +  '<div style="font-size:10px;color:var(--muted);padding-left:11px"><b style="color:#92400e">'+diag.label+'</b> — '+diag.fix+'</div>'
               +'</div>'
-              // Ligne 2 : diagnostic
-              +'<div style="display:flex;align-items:flex-start;gap:5px">'
-              +  '<span style="width:7px;height:7px;border-radius:50%;background:'+diag.dot+';flex-shrink:0;margin-top:3px"></span>'
-              +  '<div>'
-              +    '<span style="font-size:11px;font-weight:600;color:#78350f">'+diag.title+'</span>'
-              +    '<div style="font-size:10px;color:#92400e;margin-top:1px;line-height:1.4">→ '+diag.fix+'</div>'
-              +  '</div>'
-              +'</div>'
+              +(sid?'<button onclick="event.stopPropagation();toggleNotifications();openModal(\''+sid+'\')" style="background:transparent;border:none;font-size:10px;color:var(--muted);cursor:pointer;font-family:var(--font-main);font-weight:600;flex-shrink:0;padding:0;text-decoration:underline">Voir</button>':'')
               +'</div>';
           }).join('');
           detail+='</div></div>';
         }
 
-        // Section ❌ Erreurs — avec diagnostic technique clair
+        // Section Erreurs
         if(errList.length>0){
-          detail+='<div style="margin-top:12px;border-top:1px solid var(--border);padding-top:10px">'
-            +'<div style="font-size:10px;font-weight:700;color:#991b1b;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">❌ Erreurs ('+errList.length+')</div>'
-            +'<div style="max-height:200px;overflow-y:auto;display:flex;flex-direction:column;gap:4px">';
+          detail+='<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">'
+            +'<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:#dc2626;margin-bottom:6px">Erreurs ('+errList.length+')</div>'
+            +'<div style="max-height:160px;overflow-y:auto;display:flex;flex-direction:column;gap:0">';
           detail+=errList.map(function(it){
             var diag=errorDiag(it);
             var sid=it.stock_ids&&it.stock_ids[0]?it.stock_ids[0]:null;
-            return '<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:5px;padding:7px 10px">'
-              +'<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:4px">'
-              +  '<span style="font-size:12px;font-weight:600;color:#991b1b;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+it.product+(it.size?' · '+it.size:'')+'</span>'
-              +  (sid?'<span onclick="event.stopPropagation();toggleNotifications();openModal(\''+sid+'\')" style="font-size:10px;color:#991b1b;font-weight:600;text-decoration:underline;cursor:pointer;flex-shrink:0">→ Voir</span>':'')
-              +'</div>'
-              +'<div style="display:flex;align-items:flex-start;gap:5px">'
-              +  '<span style="width:7px;height:7px;border-radius:50%;background:'+diag.dot+';flex-shrink:0;margin-top:3px"></span>'
-              +  '<div>'
-              +    '<span style="font-size:11px;font-weight:600;color:#991b1b">'+diag.title+'</span>'
-              +    '<div style="font-size:10px;color:#b91c1c;margin-top:1px;line-height:1.4">→ '+diag.fix+'</div>'
+            return '<div style="padding:6px 0;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;justify-content:space-between;gap:8px">'
+              +'<div style="min-width:0;flex:1">'
+              +  '<div style="display:flex;align-items:center;gap:5px;margin-bottom:2px">'
+              +    '<span style="width:6px;height:6px;border-radius:50%;background:'+diag.dot+';flex-shrink:0"></span>'
+              +    '<span style="font-size:12px;color:#dc2626;font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+it.product+(it.size?' · '+it.size:'')+'</span>'
               +  '</div>'
+              +  '<div style="font-size:10px;color:var(--muted);padding-left:11px"><b style="color:#991b1b">'+diag.label+'</b> — '+diag.fix+'</div>'
               +'</div>'
+              +(sid?'<button onclick="event.stopPropagation();toggleNotifications();openModal(\''+sid+'\')" style="background:transparent;border:none;font-size:10px;color:var(--muted);cursor:pointer;font-family:var(--font-main);font-weight:600;flex-shrink:0;padding:0;text-decoration:underline">Voir</button>':'')
               +'</div>';
           }).join('');
           detail+='</div></div>';
         }
       }
 
-      return '<div style="border-left:4px solid '+accent+';padding:13px 14px 11px 14px;border-bottom:1px solid var(--border);cursor:pointer;transition:.15s" onclick="toggleNotifExpand(\''+n.id+'\')" onmouseover="this.style.background=\'#fafafa\'" onmouseout="this.style.background=\'transparent\'">'
+      // IMPORTANT: event.stopPropagation() empêche le handler "clic extérieur" de fermer le panel
+      // après le re-render (l'élément cliqué n'est plus dans le DOM → dd.contains retourne false sans ça)
+      return '<div style="border-left:3px solid '+accent+';padding:12px 14px;border-bottom:1px solid var(--border);cursor:pointer" onclick="event.stopPropagation();toggleNotifExpand(\''+n.id+'\')">'
         +'<div style="display:flex;align-items:center;justify-content:space-between">'
-        +  '<div style="display:flex;align-items:center;gap:7px">'
-        +    '<span style="font-size:15px;line-height:1">'+icon+'</span>'
+        +  '<div style="display:flex;align-items:center;gap:8px">'
         +    '<span style="font-family:var(--font-main);font-size:12px;font-weight:700;color:var(--text)">'+label+'</span>'
-        +    (isDry?'<span style="font-size:10px;background:#fef9c3;color:#854d0e;padding:1px 6px;border-radius:3px;font-weight:600">DRY-RUN</span>':'')
+        +    (isDry?'<span style="font-size:10px;background:#fef9c3;color:#854d0e;padding:1px 6px;border-radius:3px;font-weight:600">simulation</span>':'')
         +  '</div>'
         +  '<div style="display:flex;align-items:center;gap:8px">'
-        +    '<span style="font-size:11px;font-weight:700;color:'+statusTxt+';background:'+statusBg+';padding:2px 8px;border-radius:4px">'+statusLbl+'</span>'
+        +    '<span style="font-size:11px;font-weight:600;color:'+statusTxt+'">'+statusLbl+'</span>'
         +    '<span style="font-size:10px;color:var(--muted)">'+dt+'</span>'
-        +    '<span style="font-size:10px;color:var(--muted)">'+(isExpanded?'▲':'▼')+'</span>'
+        +    '<span style="font-size:11px;color:var(--muted)">'+(isExpanded?'▲':'▼')+'</span>'
         +  '</div>'
         +'</div>'
-        +'<div style="font-size:11px;color:var(--muted);margin-top:4px">'+(d.checked||0)+' vérifiés au total</div>'
-        +chips+detail
-        +'<div style="margin-top:10px;display:flex;gap:6px" onclick="event.stopPropagation()">'
-        +  '<button onclick="markNotifRead(\''+n.id+'\')" style="background:var(--text);color:#fff;border:none;border-radius:var(--radius-btn);padding:5px 11px;font-family:var(--font-main);font-size:11px;font-weight:600;cursor:pointer;text-transform:uppercase;letter-spacing:.04em">✓ Lu</button>'
+        +stats+detail
+        +'<div style="margin-top:10px" onclick="event.stopPropagation()">'
+        +  '<button onclick="markNotifRead(\''+n.id+'\')" style="background:transparent;border:1px solid var(--border);border-radius:var(--radius-btn);padding:3px 10px;font-family:var(--font-main);font-size:11px;font-weight:600;cursor:pointer;color:var(--muted)">✓ Lu</button>'
         +'</div>'
         +'</div>';
 
     } else {
       // ── Notification commande Shopify ──
       var variant=[n.variant_size,n.variant_color].filter(Boolean).join(' / ')||'—';
-      return '<div style="border-left:4px solid #3b82f6;padding:13px 14px;border-bottom:1px solid var(--border);transition:.15s" onmouseover="this.style.background=\'#fafafa\'" onmouseout="this.style.background=\'transparent\'">'
-        +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px">'
-        +  '<div style="display:flex;align-items:center;gap:6px"><span style="font-size:14px">📦</span>'
-        +    '<span style="font-family:var(--font-main);font-size:12px;font-weight:700;color:var(--text)">'+(n.shopify_order_number||'Commande')+'</span>'
-        +  '</div>'
+      return '<div style="border-left:3px solid #3b82f6;padding:12px 14px;border-bottom:1px solid var(--border)">'
+        +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">'
+        +  '<span style="font-family:var(--font-main);font-size:12px;font-weight:700;color:var(--text)">'+(n.shopify_order_number||'Commande')+'</span>'
         +  '<span style="font-size:10px;color:var(--muted)">'+dt+'</span>'
         +'</div>'
-        +'<div style="font-size:13px;color:var(--text);font-weight:600;margin-bottom:4px">'+(n.product_title||'—')+'</div>'
-        +'<div style="font-size:12px;color:var(--muted);margin-bottom:5px;display:flex;align-items:center;gap:8px">'
-        +  '<span style="background:#f1f5f9;padding:2px 7px;border-radius:4px;font-weight:600;font-size:11px">'+variant+'</span>'
-        +  '<span>Stock dispo : <b style="color:#16a34a">'+(n.matched_qty||0)+'</b></span>'
+        +'<div style="font-size:13px;color:var(--text);font-weight:600;margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+(n.product_title||'—')+'</div>'
+        +'<div style="display:flex;align-items:center;gap:8px;font-size:11px;color:var(--muted);margin-bottom:6px">'
+        +  '<span style="background:var(--bg-soft);padding:1px 6px;border-radius:3px;font-weight:600">'+variant+'</span>'
+        +  '<span>Stock : <b style="color:#16a34a">'+(n.matched_qty||0)+'</b></span>'
+        +  (n.customer_name?'<span>· '+n.customer_name+'</span>':'')
         +'</div>'
-        +(n.customer_name?'<div style="font-size:11px;color:var(--muted);margin-bottom:8px">👤 '+n.customer_name+(n.customer_city?' · '+n.customer_city:'')+'</div>':'<div style="margin-bottom:8px"></div>')
         +'<div style="display:flex;gap:6px">'
-        +  '<button onclick="event.stopPropagation();markNotifRead(\''+n.id+'\')" style="background:var(--text);color:#fff;border:none;border-radius:var(--radius-btn);padding:5px 11px;font-family:var(--font-main);font-size:11px;font-weight:600;cursor:pointer;text-transform:uppercase;letter-spacing:.04em">✓ Vu</button>'
-        +  '<button onclick="event.stopPropagation();archiveNotif(\''+n.id+'\')" style="background:transparent;border:1px solid var(--border);border-radius:var(--radius-btn);padding:5px 11px;font-family:var(--font-main);font-size:11px;font-weight:600;cursor:pointer;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Archiver</button>'
+        +  '<button onclick="event.stopPropagation();markNotifRead(\''+n.id+'\')" style="background:transparent;border:1px solid var(--border);border-radius:var(--radius-btn);padding:3px 10px;font-family:var(--font-main);font-size:11px;font-weight:600;cursor:pointer;color:var(--muted)">✓ Vu</button>'
         +'</div>'
         +'</div>';
     }
