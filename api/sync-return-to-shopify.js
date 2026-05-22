@@ -10,31 +10,93 @@
 //    c. Lit inventaire Shopify courant (live, pas cache, pour être sûr)
 //    d. Si inventory == 0 (rupture) → push +total_local
 //    e. Marque tous les stock items avec shopify_pushed_at, shopify_qty_pushed, variant_id
-// 4. Retourne récap { checked, pushed, skipped, errors }
+// 4. Insère une notification Supabase (shopify_notifications) avec le résumé du sync
+// 5. Retourne récap { checked, pushed, skipped, errors }
 //
 // Mode :
 // - GET /api/sync-return-to-shopify?secret=... → dry-run (juste analyse, pas de push)
 // - POST /api/sync-return-to-shopify?secret=... → exécute les pushs
 
 const {
-  SHOPIFY_ADMIN_TOKEN, SHOPIFY_LOCATION_ID, SB_URL,
+  SHOPIFY_CLIENT_ID, SHOPIFY_LOCATION_ID, SB_URL,
   shopifyAdminHeaders, supabaseHeaders,
   getInventoryLevel, adjustInventory,
   normalizeSize, normalizeColor,
 } = require('./_shopify-helpers.js');
+
+// Shopify REST allows 2 req/s on the standard plan.
+// We call getInventoryLevel() once per matched group — throttle to avoid 429s.
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
 
 function groupKey(title, size, color) {
   return `${title}||${normalizeSize(size) || ''}||${normalizeColor(color) || ''}`;
 }
 
 function parseSize(stockSize) {
-  // stock.size est au format "M | Black" ou "M" ou ""
+  // stock.size est au format "M | Black" ou "M" ou "" ou "—" (em-dash sentinel = inconnu)
   if (!stockSize) return { size: null, color: null };
-  const parts = String(stockSize).split('|');
+  const s = String(stockSize).trim();
+  // Ignore sentinel values used in the DB to mean "no size"
+  if (s === '—' || s === '-' || s === 'N/A' || s === 'n/a') return { size: null, color: null };
+  const parts = s.split('|');
   return {
     size: parts[0] ? parts[0].trim() : null,
     color: parts.length > 1 ? parts[1].trim() : null,
   };
+}
+
+// Insert a sync summary notification in shopify_notifications
+async function insertSyncNotification(isDryRun, results) {
+  try {
+    const pushedItems = results.details.filter(d =>
+      d.status === 'pushed' || d.status === 'would_push'
+    );
+    const status =
+      pushedItems.length === 0 ? 'rien_a_pousser' :
+      results.errors > 0       ? 'partiel' :
+                                  'succes';
+
+    const message = isDryRun
+      ? `[DRY-RUN] Simulation sync : ${pushedItems.length} articles seraient poussés`
+      : `Sync terminé : ${pushedItems.length} article(s) poussé(s) vers Shopify`;
+
+    const notification = {
+      type: isDryRun ? 'sync_dry_run' : 'sync_shopify',
+      message,
+      data: {
+        dry_run: isDryRun,
+        status,
+        checked: results.checked,
+        pushed: results.pushed,
+        skipped_has_stock: results.skipped_has_stock,
+        skipped_no_match: results.skipped_no_match,
+        errors: results.errors,
+        pushed_items: pushedItems.map(d => ({
+          product: d.product,
+          size: d.size,
+          color: d.color || null,
+          qty: d.qty_pushed,
+        })),
+      },
+    };
+
+    const url = `${SB_URL}/rest/v1/shopify_notifications`;
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: { ...supabaseHeaders(), Prefer: 'return=minimal' },
+      body: JSON.stringify(notification),
+    });
+    if (!r.ok) {
+      console.warn('[sync-return] Notification insert failed:', await r.text());
+    } else {
+      console.log(`[sync-return] Notification inserted (status=${status})`);
+    }
+  } catch (e) {
+    // Non-blocking — don't fail the whole sync because of a notification error
+    console.warn('[sync-return] insertSyncNotification error:', e.message);
+  }
 }
 
 module.exports = async function handler(req, res) {
@@ -46,9 +108,9 @@ module.exports = async function handler(req, res) {
 
   const isDryRun = req.method === 'GET';
 
-  if (!SHOPIFY_ADMIN_TOKEN || !SHOPIFY_LOCATION_ID) {
+  if (!SHOPIFY_CLIENT_ID || !SHOPIFY_LOCATION_ID) {
     return res.status(503).json({
-      error: 'SHOPIFY_ADMIN_TOKEN or SHOPIFY_LOCATION_ID not configured.',
+      error: 'SHOPIFY_CLIENT_ID or SHOPIFY_LOCATION_ID not configured.',
     });
   }
 
@@ -84,6 +146,8 @@ module.exports = async function handler(req, res) {
       details: [],
     };
 
+    let shopifyCallCount = 0;
+
     for (const key in groups) {
       const grp = groups[key];
       results.checked++;
@@ -115,6 +179,11 @@ module.exports = async function handler(req, res) {
           continue;
         }
 
+        // FIX: Throttle Shopify REST calls to stay under 2 req/s limit (avoids 429)
+        // Every Shopify call (getInventoryLevel + adjustInventory) is preceded by a 550ms pause.
+        shopifyCallCount++;
+        if (shopifyCallCount > 1) await sleep(550);
+
         // Read live inventory (don't trust cache for the push decision)
         const liveInv = await getInventoryLevel(match.inventory_item_id);
         if (liveInv === null) {
@@ -138,7 +207,11 @@ module.exports = async function handler(req, res) {
 
         // Shopify is at 0 → push the full qty from our returns
         if (!isDryRun) {
+          // adjustInventory counts as another Shopify call — add extra delay
+          await sleep(550);
           await adjustInventory(match.inventory_item_id, grp.totalQty);
+          shopifyCallCount++;
+
           // Mark all stock items as pushed
           const now = new Date().toISOString();
           for (const item of grp.items) {
@@ -180,6 +253,10 @@ module.exports = async function handler(req, res) {
     }
 
     console.log(`[sync-return] Done : ${results.pushed} pushed, ${results.skipped_has_stock} skipped (has stock), ${results.skipped_no_match} skipped (no match), ${results.errors} errors`);
+
+    // 4. Insert Supabase notification with sync summary (non-blocking)
+    await insertSyncNotification(isDryRun, results);
+
     return res.status(200).json({
       success: true,
       dry_run: isDryRun,

@@ -1,14 +1,22 @@
 // API simple pour les notifications Shopify (consultées par le dashboard admin)
-// GET /api/notifications?status=unread → liste
-// PATCH /api/notifications?id=XXX → marquer comme lu/archivé
+// GET /api/notifications?secret=...&status=unread → liste
+// PATCH /api/notifications?secret=...&id=XXX → marquer comme lu/archivé
+// DELETE /api/notifications?secret=...&id=XXX → supprimer
 
 const { SB_URL, supabaseHeaders } = require('./_shopify-helpers.js');
 
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, PATCH, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Sync-Secret');
   if (req.method === 'OPTIONS') return res.status(204).end();
+
+  // FIX: Auth guard — protect all methods (not just mutation) to avoid exposing order data
+  const expectedSecret = process.env.SYNC_SECRET || 'touni-sync-2026';
+  const providedSecret = req.query?.secret || req.headers['x-sync-secret'];
+  if (providedSecret !== expectedSecret) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
 
   try {
     if (req.method === 'GET') {
