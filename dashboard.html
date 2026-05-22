@@ -249,10 +249,20 @@ td{padding:12px 14px;vertical-align:middle}
   </nav>
   <div class="header-right">
     <div class="sync-dot" id="sync-dot"></div>
+    <button id="bell-btn" onclick="toggleNotifications()" title="Notifications Shopify" style="position:relative;background:transparent;border:1px solid var(--border);border-radius:var(--radius-btn);padding:6px 10px;font-family:var(--font-main);font-size:14px;cursor:pointer;color:var(--text)">🔔<span id="bell-count" style="display:none;position:absolute;top:-4px;right:-4px;background:var(--signal);color:#fff;font-size:9px;font-weight:700;padding:1px 5px;border-radius:8px;min-width:16px;text-align:center;font-family:var(--font-main)">0</span></button>
     <a href="/" style="text-decoration:none"><button class="btn-secondary" style="font-size:10px;padding:5px 12px;border-radius:20px">🔄 Stock Retours</button></a>
     <button class="btn-logout" onclick="logout()">Déconnexion</button>
   </div>
 </header>
+
+<!-- Dropdown notifications -->
+<div id="notif-dropdown" style="display:none;position:fixed;top:90px;right:20px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:0 12px 40px rgba(0,0,0,.18);width:380px;max-width:calc(100vw - 40px);max-height:70vh;overflow-y:auto;z-index:500">
+  <div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;background:var(--bg-soft)">
+    <div style="font-family:var(--font-main);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)">📬 Notifications Shopify</div>
+    <button onclick="toggleNotifications()" style="background:transparent;border:none;font-size:18px;cursor:pointer;color:var(--muted);line-height:1;padding:0 4px">×</button>
+  </div>
+  <div id="notif-list" style="padding:8px"></div>
+</div>
 
 <!-- ── Date range bar (global, sticky sous le header) ── -->
 <div class="dr-bar" id="dr-bar">
@@ -1393,6 +1403,78 @@ async function sbDelete(table,id){
   if(!r.ok) throw new Error(await r.text());
 }
 
+// ── Notifications Shopify (commandes matchées) ──
+var notifications=[];
+async function loadNotifications(){
+  try{
+    var r=await fetch('/api/notifications?status=unread&limit=50');
+    if(!r.ok) return;
+    var data=await r.json();
+    notifications=data.notifications||[];
+    renderBellCounter();
+  }catch(e){ console.warn('loadNotifications:',e.message); }
+}
+function renderBellCounter(){
+  var c=notifications.length;
+  var bell=document.getElementById('bell-count');
+  if(!bell) return;
+  if(c>0){ bell.textContent=c>99?'99+':c; bell.style.display='block'; }
+  else { bell.style.display='none'; }
+}
+function toggleNotifications(){
+  var dd=document.getElementById('notif-dropdown');
+  if(dd.style.display==='block'){ dd.style.display='none'; return; }
+  renderNotificationsList();
+  dd.style.display='block';
+}
+function renderNotificationsList(){
+  var list=document.getElementById('notif-list');
+  if(!notifications.length){
+    list.innerHTML='<div style="padding:30px 20px;text-align:center;color:var(--muted);font-size:13px">Aucune nouvelle notification</div>';
+    return;
+  }
+  list.innerHTML=notifications.map(function(n){
+    var dt=new Date(n.created_at).toLocaleString('fr-FR',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
+    var variant=[n.variant_size,n.variant_color].filter(Boolean).join(' / ')||'—';
+    return '<div style="padding:12px;border-bottom:1px solid var(--border);transition:.2s ease" onmouseover="this.style.background=\'var(--bg-soft)\'" onmouseout="this.style.background=\'transparent\'">'
+      +'<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px">'
+      +'<div style="font-family:var(--font-main);font-size:12px;font-weight:700;color:var(--text)">📦 '+n.shopify_order_number+'</div>'
+      +'<div style="font-size:10px;color:var(--muted)">'+dt+'</div>'
+      +'</div>'
+      +'<div style="font-size:13px;color:var(--text);margin-bottom:4px;font-weight:500">'+n.product_title+'</div>'
+      +'<div style="font-size:12px;color:var(--muted);margin-bottom:6px">Taille : <b>'+variant+'</b> · Stock retours : <b style="color:var(--green)">'+n.matched_qty+' dispo</b></div>'
+      +(n.customer_name?'<div style="font-size:11px;color:var(--muted)">👤 '+n.customer_name+(n.customer_city?' · '+n.customer_city:'')+'</div>':'')
+      +'<div style="margin-top:8px;display:flex;gap:6px">'
+      +'<a href="/" style="background:var(--text);color:#fff;border:none;border-radius:var(--radius-btn);padding:6px 12px;font-family:var(--font-main);font-size:11px;font-weight:600;cursor:pointer;text-transform:uppercase;letter-spacing:.04em;text-decoration:none">Voir stock →</a>'
+      +'<button onclick="event.stopPropagation();markNotifRead(\''+n.id+'\')" style="background:transparent;border:1px solid var(--border);border-radius:var(--radius-btn);padding:6px 12px;font-family:var(--font-main);font-size:11px;font-weight:600;cursor:pointer;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">✓ Lu</button>'
+      +'<button onclick="event.stopPropagation();archiveNotif(\''+n.id+'\')" style="background:transparent;border:1px solid var(--border);border-radius:var(--radius-btn);padding:6px 12px;font-family:var(--font-main);font-size:11px;font-weight:600;cursor:pointer;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Archiver</button>'
+      +'</div>'
+      +'</div>';
+  }).join('');
+}
+async function markNotifRead(id){
+  try{
+    await fetch('/api/notifications?id='+id+'&status=read',{method:'PATCH'});
+    notifications=notifications.filter(function(n){return n.id!==id;});
+    renderBellCounter(); renderNotificationsList();
+  }catch(e){ alert('Erreur : '+e.message); }
+}
+async function archiveNotif(id){
+  try{
+    await fetch('/api/notifications?id='+id+'&status=archived',{method:'PATCH'});
+    notifications=notifications.filter(function(n){return n.id!==id;});
+    renderBellCounter(); renderNotificationsList();
+  }catch(e){ alert('Erreur : '+e.message); }
+}
+// Click outside notif dropdown → close
+document.addEventListener('click',function(e){
+  var dd=document.getElementById('notif-dropdown');
+  var bell=document.getElementById('bell-btn');
+  if(dd && dd.style.display==='block' && !dd.contains(e.target) && !bell.contains(e.target)){
+    dd.style.display='none';
+  }
+});
+
 // ── Init ──
 async function initApp(){
   dot('loading');
@@ -1438,6 +1520,9 @@ async function initApp(){
   ]);
   renderAll();
   document.getElementById('last-calc').textContent=new Date().toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+  // Charge les notifications au boot puis poll toutes les 60s
+  loadNotifications();
+  setInterval(loadNotifications, 60000);
 }
 
 function setDefaultDates(){

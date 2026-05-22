@@ -1,0 +1,159 @@
+// Helpers partagés pour l'intégration Shopify Admin API
+// Utilisé par sync-products-admin.js, sync-return-to-shopify.js, shopify-order-webhook.js
+
+const SHOPIFY_DOMAIN = process.env.SHOPIFY_DOMAIN || 'tounikora.myshopify.com';
+const SHOPIFY_ADMIN_TOKEN = process.env.SHOPIFY_ADMIN_TOKEN || '';
+const SHOPIFY_LOCATION_ID = process.env.SHOPIFY_LOCATION_ID || '';
+const SHOPIFY_API_VERSION = '2024-10';
+
+const SB_URL = process.env.SUPABASE_URL || 'https://dwjjrgjbkftejdcmwpgc.supabase.co';
+const SB_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || ''; // For server-side writes
+const SB_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR3ampyZ2pia2Z0ZWpkY213cGdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU0NzI2MDYsImV4cCI6MjA5MTA0ODYwNn0.6GxM9u1Om7zP-_MEYVhdtHBESyGLDZGFofxSKGwixPo';
+
+function shopifyAdminHeaders() {
+  return {
+    'X-Shopify-Access-Token': SHOPIFY_ADMIN_TOKEN,
+    'Content-Type': 'application/json',
+  };
+}
+
+function supabaseHeaders(useService = false) {
+  const key = useService && SB_SERVICE_KEY ? SB_SERVICE_KEY : SB_ANON_KEY;
+  return {
+    apikey: key,
+    Authorization: `Bearer ${key}`,
+    'Content-Type': 'application/json',
+    Prefer: 'return=representation',
+  };
+}
+
+// Normalize size for matching (S/M/L/XL/2XL)
+const SIZE_MAP = {
+  's':'S', 's (168-173 cm)':'S', 's (168-173cm)':'S',
+  'm':'M', 'm (173-178 cm)':'M', 'm (173-178cm)':'M',
+  'l':'L', 'l (178-183 cm)':'L', 'l (178-183cm)':'L',
+  'xl':'XL', 'xl (183-188 cm)':'XL', 'xl (183-188cm)':'XL',
+  'xxl':'2XL', 'xxl (188-193 cm)':'2XL', 'xxl (188-193cm)':'2XL',
+  '2xl':'2XL', '3xl':'3XL', '4xl':'4XL', 'xs':'XS',
+};
+
+const SIZE_OPTION_NAMES = new Set(['taille','size','pointure','pointures','sizes','tailles']);
+const COLOR_OPTION_NAMES = new Set(['couleur','color','coloris','couleurs','colors']);
+
+function normalizeSize(s) {
+  if (!s) return null;
+  const k = String(s).trim().toLowerCase();
+  if (k === 'default title' || k === 'default') return null;
+  return SIZE_MAP[k] || String(s).trim();
+}
+
+function normalizeColor(c) {
+  if (!c) return null;
+  const k = String(c).trim().toLowerCase();
+  if (k === 'default title' || k === 'default') return null;
+  return String(c).trim();
+}
+
+// ── Shopify Admin API : fetch all products with variants + inventory_item_id ──
+async function fetchShopifyProductsAdmin() {
+  if (!SHOPIFY_ADMIN_TOKEN) throw new Error('SHOPIFY_ADMIN_TOKEN not configured');
+  const products = [];
+  let url = `https://${SHOPIFY_DOMAIN}/admin/api/${SHOPIFY_API_VERSION}/products.json?limit=250&fields=id,title,options,variants`;
+  while (url) {
+    const res = await fetch(url, { headers: shopifyAdminHeaders() });
+    if (!res.ok) throw new Error(`Shopify Admin error ${res.status}: ${await res.text()}`);
+    const data = await res.json();
+    products.push(...(data.products || []));
+    // Pagination via Link header
+    const link = res.headers.get('link') || '';
+    const nextMatch = link.match(/<([^>]+)>;\s*rel="next"/);
+    url = nextMatch ? nextMatch[1] : null;
+  }
+  return products;
+}
+
+// ── Get current inventory level for a specific inventory_item_id at our location ──
+async function getInventoryLevel(inventoryItemId) {
+  if (!SHOPIFY_ADMIN_TOKEN || !SHOPIFY_LOCATION_ID) {
+    throw new Error('SHOPIFY_ADMIN_TOKEN or SHOPIFY_LOCATION_ID not configured');
+  }
+  const url = `https://${SHOPIFY_DOMAIN}/admin/api/${SHOPIFY_API_VERSION}/inventory_levels.json?inventory_item_ids=${inventoryItemId}&location_ids=${SHOPIFY_LOCATION_ID}`;
+  const res = await fetch(url, { headers: shopifyAdminHeaders() });
+  if (!res.ok) throw new Error(`getInventoryLevel ${res.status}: ${await res.text()}`);
+  const data = await res.json();
+  const level = (data.inventory_levels || [])[0];
+  return level ? (level.available || 0) : null;
+}
+
+// ── Adjust inventory by delta (+N or -N) ──
+async function adjustInventory(inventoryItemId, delta) {
+  if (!SHOPIFY_ADMIN_TOKEN || !SHOPIFY_LOCATION_ID) {
+    throw new Error('SHOPIFY_ADMIN_TOKEN or SHOPIFY_LOCATION_ID not configured');
+  }
+  const url = `https://${SHOPIFY_DOMAIN}/admin/api/${SHOPIFY_API_VERSION}/inventory_levels/adjust.json`;
+  const body = {
+    location_id: parseInt(SHOPIFY_LOCATION_ID),
+    inventory_item_id: parseInt(inventoryItemId),
+    available_adjustment: parseInt(delta),
+  };
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: shopifyAdminHeaders(),
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`adjustInventory ${res.status}: ${await res.text()}`);
+  return res.json();
+}
+
+// ── List Shopify locations (to find SHOPIFY_LOCATION_ID at setup) ──
+async function listLocations() {
+  if (!SHOPIFY_ADMIN_TOKEN) throw new Error('SHOPIFY_ADMIN_TOKEN not configured');
+  const url = `https://${SHOPIFY_DOMAIN}/admin/api/${SHOPIFY_API_VERSION}/locations.json`;
+  const res = await fetch(url, { headers: shopifyAdminHeaders() });
+  if (!res.ok) throw new Error(`listLocations ${res.status}: ${await res.text()}`);
+  const data = await res.json();
+  return data.locations || [];
+}
+
+// ── Match a stock_retours item to a Shopify variant via the cache ──
+// Returns { variant_id, inventory_item_id, inventory_quantity } or null
+async function matchVariantInCache(productTitle, size, color) {
+  const normSize = normalizeSize(size);
+  const normColor = normalizeColor(color);
+  // Use Supabase RPC or direct query
+  const params = new URLSearchParams();
+  params.set('select', 'variant_id,inventory_item_id,inventory_quantity,size,color');
+  params.set('product_title', `eq.${productTitle}`);
+  let url = `${SB_URL}/rest/v1/shopify_variants_cache?${params.toString()}`;
+  const res = await fetch(url, { headers: supabaseHeaders() });
+  if (!res.ok) return null;
+  const candidates = await res.json();
+  if (!candidates.length) return null;
+  // Exact match first
+  let match = candidates.find(c => normalizeSize(c.size) === normSize && normalizeColor(c.color) === normColor);
+  if (match) return match;
+  // Fallback: same size, color ignored
+  match = candidates.find(c => normalizeSize(c.size) === normSize);
+  return match || null;
+}
+
+module.exports = {
+  SHOPIFY_DOMAIN,
+  SHOPIFY_ADMIN_TOKEN,
+  SHOPIFY_LOCATION_ID,
+  SHOPIFY_API_VERSION,
+  SB_URL,
+  SB_SERVICE_KEY,
+  SB_ANON_KEY,
+  shopifyAdminHeaders,
+  supabaseHeaders,
+  normalizeSize,
+  normalizeColor,
+  fetchShopifyProductsAdmin,
+  getInventoryLevel,
+  adjustInventory,
+  listLocations,
+  matchVariantInCache,
+  SIZE_OPTION_NAMES,
+  COLOR_OPTION_NAMES,
+};
