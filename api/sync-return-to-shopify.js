@@ -82,7 +82,7 @@ function titleSimilarity(a, b) {
   return inter / union;
 }
 
-const FUZZY_THRESHOLD = 0.55; // 55% de mots en commun → match accepté
+const FUZZY_THRESHOLD = 0.65; // 65% de mots en commun → match accepté
 
 function parseSize(stockSize) {
   // stock.size est au format "M | Black" ou "M" ou "" ou "—" (em-dash sentinel = inconnu)
