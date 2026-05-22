@@ -1,14 +1,9 @@
 // Synchronise le cache local des variantes Shopify (titre, size, color, inventory)
 // Appelé manuellement (depuis le dashboard) ou via cron quotidien
-// Requiert SHOPIFY_ADMIN_TOKEN + SHOPIFY_LOCATION_ID
-//
-// Workflow :
-// 1. Fetch tous les produits via Admin API (inclut variants + inventory_item_id)
-// 2. Pour chaque variant, fetch son inventory level à notre location
-// 3. Upsert dans shopify_variants_cache
+// Auth: client_credentials via touni-master-api (auto-renouvelé)
 
 const {
-  SHOPIFY_ADMIN_TOKEN, SHOPIFY_LOCATION_ID, SB_URL,
+  SHOPIFY_CLIENT_ID, SHOPIFY_LOCATION_ID, SB_URL,
   shopifyAdminHeaders, supabaseHeaders,
   fetchShopifyProductsAdmin, normalizeSize, normalizeColor,
   SIZE_OPTION_NAMES, COLOR_OPTION_NAMES, SHOPIFY_DOMAIN, SHOPIFY_API_VERSION,
@@ -41,7 +36,7 @@ async function fetchInventoryLevelsBatch(inventoryItemIds) {
   for (const chunk of chunks) {
     const ids = chunk.join(',');
     const url = `https://${SHOPIFY_DOMAIN}/admin/api/${SHOPIFY_API_VERSION}/inventory_levels.json?inventory_item_ids=${ids}&location_ids=${SHOPIFY_LOCATION_ID}&limit=250`;
-    const res = await fetch(url, { headers: shopifyAdminHeaders() });
+    const res = await fetch(url, { headers: await shopifyAdminHeaders() });
     if (!res.ok) {
       console.warn(`Inventory batch error: ${res.status} ${await res.text()}`);
       continue;
@@ -61,9 +56,9 @@ module.exports = async function handler(req, res) {
   if (providedSecret !== expectedSecret) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
-  if (!SHOPIFY_ADMIN_TOKEN) {
+  if (!SHOPIFY_CLIENT_ID) {
     return res.status(503).json({
-      error: 'SHOPIFY_ADMIN_TOKEN not configured. Add it to Vercel env vars.',
+      error: 'SHOPIFY_CLIENT_ID not configured. Add it to Vercel env vars.',
     });
   }
   if (!SHOPIFY_LOCATION_ID) {
