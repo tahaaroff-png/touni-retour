@@ -2,8 +2,12 @@
 //
 // Logique :
 //   Trouve tous les items du stock qui ont DÉJÀ été poussés vers Shopify
-//   (shopify_pushed_at IS NOT NULL) ET qui sont devenus "vendu", "mystere", ou qty=0.
-//   Pour chacun : met l'inventaire Shopify à 0 (rupture de stock).
+//   (shopify_pushed_at IS NOT NULL) ET dont le statut est "vendu" ou "mystere".
+//   Pour chacun : lit l'inventaire live Shopify, met à 0 si > 0.
+//
+//   NOTE : pour les ventes Shopify normales, Shopify déduit automatiquement
+//   l'inventaire → skipped_already_zero (aucun effet).
+//   Cette sync est utile pour les ventes physiques / mystère non passées par Shopify.
 //
 // SÉCURITÉ CRITIQUE :
 //   On ne touche QUE les variants où shopify_pushed_at IS NOT NULL.
@@ -135,41 +139,28 @@ module.exports = async function handler(req, res) {
   }
 
   try {
-    // ── 1. Récupère les items précédemment poussés qui sont devenus rupture ──
-    // Condition : shopify_pushed_at IS NOT NULL AND (status IN ('vendu','mystere') OR qty = 0)
-    // On fait deux requêtes et on fusionne (PostgREST ne supporte pas OR cross-colonnes en une seule)
+    // ── 1. Récupère les items précédemment poussés avec status vendu ou mystère ──
+    //
+    // CONDITION STRICTE :
+    //   shopify_pushed_at IS NOT NULL   → on ne touche QUE ce qu'on a poussé
+    //   AND status IN ('vendu','mystere') → statut changé manuellement par l'opératrice
+    //
+    // On exclut volontairement qty = 0 : un article "retour" à qty 0 n'est pas forcément
+    // vendu. Pour les ventes Shopify normales, Shopify déduit automatiquement l'inventaire
+    // → la sync trouve déjà 0 → skipped_already_zero (aucun effet).
+    // La rupture sync est utile uniquement pour les ventes physiques / mystère non passées
+    // par Shopify, où l'opératrice change le statut mais Shopify n'est pas mis à jour.
 
     const baseFilter = `shopify_pushed_at=not.is.null&select=id,product,size,qty,status,shopify_inventory_item_id,shopify_variant_id,shopify_pushed_at,shopify_qty_pushed`;
-
-    // Fetch status = vendu ou mystere
     const urlStatus = `${SB_URL}/rest/v1/stock?${baseFilter}&status=in.(vendu,mystere)`;
-    // Fetch qty = 0 (peu importe le status — peut être 'retour' avec qty tombée à 0)
-    const urlQtyZero = `${SB_URL}/rest/v1/stock?${baseFilter}&qty=eq.0&status=eq.retour`;
 
-    const [resStatus, resQty] = await Promise.all([
-      fetch(urlStatus, { headers: supabaseHeaders() }),
-      fetch(urlQtyZero, { headers: supabaseHeaders() }),
-    ]);
-    if (!resStatus.ok) throw new Error('Stock fetch error (status): ' + await resStatus.text());
-    if (!resQty.ok)    throw new Error('Stock fetch error (qty=0): '  + await resQty.text());
-
+    const resStatus = await fetch(urlStatus, { headers: supabaseHeaders() });
+    if (!resStatus.ok) throw new Error('Stock fetch error: ' + await resStatus.text());
     const byStatus = await resStatus.json();
-    const byQty    = await resQty.json();
 
-    // Déduplique par id
-    const seenIds = new Set();
-    const eligible = [];
-    for (const item of [...byStatus, ...byQty]) {
-      if (!seenIds.has(item.id)) {
-        seenIds.add(item.id);
-        // Safety: double-check that shopify_inventory_item_id is present
-        if (item.shopify_inventory_item_id) {
-          eligible.push(item);
-        }
-      }
-    }
+    const eligible = byStatus.filter(item => !!item.shopify_inventory_item_id);
 
-    console.log(`[sync-rupture] Found ${eligible.length} previously-pushed items to check (vendu/mystere/qty=0)`);
+    console.log(`[sync-rupture] Found ${eligible.length} previously-pushed items to check (vendu/mystere)`);
 
     // ── 2. Groupe par inventory_item_id (un seul appel Shopify par variant) ──
     const groups = {};
@@ -188,7 +179,6 @@ module.exports = async function handler(req, res) {
       groups[key].items.push(item);
       if (item.status === 'vendu')   groups[key].reasons.add('vendu');
       if (item.status === 'mystere') groups[key].reasons.add('mystere');
-      if (item.qty === 0)            groups[key].reasons.add('qty=0');
     }
 
     const results = {
