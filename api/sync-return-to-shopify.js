@@ -139,6 +139,10 @@ async function insertSyncNotification(isDryRun, results) {
             color: d.color || null,
             qty: d.qty,
             reason: d.reason,
+            cause: d.cause || 'unknown',
+            stock_ids: d.stock_ids || [],
+            candidates_count: d.candidates_count || 0,
+            matched_shopify_title: d.matched_shopify_title || null,
           })),
         error_items: results.details
           .filter(d => d.status === 'error')
@@ -146,6 +150,7 @@ async function insertSyncNotification(isDryRun, results) {
             product: d.product,
             size: d.size,
             reason: d.reason,
+            stock_ids: d.stock_ids || [],
           })),
         skipped_stock_items: results.details
           .filter(d => d.status === 'skipped_has_stock')
@@ -280,9 +285,16 @@ module.exports = async function handler(req, res) {
         }
         if (!match) {
           results.skipped_no_match++;
+          const cause = candidates.length === 0
+            ? 'no_cache'
+            : (!grp.size ? 'size_null' : 'size_mismatch');
           results.details.push({
             status: 'skipped_no_match',
             product: grp.product, size: grp.size, color: grp.color, qty: grp.totalQty,
+            stock_ids: grp.items.map(i => i.id),
+            cause,
+            candidates_count: candidates.length,
+            matched_shopify_title: matchedTitle || null,
             reason: candidates.length === 0
               ? 'Aucune variante dans le cache (sync-products-cache requis ?)'
               : `Aucune correspondance pour size=${grp.size} color=${grp.color} parmi ${candidates.length} candidats de "${matchedTitle}"`,

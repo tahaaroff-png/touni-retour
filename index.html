@@ -929,9 +929,35 @@ function toggleNotifExpand(id){
   else expandedNotifs.add(id);
   renderNotificationsList();
 }
+
+// Diagnostic structuré d'un item "sans correspondance"
+function noMatchDiag(it){
+  var cause=it.cause||'unknown';
+  if(cause==='no_cache'||it.candidates_count===0)
+    return {dot:'#f59e0b',title:'Absent du cache Shopify',fix:'Relancez "Sync Cache" pour importer les variantes Shopify'};
+  if(cause==='size_null'||!it.size)
+    return {dot:'#ef4444',title:'Taille non renseignée dans votre stock',fix:'Ouvrez la fiche article et renseignez la taille'};
+  if(it.matched_shopify_title && it.matched_shopify_title!==it.product)
+    return {dot:'#f97316',title:'Titre flou — taille "'+it.size+'" introuvable',fix:'Shopify a trouvé "'+it.matched_shopify_title+'" mais pas la taille '+it.size+'. Vérifiez les variantes disponibles sur Shopify'};
+  return {dot:'#f97316',title:'Taille "'+it.size+'" introuvable sur Shopify',fix:'Vérifiez que la taille '+it.size+' existe bien sur Shopify pour ce produit'};
+}
+
+// Diagnostic structuré d'une erreur technique
+function errorDiag(it){
+  var r=it.reason||'';
+  if(r.indexOf('401')!==-1||r.indexOf('403')!==-1)
+    return {dot:'#ef4444',title:'Accès Shopify refusé (401/403)',fix:'Vérifiez que le token Shopify Admin a les scopes write_inventory et read_inventory'};
+  if(r.indexOf('404')!==-1)
+    return {dot:'#f97316',title:'Variante introuvable sur Shopify (404)',fix:'Le produit existe dans le cache mais a peut-être été supprimé sur Shopify. Relancez "Sync Cache"'};
+  if(r.indexOf('timeout')!==-1||r.indexOf('ETIMEDOUT')!==-1)
+    return {dot:'#f59e0b',title:'Timeout — Shopify n\'a pas répondu',fix:'Réessayez plus tard. Si ça persiste, vérifiez le statut Shopify'};
+  if(r.indexOf('inventory_level introuvable')!==-1)
+    return {dot:'#f97316',title:'Niveau d\'inventaire introuvable',fix:'Ce variant n\'est peut-être pas attaché à votre location. Vérifiez dans Shopify Products → Inventory'};
+  return {dot:'#ef4444',title:'Erreur technique',fix:r.length>120?r.slice(0,120)+'…':r};
+}
+
 function renderNotificationsList(){
   var list=document.getElementById('notif-list');
-  // Update header count badge
   var hc=document.getElementById('notif-header-count');
   if(hc){ if(notifications.length>0){hc.style.display='inline';hc.textContent=notifications.length;}else{hc.style.display='none';} }
   if(!notifications.length){
@@ -942,6 +968,7 @@ function renderNotificationsList(){
   list.innerHTML=notifications.map(function(n){
     var dt=new Date(n.created_at).toLocaleString('fr-FR',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
     var isSyncType=SYNC_TYPES.indexOf(n.type)!==-1;
+
     if(isSyncType){
       var d=n.data||{};
       var isRupture=n.type.indexOf('rupture')!==-1;
@@ -949,66 +976,110 @@ function renderNotificationsList(){
       var isExpanded=expandedNotifs.has(n.id);
       var icon=isRupture?'🔴':'🔄';
       var label=isRupture?'Sync Rupture':'Sync Stock Retours';
-      // Accent + status
       var accent=d.status==='succes'?'#16a34a':d.status==='partiel'?'#d97706':'#94a3b8';
       var statusBg=d.status==='succes'?'#dcfce7':d.status==='partiel'?'#fef3c7':'#f1f5f9';
       var statusTxt=d.status==='succes'?'#166534':d.status==='partiel'?'#92400e':'#475569';
       var statusLbl=d.status==='succes'?'✓ Succès':d.status==='partiel'?'⚠ Partiel':'— Rien';
-      // Chips résumé
+
+      // ── Chips résumé (header de la carte) ──
       var chips='<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:7px">';
       if(!isRupture){
-        if((d.pushed||0)>0) chips+='<span style="background:#dcfce7;color:#166534;border-radius:4px;padding:2px 7px;font-size:11px;font-weight:700">✅ '+d.pushed+' poussés</span>';
-        if((d.skipped_has_stock||0)>0) chips+='<span style="background:#f0fdf4;color:#15803d;border-radius:4px;padding:2px 7px;font-size:11px">📦 '+d.skipped_has_stock+' avec stock</span>';
-        if((d.skipped_no_match||0)>0) chips+='<span style="background:#fef9c3;color:#854d0e;border-radius:4px;padding:2px 7px;font-size:11px">🔍 '+d.skipped_no_match+' sans match</span>';
-        if((d.errors||0)>0) chips+='<span style="background:#fee2e2;color:#991b1b;border-radius:4px;padding:2px 7px;font-size:11px">❌ '+d.errors+' erreurs</span>';
+        if((d.pushed||0)>0) chips+='<span style="background:#dcfce7;color:#166534;border-radius:4px;padding:2px 8px;font-size:11px;font-weight:700">✅ '+d.pushed+' poussés</span>';
+        if((d.skipped_has_stock||0)>0) chips+='<span style="background:#f0fdf4;color:#15803d;border-radius:4px;padding:2px 8px;font-size:11px">📦 '+d.skipped_has_stock+' avec stock</span>';
+        if((d.skipped_no_match||0)>0) chips+='<span style="background:#fef9c3;color:#854d0e;border-radius:4px;padding:2px 8px;font-size:11px">🔍 '+d.skipped_no_match+' sans match</span>';
+        if((d.errors||0)>0) chips+='<span style="background:#fee2e2;color:#991b1b;border-radius:4px;padding:2px 8px;font-size:11px">❌ '+d.errors+' erreurs</span>';
       } else {
-        if((d.set_to_zero||0)>0) chips+='<span style="background:#fee2e2;color:#991b1b;border-radius:4px;padding:2px 7px;font-size:11px;font-weight:700">🔴 '+d.set_to_zero+' mis à 0</span>';
-        if((d.skipped_already_zero||0)>0) chips+='<span style="background:#f1f5f9;color:#475569;border-radius:4px;padding:2px 7px;font-size:11px">— '+d.skipped_already_zero+' déjà à 0</span>';
-        if((d.errors||0)>0) chips+='<span style="background:#fee2e2;color:#991b1b;border-radius:4px;padding:2px 7px;font-size:11px">❌ '+d.errors+' erreurs</span>';
+        if((d.set_to_zero||0)>0) chips+='<span style="background:#fee2e2;color:#991b1b;border-radius:4px;padding:2px 8px;font-size:11px;font-weight:700">🔴 '+d.set_to_zero+' mis à 0</span>';
+        if((d.skipped_already_zero||0)>0) chips+='<span style="background:#f1f5f9;color:#475569;border-radius:4px;padding:2px 8px;font-size:11px">— '+d.skipped_already_zero+' déjà à 0</span>';
+        if((d.errors||0)>0) chips+='<span style="background:#fee2e2;color:#991b1b;border-radius:4px;padding:2px 8px;font-size:11px">❌ '+d.errors+' erreurs</span>';
       }
       chips+='</div>';
-      // Détail expansible
+
+      // ── Détail expansible ──
       var detail='';
       if(isExpanded){
         var pushedList=isRupture?(d.zeroed_items||[]):(d.pushed_items||[]);
         var noMatchList=d.no_match_items||[];
         var errList=d.error_items||[];
+
+        // Section ✅ Poussés / 🔴 Mis à 0
         if(pushedList.length>0){
-          detail+='<div style="margin-top:10px;border-top:1px solid var(--border);padding-top:8px">'
-            +'<div style="font-size:10px;font-weight:700;color:'+(isRupture?'#991b1b':'#166534')+';text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px">'+(isRupture?'🔴 Mis à 0 sur Shopify':'✅ Poussés vers Shopify')+' ('+pushedList.length+')</div>';
+          var secColor=isRupture?'#991b1b':'#166534';
+          var secBg=isRupture?'#fef2f2':'#f0fdf4';
+          var secTitle=isRupture?'🔴 Mis à 0 sur Shopify':'✅ Poussés vers Shopify';
+          detail+='<div style="margin-top:12px;border-top:1px solid var(--border);padding-top:10px">'
+            +'<div style="font-size:10px;font-weight:700;color:'+secColor+';text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">'+secTitle+' ('+pushedList.length+')</div>'
+            +'<div style="max-height:160px;overflow-y:auto;display:flex;flex-direction:column;gap:2px">';
           detail+=pushedList.map(function(it){
-            return '<div style="font-size:12px;color:var(--text);padding:5px 8px;background:#f9fafb;border-radius:4px;margin-bottom:3px;display:flex;justify-content:space-between;align-items:center">'
-              +'<span><b>'+it.product+'</b>'+(it.size?' <span style="color:var(--muted);font-size:11px">'+it.size+'</span>':'')+(it.color?' <span style="color:var(--muted);font-size:11px">/ '+it.color+'</span>':'')+(it.fuzzy_score?' <span style="color:#9ca3af;font-size:10px">(~'+it.fuzzy_score+'%)</span>':'')+'</span>'
-              +(it.qty?'<b style="color:#16a34a;font-size:13px">+'+it.qty+'</b>':'')
+            return '<div style="font-size:12px;padding:5px 8px;background:'+secBg+';border-radius:4px;display:flex;justify-content:space-between;align-items:center">'
+              +'<span style="color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:320px"><b>'+it.product+'</b>'
+              +(it.size?' <span style="color:var(--muted)">'+it.size+'</span>':'')
+              +(it.color?' <span style="color:var(--muted)">/ '+it.color+'</span>':'')
+              +(it.fuzzy_score?' <span style="color:#9ca3af;font-size:10px">(~'+it.fuzzy_score+'%)</span>':'')+'</span>'
+              +(it.qty?'<b style="color:'+(isRupture?'#991b1b':'#16a34a')+';font-size:13px;flex-shrink:0;margin-left:8px">'+(isRupture?'→0':'+'+it.qty)+'</b>':'')
               +'</div>';
           }).join('');
-          detail+='</div>';
+          detail+='</div></div>';
         }
+
+        // Section 🔍 Sans correspondance — CLIQUABLE avec diagnostic
         if(noMatchList.length>0){
-          detail+='<div style="margin-top:10px;border-top:1px solid var(--border);padding-top:8px">'
-            +'<div style="font-size:10px;font-weight:700;color:#854d0e;text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px">🔍 Sans correspondance Shopify ('+noMatchList.length+')</div>';
+          detail+='<div style="margin-top:12px;border-top:1px solid var(--border);padding-top:10px">'
+            +'<div style="font-size:10px;font-weight:700;color:#92400e;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">🔍 Sans correspondance Shopify ('+noMatchList.length+')</div>'
+            +'<div style="max-height:260px;overflow-y:auto;display:flex;flex-direction:column;gap:4px">';
           detail+=noMatchList.map(function(it){
-            return '<div style="font-size:12px;color:var(--text);padding:5px 8px;background:#fffbeb;border-radius:4px;margin-bottom:3px">'
-              +'<b>'+it.product+'</b>'+(it.size?' <span style="color:var(--muted);font-size:11px">'+it.size+'</span>':'')
-              +'<div style="font-size:10px;color:#92400e;margin-top:2px">'+it.reason+'</div>'
+            var diag=noMatchDiag(it);
+            var sid=it.stock_ids&&it.stock_ids[0]?it.stock_ids[0]:null;
+            var clickAttr=sid?'onclick="event.stopPropagation();toggleNotifications();openModal(\''+sid+'\')" style="cursor:pointer"':'style="cursor:default"';
+            return '<div '+clickAttr+' style="background:#fffbeb;border:1px solid #fde68a;border-radius:5px;padding:7px 10px;transition:.12s" onmouseover="if('+!!sid+')this.style.background=\'#fef3c7\'" onmouseout="this.style.background=\'#fffbeb\'">'
+              // Ligne 1 : nom produit + taille + "→ Voir"
+              +'<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:4px">'
+              +  '<span style="font-size:12px;font-weight:600;color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+it.product+'</span>'
+              +  '<div style="display:flex;align-items:center;gap:5px;flex-shrink:0">'
+              +    (it.size?'<span style="background:#fde68a;color:#78350f;border-radius:3px;padding:1px 6px;font-size:10px;font-weight:700">'+it.size+'</span>':'<span style="background:#fee2e2;color:#991b1b;border-radius:3px;padding:1px 6px;font-size:10px;font-weight:700">sans taille</span>')
+              +    (sid?'<span style="font-size:10px;color:#854d0e;font-weight:600;text-decoration:underline">→ Voir</span>':'')
+              +  '</div>'
+              +'</div>'
+              // Ligne 2 : diagnostic
+              +'<div style="display:flex;align-items:flex-start;gap:5px">'
+              +  '<span style="width:7px;height:7px;border-radius:50%;background:'+diag.dot+';flex-shrink:0;margin-top:3px"></span>'
+              +  '<div>'
+              +    '<span style="font-size:11px;font-weight:600;color:#78350f">'+diag.title+'</span>'
+              +    '<div style="font-size:10px;color:#92400e;margin-top:1px;line-height:1.4">→ '+diag.fix+'</div>'
+              +  '</div>'
+              +'</div>'
               +'</div>';
           }).join('');
-          detail+='</div>';
+          detail+='</div></div>';
         }
+
+        // Section ❌ Erreurs — avec diagnostic technique clair
         if(errList.length>0){
-          detail+='<div style="margin-top:10px;border-top:1px solid var(--border);padding-top:8px">'
-            +'<div style="font-size:10px;font-weight:700;color:#991b1b;text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px">❌ Erreurs ('+errList.length+')</div>';
+          detail+='<div style="margin-top:12px;border-top:1px solid var(--border);padding-top:10px">'
+            +'<div style="font-size:10px;font-weight:700;color:#991b1b;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">❌ Erreurs ('+errList.length+')</div>'
+            +'<div style="max-height:200px;overflow-y:auto;display:flex;flex-direction:column;gap:4px">';
           detail+=errList.map(function(it){
-            return '<div style="font-size:12px;color:#991b1b;padding:5px 8px;background:#fef2f2;border-radius:4px;margin-bottom:3px">'
-              +'<b>'+it.product+'</b>'+(it.size?' · '+it.size:'')
-              +'<div style="font-size:10px;margin-top:2px">'+it.reason+'</div>'
+            var diag=errorDiag(it);
+            var sid=it.stock_ids&&it.stock_ids[0]?it.stock_ids[0]:null;
+            return '<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:5px;padding:7px 10px">'
+              +'<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:4px">'
+              +  '<span style="font-size:12px;font-weight:600;color:#991b1b;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+it.product+(it.size?' · '+it.size:'')+'</span>'
+              +  (sid?'<span onclick="event.stopPropagation();toggleNotifications();openModal(\''+sid+'\')" style="font-size:10px;color:#991b1b;font-weight:600;text-decoration:underline;cursor:pointer;flex-shrink:0">→ Voir</span>':'')
+              +'</div>'
+              +'<div style="display:flex;align-items:flex-start;gap:5px">'
+              +  '<span style="width:7px;height:7px;border-radius:50%;background:'+diag.dot+';flex-shrink:0;margin-top:3px"></span>'
+              +  '<div>'
+              +    '<span style="font-size:11px;font-weight:600;color:#991b1b">'+diag.title+'</span>'
+              +    '<div style="font-size:10px;color:#b91c1c;margin-top:1px;line-height:1.4">→ '+diag.fix+'</div>'
+              +  '</div>'
+              +'</div>'
               +'</div>';
           }).join('');
-          detail+='</div>';
+          detail+='</div></div>';
         }
       }
+
       return '<div style="border-left:4px solid '+accent+';padding:13px 14px 11px 14px;border-bottom:1px solid var(--border);cursor:pointer;transition:.15s" onclick="toggleNotifExpand(\''+n.id+'\')" onmouseover="this.style.background=\'#fafafa\'" onmouseout="this.style.background=\'transparent\'">'
-        // Ligne 1 : icône + label + DRY + flèche expand + status badge + heure
         +'<div style="display:flex;align-items:center;justify-content:space-between">'
         +  '<div style="display:flex;align-items:center;gap:7px">'
         +    '<span style="font-size:15px;line-height:1">'+icon+'</span>'
@@ -1018,27 +1089,22 @@ function renderNotificationsList(){
         +  '<div style="display:flex;align-items:center;gap:8px">'
         +    '<span style="font-size:11px;font-weight:700;color:'+statusTxt+';background:'+statusBg+';padding:2px 8px;border-radius:4px">'+statusLbl+'</span>'
         +    '<span style="font-size:10px;color:var(--muted)">'+dt+'</span>'
-        +    '<span style="font-size:10px;color:var(--muted)">'+( isExpanded?'▲':'▼')+'</span>'
+        +    '<span style="font-size:10px;color:var(--muted)">'+(isExpanded?'▲':'▼')+'</span>'
         +  '</div>'
         +'</div>'
-        // Ligne 2 : total vérifié
         +'<div style="font-size:11px;color:var(--muted);margin-top:4px">'+(d.checked||0)+' vérifiés au total</div>'
-        // Chips
-        +chips
-        // Détail (si expanded)
-        +detail
-        // Actions
+        +chips+detail
         +'<div style="margin-top:10px;display:flex;gap:6px" onclick="event.stopPropagation()">'
         +  '<button onclick="markNotifRead(\''+n.id+'\')" style="background:var(--text);color:#fff;border:none;border-radius:var(--radius-btn);padding:5px 11px;font-family:var(--font-main);font-size:11px;font-weight:600;cursor:pointer;text-transform:uppercase;letter-spacing:.04em">✓ Lu</button>'
         +'</div>'
         +'</div>';
+
     } else {
-      // Notification commande Shopify
+      // ── Notification commande Shopify ──
       var variant=[n.variant_size,n.variant_color].filter(Boolean).join(' / ')||'—';
       return '<div style="border-left:4px solid #3b82f6;padding:13px 14px;border-bottom:1px solid var(--border);transition:.15s" onmouseover="this.style.background=\'#fafafa\'" onmouseout="this.style.background=\'transparent\'">'
         +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px">'
-        +  '<div style="display:flex;align-items:center;gap:6px">'
-        +    '<span style="font-size:14px">📦</span>'
+        +  '<div style="display:flex;align-items:center;gap:6px"><span style="font-size:14px">📦</span>'
         +    '<span style="font-family:var(--font-main);font-size:12px;font-weight:700;color:var(--text)">'+(n.shopify_order_number||'Commande')+'</span>'
         +  '</div>'
         +  '<span style="font-size:10px;color:var(--muted)">'+dt+'</span>'
@@ -1046,7 +1112,7 @@ function renderNotificationsList(){
         +'<div style="font-size:13px;color:var(--text);font-weight:600;margin-bottom:4px">'+(n.product_title||'—')+'</div>'
         +'<div style="font-size:12px;color:var(--muted);margin-bottom:5px;display:flex;align-items:center;gap:8px">'
         +  '<span style="background:#f1f5f9;padding:2px 7px;border-radius:4px;font-weight:600;font-size:11px">'+variant+'</span>'
-        +  '<span>Stock : <b style="color:#16a34a">'+(n.matched_qty||0)+' dispo</b></span>'
+        +  '<span>Stock dispo : <b style="color:#16a34a">'+(n.matched_qty||0)+'</b></span>'
         +'</div>'
         +(n.customer_name?'<div style="font-size:11px;color:var(--muted);margin-bottom:8px">👤 '+n.customer_name+(n.customer_city?' · '+n.customer_city:'')+'</div>':'<div style="margin-bottom:8px"></div>')
         +'<div style="display:flex;gap:6px">'
