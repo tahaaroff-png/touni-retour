@@ -125,10 +125,36 @@ async function insertSyncNotification(isDryRun, results) {
         errors: results.errors,
         pushed_items: pushedItems.map(d => ({
           product: d.product,
+          shopify_title: d.shopify_title || null,
+          fuzzy_score: d.fuzzy_score || null,
           size: d.size,
           color: d.color || null,
           qty: d.qty_pushed,
         })),
+        no_match_items: results.details
+          .filter(d => d.status === 'skipped_no_match')
+          .map(d => ({
+            product: d.product,
+            size: d.size,
+            color: d.color || null,
+            qty: d.qty,
+            reason: d.reason,
+          })),
+        error_items: results.details
+          .filter(d => d.status === 'error')
+          .map(d => ({
+            product: d.product,
+            size: d.size,
+            reason: d.reason,
+          })),
+        skipped_stock_items: results.details
+          .filter(d => d.status === 'skipped_has_stock')
+          .slice(0, 20) // cap à 20 pour éviter payload trop lourd
+          .map(d => ({
+            product: d.product,
+            size: d.size,
+            shopify_inventory: d.shopify_inventory,
+          })),
       },
     };
 

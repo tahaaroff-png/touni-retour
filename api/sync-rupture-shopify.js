@@ -91,7 +91,15 @@ async function insertRuptureNotification(isDryRun, results) {
           size: d.size,
           color: d.color || null,
           reason: d.reason,
+          shopify_inventory_before: d.shopify_inventory_before,
         })),
+        error_items: results.details
+          .filter(d => d.status === 'error')
+          .map(d => ({
+            product: d.product,
+            size: d.size,
+            reason: d.reason,
+          })),
       },
     };
     const r = await fetch(`${SB_URL}/rest/v1/shopify_notifications`, {
