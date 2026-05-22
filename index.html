@@ -274,6 +274,7 @@ td{padding:12px 14px;vertical-align:middle}
     <div class="chip chip-total">Total : <b id="s-tot">—</b></div>
     <div class="chip chip-dispo">✓ <b id="s-dispo">—</b></div>
     <div class="chip chip-rupture">✗ <b id="s-rup">—</b></div>
+    <div id="chip-shopify" style="display:none;align-items:center;gap:5px;background:#dcfce7;border:1px solid #bbf7d0;border-radius:var(--radius-btn);padding:5px 10px;font-family:var(--font-main);font-size:11px;font-weight:700;color:#166534">🛍 <b id="s-shopify">0</b> Shopify</div>
     <span id="role-badge" style="display:none;align-items:center;gap:5px;background:#fffbef;border:1px solid var(--warning);border-radius:var(--radius-btn);padding:5px 12px;font-family:var(--font-main);font-size:11px;font-weight:600;color:#7a5d1e;text-transform:uppercase;letter-spacing:.06em">👤 Confirmation</span>
     <button id="btn-sync-shopify" onclick="syncShopify()" title="Vérifier le stock vs Shopify et pousser les retours disponibles" style="background:transparent;border:1px solid var(--border);border-radius:var(--radius-btn);padding:6px 12px;font-family:var(--font-main);font-size:11px;font-weight:600;cursor:pointer;color:var(--text);text-transform:uppercase;letter-spacing:.06em;display:none">🔄 Sync Shopify</button>
     <button id="btn-sync-rupture" onclick="syncRupture()" title="Mettre en rupture les articles vendus/mystère sur Shopify" style="background:transparent;border:1px solid var(--signal);border-radius:var(--radius-btn);padding:6px 12px;font-family:var(--font-main);font-size:11px;font-weight:600;cursor:pointer;color:var(--signal);text-transform:uppercase;letter-spacing:.06em;display:none">🔴 Rupture Shopify</button>
@@ -370,9 +371,10 @@ td{padding:12px 14px;vertical-align:middle}
       <thead><tr>
         <th style="width:34px">#</th><th>Produit</th><th style="width:100px">Taille</th>
         <th style="width:75px">Qté</th><th style="width:105px">État</th><th style="width:110px">Statut</th>
+        <th style="width:90px">Shopify</th>
         <th style="width:95px">Ajouté le</th><th style="width:95px">Sorti le</th><th>Notes</th><th style="width:68px"></th>
       </tr></thead>
-      <tbody id="tb"><tr><td colspan="10"><div class="empty"><div class="ic">⏳</div><p>Chargement...</p></div></td></tr></tbody>
+      <tbody id="tb"><tr><td colspan="11"><div class="empty"><div class="ic">⏳</div><p>Chargement...</p></div></td></tr></tbody>
     </table>
   </div>
 </div>
@@ -720,13 +722,23 @@ function render() {
   if(fSt) rows=rows.filter(function(i){ return i.status===fSt; });
   rows.sort(function(a,b){ var da=new Date(a.created_at||0),db=new Date(b.created_at||0); return fSort==='asc'?da-db:db-da; });
   var tb=document.getElementById('tb');
-  if(!rows.length){ tb.innerHTML='<tr><td colspan="10"><div class="empty"><div class="ic">📦</div><p>Aucun article trouvé</p></div></td></tr>'; return; }
+  if(!rows.length){ tb.innerHTML='<tr><td colspan="11"><div class="empty"><div class="ic">📦</div><p>Aucun article trouvé</p></div></td></tr>'; return; }
   tb.innerHTML=rows.map(function(it,i){
     var ok=it.qty>0;
     var badge=ok?'<span class="badge b-ok"><span class="dot dg"></span>Dispo</span>':'<span class="badge b-ko"><span class="dot dr"></span>Rupture</span>';
     var imgHtml=it.image?'<img class="prod-thumb" src="'+it.image+'" alt="" onerror="this.style.display=\'none\'">':'<div class="prod-ph">👕</div>';
     var szDisplay='<b>'+(normalizeSize(parseSizePart(it.size))||parseSizePart(it.size)||'—')+'</b>'+(parseColorPart(it.size)?'<span style="font-size:11px;color:var(--muted);margin-left:6px">'+parseColorPart(it.size)+'</span>':'');
     var id=it.id;
+    // Badge Shopify push
+    var shopifyBadge='<span style="font-size:11px;color:var(--muted)">—</span>';
+    if(it.shopify_pushed_at){
+      var pushDate=new Date(it.shopify_pushed_at).toLocaleDateString('fr-FR',{day:'2-digit',month:'short'});
+      var pushTime=new Date(it.shopify_pushed_at).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
+      shopifyBadge='<span title="Poussé le '+pushDate+' à '+pushTime+(it.shopify_qty_pushed?' · Qté : '+it.shopify_qty_pushed:'')+'" style="display:inline-flex;align-items:center;gap:4px;background:#dcfce7;color:#166534;border:1px solid #bbf7d0;border-radius:5px;padding:2px 7px;font-size:11px;font-weight:700;cursor:default">'
+        +'<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>'
+        +'Shopify</span>'
+        +'<div style="font-size:10px;color:var(--muted);margin-top:2px">'+pushDate+(it.shopify_qty_pushed?' · x'+it.shopify_qty_pushed:'')+'</div>';
+    }
     return '<tr class="mob-card" onclick="openModal(\''+id+'\')">'
       +'<td class="nnum">'+(i+1)+'</td>'
       +'<td data-label="Produit"><div class="prod-cell">'+imgHtml+'<span class="pname" title="'+it.product+'">'+it.product+'</span></div></td>'
@@ -734,6 +746,7 @@ function render() {
       +'<td data-label="Qté"><b style="font-size:15px;font-family:Jost,sans-serif">'+it.qty+'</b></td>'
       +'<td data-label="Stock">'+badge+'</td>'
       +'<td data-label="Statut">'+statusBadge(it.status)+'</td>'
+      +'<td data-label="Shopify">'+shopifyBadge+'</td>'
       +'<td class="date-cell" data-label="Entrée">'+fmtDate(it.created_at)+'</td>'
       +'<td class="date-cell" data-label="Sortie">'+fmtDate(it.exit_date)+'</td>'
       +'<td data-label="Notes"><span style="font-size:12px;color:var(--muted)">'+(it.notes||'—')+'</span></td>'
@@ -749,6 +762,7 @@ function updateStats() {
   var dispo=stock.filter(function(i){ return i.qty>0; }).length;
   var rupt=stock.filter(function(i){ return i.qty<=0; }).length;
   var vendu=stock.filter(function(i){ return i.status==='vendu'; }).length;
+  var pushed=stock.filter(function(i){ return !!i.shopify_pushed_at; }).length;
   document.getElementById('s-tot').textContent=tot;
   document.getElementById('s-dispo').textContent=dispo;
   document.getElementById('s-rup').textContent=rupt;
@@ -756,6 +770,13 @@ function updateStats() {
   document.getElementById('st-dispo').textContent=dispo;
   document.getElementById('st-rupture').textContent=rupt;
   document.getElementById('st-vendu').textContent=vendu;
+  // Compteur Shopify push (visible uniquement si > 0)
+  var chipShopify=document.getElementById('chip-shopify');
+  var sShopify=document.getElementById('s-shopify');
+  if(chipShopify && sShopify){
+    sShopify.textContent=pushed;
+    chipShopify.style.display=pushed>0?'flex':'none';
+  }
 }
 function buildChart() {
   var months={};
@@ -830,8 +851,8 @@ async function startApp() {
 var notifications=[];
 async function loadNotifications(){
   try{
-    var r=await fetch('/api/notifications?status=unread&limit=50');
-    if(!r.ok) return;
+    var r=await fetch('/api/notifications?status=unread&limit=50&secret='+SYNC_SECRET);
+    if(!r.ok){ console.warn('loadNotifications HTTP',r.status,await r.text()); return; }
     var data=await r.json();
     notifications=data.notifications||[];
     renderBellCounter();
@@ -972,17 +993,17 @@ function renderNotificationsList(){
 }
 async function markNotifRead(id){
   try{
-    await fetch('/api/notifications?id='+id+'&status=read',{method:'PATCH'});
+    await fetch('/api/notifications?id='+id+'&status=read&secret='+SYNC_SECRET,{method:'PATCH'});
     notifications=notifications.filter(function(n){return n.id!==id;});
     renderBellCounter(); renderNotificationsList();
-  }catch(e){ alert('Erreur : '+e.message); }
+  }catch(e){ console.warn('markNotifRead:',e.message); }
 }
 async function archiveNotif(id){
   try{
-    await fetch('/api/notifications?id='+id+'&status=archived',{method:'PATCH'});
+    await fetch('/api/notifications?id='+id+'&status=archived&secret='+SYNC_SECRET,{method:'PATCH'});
     notifications=notifications.filter(function(n){return n.id!==id;});
     renderBellCounter(); renderNotificationsList();
-  }catch(e){ alert('Erreur : '+e.message); }
+  }catch(e){ console.warn('archiveNotif:',e.message); }
 }
 
 // ── Sync Shopify (push retours disponibles) ──
