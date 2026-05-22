@@ -276,8 +276,7 @@ td{padding:12px 14px;vertical-align:middle}
     <div class="chip chip-rupture">✗ <b id="s-rup">—</b></div>
     <div id="chip-shopify" style="display:none;align-items:center;gap:5px;background:#dcfce7;border:1px solid #bbf7d0;border-radius:var(--radius-btn);padding:5px 10px;font-family:var(--font-main);font-size:11px;font-weight:700;color:#166534">🛍 <b id="s-shopify">0</b> Shopify</div>
     <span id="role-badge" style="display:none;align-items:center;gap:5px;background:#fffbef;border:1px solid var(--warning);border-radius:var(--radius-btn);padding:5px 12px;font-family:var(--font-main);font-size:11px;font-weight:600;color:#7a5d1e;text-transform:uppercase;letter-spacing:.06em">👤 Confirmation</span>
-    <button id="btn-sync-shopify" onclick="syncShopify()" title="Vérifier le stock vs Shopify et pousser les retours disponibles" style="background:transparent;border:1px solid var(--border);border-radius:var(--radius-btn);padding:6px 12px;font-family:var(--font-main);font-size:11px;font-weight:600;cursor:pointer;color:var(--text);text-transform:uppercase;letter-spacing:.06em;display:none">🔄 Sync Shopify</button>
-    <button id="btn-sync-rupture" onclick="syncRupture()" title="Mettre en rupture les articles vendus/mystère sur Shopify" style="background:transparent;border:1px solid var(--signal);border-radius:var(--radius-btn);padding:6px 12px;font-family:var(--font-main);font-size:11px;font-weight:600;cursor:pointer;color:var(--signal);text-transform:uppercase;letter-spacing:.06em;display:none">🔴 Rupture Shopify</button>
+    <button id="btn-sync-shopify" onclick="syncAll()" title="Synchronise les retours disponibles vers Shopify ET met en rupture les articles vendus/mystère" style="background:transparent;border:1px solid var(--border);border-radius:var(--radius-btn);padding:6px 12px;font-family:var(--font-main);font-size:11px;font-weight:600;cursor:pointer;color:var(--text);text-transform:uppercase;letter-spacing:.06em;display:none">🔄 Sync Shopify</button>
     <button id="bell-btn" onclick="toggleNotifications()" title="Notifications" style="position:relative;background:transparent;border:1px solid var(--border);border-radius:var(--radius-btn);padding:6px 10px;font-family:var(--font-main);font-size:14px;cursor:pointer;color:var(--text);display:none">🔔<span id="bell-count" style="display:none;position:absolute;top:-4px;right:-4px;background:var(--signal);color:#fff;font-size:9px;font-weight:700;padding:1px 5px;border-radius:8px;min-width:16px;text-align:center;font-family:var(--font-main)">0</span></button>
     <a id="admin-dashboard-btn" href="/dashboard" style="display:none;background:var(--text);color:#fff;border-radius:20px;padding:5px 14px;font-family:'Jost',sans-serif;font-size:10px;font-weight:700;text-decoration:none;letter-spacing:.8px">📊 Dashboard</a>
     <button class="btn-logout" onclick="logout()">Déconnexion</button>
@@ -669,6 +668,10 @@ function openModal(id) {
 function closeModal(){ document.getElementById('modal').classList.remove('open'); editId=null; }
 async function saveModal() {
   if(!editId) return;
+  // Snapshot avant modification (pour détecter le changement retour→vendu/mystère)
+  var prevItem=stock.find(function(i){ return i.id===editId; });
+  var prevStatus=prevItem?prevItem.status:null;
+  var wasPushed=prevItem?!!prevItem.shopify_pushed_at:false;
   var changes={
     product:document.getElementById('m-product').value.trim(),
     size:document.getElementById('m-size').value.trim(),
@@ -682,7 +685,33 @@ async function saveModal() {
     var it=stock.find(function(i){ return i.id===editId; });
     if(it) Object.assign(it,changes);
     render(); updateStats(); closeModal();
+    // Auto-restore Shopify : si l'article était pushé et passe retour→vendu/mystère
+    var newStatus=changes.status;
+    var wasRetour=prevStatus==='retour';
+    var isNowSold=(newStatus==='vendu'||newStatus==='mystere');
+    if(wasRetour && isNowSold && wasPushed){
+      console.log('[saveModal] Auto-unsync déclenché pour item',editId);
+      fetch('/api/unsync-item?id='+editId+'&secret='+SYNC_SECRET,{method:'POST'})
+        .then(function(r){return r.json();})
+        .then(function(data){
+          // Effacer les champs shopify dans le state local
+          var itLocal=stock.find(function(i){return i.id===editId;});
+          if(itLocal){itLocal.shopify_pushed_at=null;itLocal.shopify_variant_id=null;itLocal.shopify_qty_pushed=null;itLocal.shopify_inventory_item_id=null;}
+          render();
+          // Toast discret
+          showToastStock('✅ Stock Shopify remis à 0 automatiquement');
+        })
+        .catch(function(e){console.warn('[auto-unsync]',e.message);});
+    }
   } catch(e){ dot('err'); }
+}
+function showToastStock(msg){
+  var t=document.createElement('div');
+  t.textContent=msg;
+  t.style.cssText='position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#151515;color:#fff;font-family:Jost,sans-serif;font-size:12px;font-weight:600;padding:8px 18px;border-radius:6px;z-index:9999;pointer-events:none;opacity:0;transition:opacity .2s';
+  document.body.appendChild(t);
+  requestAnimationFrame(function(){t.style.opacity='1';});
+  setTimeout(function(){t.style.opacity='0';setTimeout(function(){t.remove();},250);},3000);
 }
 document.getElementById('modal').addEventListener('click', function(e){ if(e.target===document.getElementById('modal')) closeModal(); });
 
@@ -740,10 +769,15 @@ function render() {
     if(it.shopify_pushed_at){
       var pushDate=new Date(it.shopify_pushed_at).toLocaleDateString('fr-FR',{day:'2-digit',month:'short'});
       var pushTime=new Date(it.shopify_pushed_at).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
-      shopifyBadge='<span title="Poussé le '+pushDate+' à '+pushTime+(it.shopify_qty_pushed?' · Qté : '+it.shopify_qty_pushed:'')+'" style="display:inline-flex;align-items:center;gap:4px;background:#dcfce7;color:#166534;border:1px solid #bbf7d0;border-radius:5px;padding:2px 7px;font-size:11px;font-weight:700;cursor:default">'
+      shopifyBadge='<div style="display:inline-flex;flex-direction:column;align-items:flex-start;gap:3px">'
+        +'<span title="Poussé le '+pushDate+' à '+pushTime+(it.shopify_qty_pushed?' · Qté : '+it.shopify_qty_pushed:'')+'" style="display:inline-flex;align-items:center;gap:4px;background:#dcfce7;color:#166534;border:1px solid #bbf7d0;border-radius:5px;padding:2px 7px;font-size:11px;font-weight:700;cursor:default">'
         +'<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>'
         +'Shopify</span>'
-        +'<div style="font-size:10px;color:var(--muted);margin-top:2px">'+pushDate+(it.shopify_qty_pushed?' · x'+it.shopify_qty_pushed:'')+'</div>';
+        +'<div style="display:flex;align-items:center;gap:5px">'
+        +'<span style="font-size:10px;color:var(--muted)">'+pushDate+(it.shopify_qty_pushed?' · x'+it.shopify_qty_pushed:'')+'</span>'
+        +'<button onclick="event.stopPropagation();unSyncItem(\''+id+'\')" title="Annuler la synchronisation Shopify pour cet article" style="background:transparent;border:none;padding:0;cursor:pointer;font-size:10px;color:#94a3b8;font-family:var(--font-main);font-weight:600;letter-spacing:.02em;text-decoration:underline;line-height:1">↩ désync</button>'
+        +'</div>'
+        +'</div>';
     }
     return '<tr class="mob-card" onclick="openModal(\''+id+'\')">'
       +'<td class="nnum">'+(i+1)+'</td>'
@@ -842,10 +876,9 @@ async function startApp() {
   await loadCatalog();
   await dbLoad();
   setInterval(dbLoad, 30000);
-  // Affiche les boutons Sync/Rupture Shopify uniquement pour l'admin
+  // Affiche le bouton Sync Shopify uniquement pour l'admin
   if(sessionStorage.getItem('role')==='admin'){
     var btn=document.getElementById('btn-sync-shopify'); if(btn) btn.style.display='inline-flex';
-    var btnR=document.getElementById('btn-sync-rupture'); if(btnR) btnR.style.display='inline-flex';
   }
   document.getElementById('bell-btn').style.display='inline-flex';
   // Charge les notifications au boot puis poll toutes les 60s
@@ -1051,57 +1084,71 @@ async function markAllNotifsRead(){
 
 // ── Sync Shopify (push retours disponibles) ──
 var SYNC_SECRET='touni-sync-2026';
-async function syncShopify(){
+// ── Sync unifié : push retours EN RUPTURE + mise à 0 des vendus/mystère pushés ──
+async function syncAll(){
   var btn=document.getElementById('btn-sync-shopify');
-  if(!confirm('Lancer la synchronisation stock retours → Shopify ?\n\nSeuls les produits actuellement en rupture sur Shopify seront mis à jour.')) return;
-  btn.disabled=true; var orig=btn.textContent; btn.textContent='⏳ Sync…';
+  if(!confirm('Lancer la synchronisation Shopify ?\n\n① Push : retours disponibles → Shopify si rupture détectée\n② Rupture : articles vendus/mystère → remise à 0 sur Shopify\n\nSeuls les articles gérés par ce système seront touchés.')) return;
+  btn.disabled=true; var orig=btn.innerHTML; btn.innerHTML='⏳ Sync…';
   try{
-    var r=await fetch('/api/sync-return-to-shopify?secret='+SYNC_SECRET,{method:'POST'});
-    var data=await r.json();
-    if(!r.ok) throw new Error(data.error||'Erreur sync');
-    // Résultat visible dans la cloche — on charge + ouvre
+    // Phase 1 : push retours disponibles
+    var r1=await fetch('/api/sync-return-to-shopify?secret='+SYNC_SECRET,{method:'POST'});
+    var d1=await r1.json();
+    if(!r1.ok) throw new Error(d1.error||'Erreur sync retours');
+    // Phase 2 : mise en rupture des vendus/mystère pushés
+    var r2=await fetch('/api/sync-rupture-shopify?secret='+SYNC_SECRET,{method:'POST'});
+    var d2=await r2.json();
+    if(!r2.ok) throw new Error(d2.error||'Erreur sync rupture');
+    // Rafraîchir le stock local (shopify_pushed_at peut avoir changé)
+    await dbLoad();
     await loadNotifications();
     openNotifDropdown();
   }catch(e){
     showSyncError(e.message);
-  } finally {
-    btn.disabled=false; btn.textContent=orig;
+  }finally{
+    btn.disabled=false; btn.innerHTML=orig;
   }
 }
-// ── Sync Rupture (met à 0 les articles vendu/mystère précédemment pushés) ──
-async function syncRupture(){
-  var btn=document.getElementById('btn-sync-rupture');
-  if(!confirm('Mettre en rupture sur Shopify les articles vendus/mystère ?\n\n⚠️ Seuls les articles précédemment poussés par ce système seront touchés. Le stock Shopify original ne sera jamais modifié.')) return;
-  btn.disabled=true; var orig=btn.textContent; btn.textContent='⏳ Rupture…';
+
+// ── Désynchroniser un seul item ──
+async function unSyncItem(id){
+  var it=stock.find(function(i){return i.id===id;});
+  var label=it?(it.product+(it.size?' · '+it.size:'')):id;
+  if(!confirm('Annuler la synchronisation Shopify pour :\n'+label+'\n\n• Le stock Shopify sera remis à 0\n• Le badge "✓ Shopify" disparaîtra\n• L\'article pourra être re-synchronisé lors du prochain Sync')) return;
   try{
-    var r=await fetch('/api/sync-rupture-shopify?secret='+SYNC_SECRET,{method:'POST'});
+    var r=await fetch('/api/unsync-item?id='+id+'&secret='+SYNC_SECRET,{method:'POST'});
     var data=await r.json();
-    if(!r.ok) throw new Error(data.error||'Erreur rupture sync');
-    await loadNotifications();
-    openNotifDropdown();
+    if(!r.ok) throw new Error(data.error||'Erreur désync');
+    if(data.skipped){
+      showToastStock('ℹ️ Cet article n\'était pas synchronisé');
+      return;
+    }
+    // Mettre à jour le state local
+    var itLocal=stock.find(function(i){return i.id===id;});
+    if(itLocal){itLocal.shopify_pushed_at=null;itLocal.shopify_variant_id=null;itLocal.shopify_qty_pushed=null;itLocal.shopify_inventory_item_id=null;}
+    render();
+    showToastStock('↩ Désynchronisé — stock Shopify remis à 0');
   }catch(e){
-    showSyncError(e.message);
-  } finally {
-    btn.disabled=false; btn.textContent=orig;
+    showToastStock('❌ Erreur : '+e.message);
   }
 }
+
 function openNotifDropdown(){
   var dd=document.getElementById('notif-dropdown');
-  if(dd){ renderNotificationsList(); dd.style.display='block'; }
+  if(dd){ renderNotificationsList(); dd.style.display='flex'; }
 }
 function showSyncError(msg){
   var dd=document.getElementById('notif-dropdown');
   if(dd){
-    dd.style.display='block';
+    dd.style.display='flex';
     var list=document.getElementById('notif-list');
-    if(list) list.innerHTML='<div style="padding:16px;color:var(--signal);font-size:13px">❌ Erreur : '+msg+'</div>';
+    if(list) list.innerHTML='<div style="padding:20px 16px;color:var(--signal);font-size:13px">❌ Erreur : '+msg+'</div>';
   }
 }
 // Click outside notif dropdown → close
 document.addEventListener('click',function(e){
   var dd=document.getElementById('notif-dropdown');
   var bell=document.getElementById('bell-btn');
-  if(dd && dd.style.display==='block' && !dd.contains(e.target) && !bell.contains(e.target)){
+  if(dd && dd.style.display==='flex' && !dd.contains(e.target) && bell && !bell.contains(e.target)){
     dd.style.display='none';
   }
 });

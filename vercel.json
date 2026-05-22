@@ -6,7 +6,8 @@
     "api/shopify-order-webhook.js": { "maxDuration": 15 },
     "api/list-shopify-locations.js": { "maxDuration": 10 },
     "api/notifications.js": { "maxDuration": 10 },
-    "api/sync-rupture-shopify.js": { "maxDuration": 60 }
+    "api/sync-rupture-shopify.js": { "maxDuration": 60 },
+    "api/unsync-item.js": { "maxDuration": 30 }
   },
   "rewrites": [
     { "source": "/dashboard", "destination": "/dashboard.html" },
