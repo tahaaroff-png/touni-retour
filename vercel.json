@@ -7,7 +7,8 @@
     "api/list-shopify-locations.js": { "maxDuration": 10 },
     "api/notifications.js": { "maxDuration": 10 },
     "api/sync-rupture-shopify.js": { "maxDuration": 60 },
-    "api/unsync-item.js": { "maxDuration": 30 }
+    "api/unsync-item.js": { "maxDuration": 30 },
+    "api/oauth-callback.js": { "maxDuration": 15 }
   },
   "rewrites": [
     { "source": "/dashboard", "destination": "/dashboard.html" },
