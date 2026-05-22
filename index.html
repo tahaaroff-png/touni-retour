@@ -295,12 +295,18 @@ td{padding:12px 14px;vertical-align:middle}
 </div>
 
 <!-- Dropdown notifications -->
-<div id="notif-dropdown" style="display:none;position:fixed;top:80px;right:20px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:0 12px 40px rgba(0,0,0,.18);width:380px;max-width:calc(100vw - 40px);max-height:70vh;overflow-y:auto;z-index:500">
-  <div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;background:var(--bg-soft)">
-    <div style="font-family:var(--font-main);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)">📬 Notifications Shopify</div>
-    <button onclick="toggleNotifications()" style="background:transparent;border:none;font-size:18px;cursor:pointer;color:var(--muted);line-height:1;padding:0 4px">×</button>
+<div id="notif-dropdown" style="display:none;position:fixed;top:80px;right:20px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:0 16px 48px rgba(0,0,0,.2);width:500px;max-width:calc(100vw - 24px);max-height:78vh;overflow:hidden;display:none;flex-direction:column;z-index:500">
+  <div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;background:#fff;flex-shrink:0">
+    <div style="display:flex;align-items:center;gap:8px">
+      <span style="font-family:var(--font-main);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text)">📬 Notifications Shopify</span>
+      <span id="notif-header-count" style="background:var(--signal);color:#fff;border-radius:999px;font-size:10px;font-weight:700;padding:1px 7px;display:none">0</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px">
+      <button onclick="markAllNotifsRead()" style="background:transparent;border:1px solid var(--border);border-radius:var(--radius-btn);padding:4px 10px;font-family:var(--font-main);font-size:11px;font-weight:600;cursor:pointer;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Tout marquer lu</button>
+      <button onclick="toggleNotifications()" style="background:transparent;border:none;font-size:20px;cursor:pointer;color:var(--muted);line-height:1;padding:0 4px">×</button>
+    </div>
   </div>
-  <div id="notif-list" style="padding:8px"></div>
+  <div id="notif-list" style="overflow-y:auto;flex:1"></div>
 </div>
 
 <!-- Mobile bottom navigation -->
@@ -880,115 +886,142 @@ function renderBellCounter(){
 }
 function toggleNotifications(){
   var dd=document.getElementById('notif-dropdown');
-  if(dd.style.display==='block'){ dd.style.display='none'; return; }
+  var isOpen=dd.style.display==='flex';
+  dd.style.display=isOpen?'none':'flex';
+  if(!isOpen) renderNotificationsList();
+}
+var expandedNotifs=new Set();
+function toggleNotifExpand(id){
+  if(expandedNotifs.has(id)) expandedNotifs.delete(id);
+  else expandedNotifs.add(id);
   renderNotificationsList();
-  dd.style.display='block';
 }
 function renderNotificationsList(){
   var list=document.getElementById('notif-list');
+  // Update header count badge
+  var hc=document.getElementById('notif-header-count');
+  if(hc){ if(notifications.length>0){hc.style.display='inline';hc.textContent=notifications.length;}else{hc.style.display='none';} }
   if(!notifications.length){
-    list.innerHTML='<div style="padding:30px 20px;text-align:center;color:var(--muted);font-size:13px">Aucune nouvelle notification</div>';
+    list.innerHTML='<div style="padding:48px 20px;text-align:center;color:var(--muted);font-size:13px;line-height:1.6">Aucune notification en attente</div>';
     return;
   }
   var SYNC_TYPES=['sync_shopify','sync_dry_run','rupture_shopify','rupture_dry_run'];
   list.innerHTML=notifications.map(function(n){
     var dt=new Date(n.created_at).toLocaleString('fr-FR',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
     var isSyncType=SYNC_TYPES.indexOf(n.type)!==-1;
-    var body='';
     if(isSyncType){
       var d=n.data||{};
       var isRupture=n.type.indexOf('rupture')!==-1;
       var isDry=n.type.indexOf('dry_run')!==-1;
+      var isExpanded=expandedNotifs.has(n.id);
       var icon=isRupture?'🔴':'🔄';
       var label=isRupture?'Sync Rupture':'Sync Stock Retours';
-      // Capsule de statut
-      var statusCol=d.status==='succes'?'#16a34a':d.status==='partiel'?'#d97706':'#6b7280';
-      var statusLbl=d.status==='succes'?'✓ Succès':d.status==='partiel'?'⚠ Partiel':'— Rien à faire';
-      // Résumé chiffré
-      var statsHtml='<div style="display:flex;flex-wrap:wrap;gap:6px;margin:8px 0">';
+      // Accent + status
+      var accent=d.status==='succes'?'#16a34a':d.status==='partiel'?'#d97706':'#94a3b8';
+      var statusBg=d.status==='succes'?'#dcfce7':d.status==='partiel'?'#fef3c7':'#f1f5f9';
+      var statusTxt=d.status==='succes'?'#166534':d.status==='partiel'?'#92400e':'#475569';
+      var statusLbl=d.status==='succes'?'✓ Succès':d.status==='partiel'?'⚠ Partiel':'— Rien';
+      // Chips résumé
+      var chips='<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:7px">';
       if(!isRupture){
-        if((d.pushed||0)>0) statsHtml+='<span style="background:#dcfce7;color:#166534;border-radius:4px;padding:2px 8px;font-size:11px;font-weight:700">✅ '+d.pushed+' poussés</span>';
-        if((d.skipped_has_stock||0)>0) statsHtml+='<span style="background:#f0fdf4;color:#15803d;border-radius:4px;padding:2px 8px;font-size:11px">📦 '+d.skipped_has_stock+' avec stock</span>';
-        if((d.skipped_no_match||0)>0) statsHtml+='<span style="background:#fef9c3;color:#854d0e;border-radius:4px;padding:2px 8px;font-size:11px">🔍 '+d.skipped_no_match+' sans match</span>';
-        if((d.errors||0)>0) statsHtml+='<span style="background:#fee2e2;color:#991b1b;border-radius:4px;padding:2px 8px;font-size:11px">❌ '+d.errors+' erreurs</span>';
+        if((d.pushed||0)>0) chips+='<span style="background:#dcfce7;color:#166534;border-radius:4px;padding:2px 7px;font-size:11px;font-weight:700">✅ '+d.pushed+' poussés</span>';
+        if((d.skipped_has_stock||0)>0) chips+='<span style="background:#f0fdf4;color:#15803d;border-radius:4px;padding:2px 7px;font-size:11px">📦 '+d.skipped_has_stock+' avec stock</span>';
+        if((d.skipped_no_match||0)>0) chips+='<span style="background:#fef9c3;color:#854d0e;border-radius:4px;padding:2px 7px;font-size:11px">🔍 '+d.skipped_no_match+' sans match</span>';
+        if((d.errors||0)>0) chips+='<span style="background:#fee2e2;color:#991b1b;border-radius:4px;padding:2px 7px;font-size:11px">❌ '+d.errors+' erreurs</span>';
       } else {
-        if((d.set_to_zero||0)>0) statsHtml+='<span style="background:#fee2e2;color:#991b1b;border-radius:4px;padding:2px 8px;font-size:11px;font-weight:700">🔴 '+d.set_to_zero+' mis à 0</span>';
-        if((d.skipped_already_zero||0)>0) statsHtml+='<span style="background:#f1f5f9;color:#475569;border-radius:4px;padding:2px 8px;font-size:11px">— '+d.skipped_already_zero+' déjà à 0</span>';
-        if((d.errors||0)>0) statsHtml+='<span style="background:#fee2e2;color:#991b1b;border-radius:4px;padding:2px 8px;font-size:11px">❌ '+d.errors+' erreurs</span>';
+        if((d.set_to_zero||0)>0) chips+='<span style="background:#fee2e2;color:#991b1b;border-radius:4px;padding:2px 7px;font-size:11px;font-weight:700">🔴 '+d.set_to_zero+' mis à 0</span>';
+        if((d.skipped_already_zero||0)>0) chips+='<span style="background:#f1f5f9;color:#475569;border-radius:4px;padding:2px 7px;font-size:11px">— '+d.skipped_already_zero+' déjà à 0</span>';
+        if((d.errors||0)>0) chips+='<span style="background:#fee2e2;color:#991b1b;border-radius:4px;padding:2px 7px;font-size:11px">❌ '+d.errors+' erreurs</span>';
       }
-      statsHtml+='</div>';
-      // Détail : articles poussés / mis à 0
-      var pushedList=(isRupture?(d.zeroed_items||[]):(d.pushed_items||[]));
-      var detailHtml='';
-      if(pushedList.length>0){
-        detailHtml+='<div style="margin-top:6px;border-top:1px solid var(--border);padding-top:6px">'
-          +'<div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">'+(isRupture?'Mis à 0 sur Shopify':'Poussés vers Shopify')+'</div>';
-        detailHtml+=pushedList.map(function(it){
-          var fuzzy=it.fuzzy_score?' <span style="color:#9ca3af;font-size:10px">(~'+it.fuzzy_score+'%)</span>':'';
-          return '<div style="font-size:11px;color:var(--text);padding:2px 0;border-bottom:1px solid var(--border)">'
-            +'<b>'+it.product+'</b>'+fuzzy
-            +(it.size?' · <span style="color:var(--muted)">'+it.size+'</span>':'')
-            +(it.color?' / '+it.color:'')
-            +(it.qty?' · <b style="color:var(--green)">+'+it.qty+'</b>':'')
-            +(it.reason?' <span style="color:var(--signal);font-size:10px">('+it.reason+')</span>':'')
-            +'</div>';
-        }).join('');
-        detailHtml+='</div>';
+      chips+='</div>';
+      // Détail expansible
+      var detail='';
+      if(isExpanded){
+        var pushedList=isRupture?(d.zeroed_items||[]):(d.pushed_items||[]);
+        var noMatchList=d.no_match_items||[];
+        var errList=d.error_items||[];
+        if(pushedList.length>0){
+          detail+='<div style="margin-top:10px;border-top:1px solid var(--border);padding-top:8px">'
+            +'<div style="font-size:10px;font-weight:700;color:'+(isRupture?'#991b1b':'#166534')+';text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px">'+(isRupture?'🔴 Mis à 0 sur Shopify':'✅ Poussés vers Shopify')+' ('+pushedList.length+')</div>';
+          detail+=pushedList.map(function(it){
+            return '<div style="font-size:12px;color:var(--text);padding:5px 8px;background:#f9fafb;border-radius:4px;margin-bottom:3px;display:flex;justify-content:space-between;align-items:center">'
+              +'<span><b>'+it.product+'</b>'+(it.size?' <span style="color:var(--muted);font-size:11px">'+it.size+'</span>':'')+(it.color?' <span style="color:var(--muted);font-size:11px">/ '+it.color+'</span>':'')+(it.fuzzy_score?' <span style="color:#9ca3af;font-size:10px">(~'+it.fuzzy_score+'%)</span>':'')+'</span>'
+              +(it.qty?'<b style="color:#16a34a;font-size:13px">+'+it.qty+'</b>':'')
+              +'</div>';
+          }).join('');
+          detail+='</div>';
+        }
+        if(noMatchList.length>0){
+          detail+='<div style="margin-top:10px;border-top:1px solid var(--border);padding-top:8px">'
+            +'<div style="font-size:10px;font-weight:700;color:#854d0e;text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px">🔍 Sans correspondance Shopify ('+noMatchList.length+')</div>';
+          detail+=noMatchList.map(function(it){
+            return '<div style="font-size:12px;color:var(--text);padding:5px 8px;background:#fffbeb;border-radius:4px;margin-bottom:3px">'
+              +'<b>'+it.product+'</b>'+(it.size?' <span style="color:var(--muted);font-size:11px">'+it.size+'</span>':'')
+              +'<div style="font-size:10px;color:#92400e;margin-top:2px">'+it.reason+'</div>'
+              +'</div>';
+          }).join('');
+          detail+='</div>';
+        }
+        if(errList.length>0){
+          detail+='<div style="margin-top:10px;border-top:1px solid var(--border);padding-top:8px">'
+            +'<div style="font-size:10px;font-weight:700;color:#991b1b;text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px">❌ Erreurs ('+errList.length+')</div>';
+          detail+=errList.map(function(it){
+            return '<div style="font-size:12px;color:#991b1b;padding:5px 8px;background:#fef2f2;border-radius:4px;margin-bottom:3px">'
+              +'<b>'+it.product+'</b>'+(it.size?' · '+it.size:'')
+              +'<div style="font-size:10px;margin-top:2px">'+it.reason+'</div>'
+              +'</div>';
+          }).join('');
+          detail+='</div>';
+        }
       }
-      // Détail : sans correspondance
-      var noMatchList=d.no_match_items||[];
-      if(noMatchList.length>0){
-        detailHtml+='<div style="margin-top:6px;border-top:1px solid var(--border);padding-top:6px">'
-          +'<div style="font-size:10px;font-weight:700;color:#854d0e;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">🔍 Sans correspondance Shopify ('+noMatchList.length+')</div>';
-        detailHtml+=noMatchList.map(function(it){
-          return '<div style="font-size:11px;color:var(--text);padding:2px 0;border-bottom:1px solid var(--border)">'
-            +'<b>'+it.product+'</b>'
-            +(it.size?' · <span style="color:var(--muted)">'+it.size+'</span>':'')
-            +' <span style="color:#9ca3af;font-size:10px;display:block;padding-left:4px">'+it.reason+'</span>'
-            +'</div>';
-        }).join('');
-        detailHtml+='</div>';
-      }
-      // Détail : erreurs
-      var errList=d.error_items||[];
-      if(errList.length>0){
-        detailHtml+='<div style="margin-top:6px;border-top:1px solid var(--border);padding-top:6px">'
-          +'<div style="font-size:10px;font-weight:700;color:#991b1b;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">❌ Erreurs ('+errList.length+')</div>';
-        detailHtml+=errList.map(function(it){
-          return '<div style="font-size:11px;color:#991b1b;padding:2px 0;border-bottom:1px solid var(--border)">'
-            +'<b>'+it.product+'</b>'+(it.size?' · '+it.size:'')
-            +' — '+it.reason+'</div>';
-        }).join('');
-        detailHtml+='</div>';
-      }
-      body='<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px">'
-        +'<div style="font-family:var(--font-main);font-size:12px;font-weight:700;color:var(--text)">'+icon+' '+label+(isDry?' <span style="font-size:10px;background:#fef9c3;color:#854d0e;padding:1px 5px;border-radius:3px;font-weight:600">DRY-RUN</span>':'')+'</div>'
-        +'<div style="display:flex;align-items:center;gap:6px">'
-        +'<span style="font-size:10px;font-weight:700;color:'+statusCol+'">'+statusLbl+'</span>'
-        +'<span style="font-size:10px;color:var(--muted)">'+dt+'</span>'
+      return '<div style="border-left:4px solid '+accent+';padding:13px 14px 11px 14px;border-bottom:1px solid var(--border);cursor:pointer;transition:.15s" onclick="toggleNotifExpand(\''+n.id+'\')" onmouseover="this.style.background=\'#fafafa\'" onmouseout="this.style.background=\'transparent\'">'
+        // Ligne 1 : icône + label + DRY + flèche expand + status badge + heure
+        +'<div style="display:flex;align-items:center;justify-content:space-between">'
+        +  '<div style="display:flex;align-items:center;gap:7px">'
+        +    '<span style="font-size:15px;line-height:1">'+icon+'</span>'
+        +    '<span style="font-family:var(--font-main);font-size:12px;font-weight:700;color:var(--text)">'+label+'</span>'
+        +    (isDry?'<span style="font-size:10px;background:#fef9c3;color:#854d0e;padding:1px 6px;border-radius:3px;font-weight:600">DRY-RUN</span>':'')
+        +  '</div>'
+        +  '<div style="display:flex;align-items:center;gap:8px">'
+        +    '<span style="font-size:11px;font-weight:700;color:'+statusTxt+';background:'+statusBg+';padding:2px 8px;border-radius:4px">'+statusLbl+'</span>'
+        +    '<span style="font-size:10px;color:var(--muted)">'+dt+'</span>'
+        +    '<span style="font-size:10px;color:var(--muted)">'+( isExpanded?'▲':'▼')+'</span>'
+        +  '</div>'
         +'</div>'
+        // Ligne 2 : total vérifié
+        +'<div style="font-size:11px;color:var(--muted);margin-top:4px">'+(d.checked||0)+' vérifiés au total</div>'
+        // Chips
+        +chips
+        // Détail (si expanded)
+        +detail
+        // Actions
+        +'<div style="margin-top:10px;display:flex;gap:6px" onclick="event.stopPropagation()">'
+        +  '<button onclick="markNotifRead(\''+n.id+'\')" style="background:var(--text);color:#fff;border:none;border-radius:var(--radius-btn);padding:5px 11px;font-family:var(--font-main);font-size:11px;font-weight:600;cursor:pointer;text-transform:uppercase;letter-spacing:.04em">✓ Lu</button>'
         +'</div>'
-        +'<div style="font-size:11px;color:var(--muted);margin-bottom:2px">'+d.checked+' vérifiés au total</div>'
-        +statsHtml+detailHtml;
+        +'</div>';
     } else {
-      // Notification de commande Shopify
+      // Notification commande Shopify
       var variant=[n.variant_size,n.variant_color].filter(Boolean).join(' / ')||'—';
-      body='<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px">'
-        +'<div style="font-family:var(--font-main);font-size:12px;font-weight:700;color:var(--text)">📦 '+(n.shopify_order_number||'Commande')+'</div>'
-        +'<div style="font-size:10px;color:var(--muted)">'+dt+'</div>'
+      return '<div style="border-left:4px solid #3b82f6;padding:13px 14px;border-bottom:1px solid var(--border);transition:.15s" onmouseover="this.style.background=\'#fafafa\'" onmouseout="this.style.background=\'transparent\'">'
+        +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px">'
+        +  '<div style="display:flex;align-items:center;gap:6px">'
+        +    '<span style="font-size:14px">📦</span>'
+        +    '<span style="font-family:var(--font-main);font-size:12px;font-weight:700;color:var(--text)">'+(n.shopify_order_number||'Commande')+'</span>'
+        +  '</div>'
+        +  '<span style="font-size:10px;color:var(--muted)">'+dt+'</span>'
         +'</div>'
-        +'<div style="font-size:13px;color:var(--text);margin-bottom:4px;font-weight:500">'+(n.product_title||'—')+'</div>'
-        +'<div style="font-size:12px;color:var(--muted);margin-bottom:6px">Taille : <b>'+variant+'</b> · Stock : <b style="color:var(--green)">'+(n.matched_qty||0)+' dispo</b></div>'
-        +(n.customer_name?'<div style="font-size:11px;color:var(--muted)">👤 '+n.customer_name+(n.customer_city?' · '+n.customer_city:'')+'</div>':'');
+        +'<div style="font-size:13px;color:var(--text);font-weight:600;margin-bottom:4px">'+(n.product_title||'—')+'</div>'
+        +'<div style="font-size:12px;color:var(--muted);margin-bottom:5px;display:flex;align-items:center;gap:8px">'
+        +  '<span style="background:#f1f5f9;padding:2px 7px;border-radius:4px;font-weight:600;font-size:11px">'+variant+'</span>'
+        +  '<span>Stock : <b style="color:#16a34a">'+(n.matched_qty||0)+' dispo</b></span>'
+        +'</div>'
+        +(n.customer_name?'<div style="font-size:11px;color:var(--muted);margin-bottom:8px">👤 '+n.customer_name+(n.customer_city?' · '+n.customer_city:'')+'</div>':'<div style="margin-bottom:8px"></div>')
+        +'<div style="display:flex;gap:6px">'
+        +  '<button onclick="event.stopPropagation();markNotifRead(\''+n.id+'\')" style="background:var(--text);color:#fff;border:none;border-radius:var(--radius-btn);padding:5px 11px;font-family:var(--font-main);font-size:11px;font-weight:600;cursor:pointer;text-transform:uppercase;letter-spacing:.04em">✓ Vu</button>'
+        +  '<button onclick="event.stopPropagation();archiveNotif(\''+n.id+'\')" style="background:transparent;border:1px solid var(--border);border-radius:var(--radius-btn);padding:5px 11px;font-family:var(--font-main);font-size:11px;font-weight:600;cursor:pointer;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Archiver</button>'
+        +'</div>'
+        +'</div>';
     }
-    return '<div style="padding:12px;border-bottom:1px solid var(--border);transition:.2s ease" onmouseover="this.style.background=\'var(--bg-soft)\'" onmouseout="this.style.background=\'transparent\'">'
-      +body
-      +'<div style="margin-top:8px;display:flex;gap:6px">'
-      +(!isSyncType?'<button onclick="event.stopPropagation();markNotifRead(\''+n.id+'\')" style="background:var(--text);color:#fff;border:none;border-radius:var(--radius-btn);padding:6px 12px;font-family:var(--font-main);font-size:11px;font-weight:600;cursor:pointer;text-transform:uppercase;letter-spacing:.04em">✓ Vu</button>':'')
-      +'<button onclick="event.stopPropagation();markNotifRead(\''+n.id+'\')" style="background:'+(isSyncType?'var(--text)':'transparent')+';color:'+(isSyncType?'#fff':'var(--muted)')+';border:'+(isSyncType?'none':'1px solid var(--border)')+';border-radius:var(--radius-btn);padding:6px 12px;font-family:var(--font-main);font-size:11px;font-weight:600;cursor:pointer;text-transform:uppercase;letter-spacing:.04em">'+(isSyncType?'✓ Lu':'Archiver')+'</button>'
-      +(isSyncType?'':'<button onclick="event.stopPropagation();archiveNotif(\''+n.id+'\')" style="background:transparent;border:1px solid var(--border);border-radius:var(--radius-btn);padding:6px 12px;font-family:var(--font-main);font-size:11px;font-weight:600;cursor:pointer;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Archiver</button>')
-      +'</div>'
-      +'</div>';
   }).join('');
 }
 async function markNotifRead(id){
@@ -1004,6 +1037,16 @@ async function archiveNotif(id){
     notifications=notifications.filter(function(n){return n.id!==id;});
     renderBellCounter(); renderNotificationsList();
   }catch(e){ console.warn('archiveNotif:',e.message); }
+}
+async function markAllNotifsRead(){
+  try{
+    await Promise.all(notifications.map(function(n){
+      return fetch('/api/notifications?id='+n.id+'&status=read&secret='+SYNC_SECRET,{method:'PATCH'});
+    }));
+    notifications=[];
+    expandedNotifs.clear();
+    renderBellCounter(); renderNotificationsList();
+  }catch(e){ console.warn('markAllNotifsRead:',e.message); }
 }
 
 // ── Sync Shopify (push retours disponibles) ──
