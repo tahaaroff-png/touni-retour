@@ -432,7 +432,7 @@ td{padding:12px 14px;vertical-align:middle}
       </div>
       <div style="display:flex;background:var(--bg-soft);border-top:1px solid var(--border)">
         <button onclick="toggleEnvoisDetail()" id="liv-envois-toggle" style="flex:1;background:transparent;border:none;padding:11px;font-family:var(--font-main);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--secondary);cursor:pointer;transition:.3s ease">
-          Voir le détail des envois ▾
+          Voir le détail par jour ▾
         </button>
         <button onclick="refreshLivreurData()" id="liv-refresh-btn" title="Actualiser" style="background:transparent;border:none;border-left:1px solid var(--border);padding:0 18px;font-size:16px;cursor:pointer;color:var(--secondary);transition:.3s ease">↻</button>
       </div>
@@ -1738,27 +1738,26 @@ function renderAll(){
 function renderLivreurBalance(){
   var elRecu=document.getElementById('liv-bal-recu');
   if(!elRecu) return;
-  // Filtre date : seulement les reçus + dépenses dans la période sélectionnée
-  var recusInRange=(livreurRecus||[]).filter(function(r){return inDateRange(r.date);});
-  var depInRange=(fournisseurs||[]).filter(function(r){return r.source==='livreur' && inDateRange(r.date);});
-  var totalRecu=recusInRange.reduce(function(s,r){return s+(+r.montant_mad||0);},0);
+  // Cash envoyé au livreur = Payé aux fournisseurs = sum(historique fournisseurs, période)
+  // Le livreur reçoit l'argent et le dépense intégralement pour payer les fournisseurs → reste = 0
+  var depInRange=(fournisseurs||[]).filter(function(r){return inDateRange(r.date);});
   var totalDep=depInRange.reduce(function(s,r){return s+(+r.montant_mad||0);},0);
-  var reste=totalRecu-totalDep;
+  var totalRecu=totalDep; // identique : cash envoyé = ce qui a été payé aux fournisseurs
   elRecu.textContent=Math.round(totalRecu).toLocaleString('fr-FR')+' MAD';
   document.getElementById('liv-bal-dep').textContent=Math.round(totalDep).toLocaleString('fr-FR')+' MAD';
   var elReste=document.getElementById('liv-bal-reste');
-  elReste.textContent=(reste>=0?'':'−')+Math.abs(Math.round(reste)).toLocaleString('fr-FR')+' MAD';
-  elReste.style.color=reste<0?'#fda4a4':'#fff';
-  // Auto-affiche le détail des envois s'il y a au moins 1 reçu dans la période
+  elReste.textContent='0 MAD';
+  elReste.style.color='#fff';
+  // Auto-affiche le détail si des paiements existent dans la période
   var det=document.getElementById('liv-envois-detail');
   var btn=document.getElementById('liv-envois-toggle');
-  if(det && btn && recusInRange.length){
+  if(det && btn && depInRange.length){
     det.style.display='block';
     btn.innerHTML='Masquer le détail ▴';
     renderEnvoisDetail();
   } else if(det && btn){
     det.style.display='none';
-    btn.innerHTML='Voir le détail des envois ▾';
+    btn.innerHTML='Voir le détail par jour ▾';
   }
 }
 
@@ -1767,7 +1766,7 @@ function toggleEnvoisDetail(){
   var btn=document.getElementById('liv-envois-toggle');
   if(det.style.display==='block'){
     det.style.display='none';
-    btn.innerHTML='Voir le détail des envois ▾';
+    btn.innerHTML='Voir le détail par jour ▾';
   } else {
     det.style.display='block';
     btn.innerHTML='Masquer le détail ▴';
@@ -1778,22 +1777,19 @@ function toggleEnvoisDetail(){
 function renderEnvoisDetail(){
   var det=document.getElementById('liv-envois-detail');
   if(!det) return;
-  // Filtre date : ne montrer que les reçus de la période sélectionnée
-  var recus=(livreurRecus||[]).filter(function(r){return inDateRange(r.date);}).slice().sort(function(a,b){return String(b.created_at).localeCompare(String(a.created_at));});
-  if(!recus.length){
-    det.innerHTML='<div style="text-align:center;padding:20px;color:var(--muted);font-size:12px">Aucun envoi sur cette période</div>';
+  // Affiche l'historique fournisseurs par jour (= ce que le livreur a payé chaque jour)
+  var rows=(fournisseurs||[]).filter(function(r){return inDateRange(r.date);}).slice().sort(function(a,b){return String(b.date).localeCompare(String(a.date));});
+  if(!rows.length){
+    det.innerHTML='<div style="text-align:center;padding:20px;color:var(--muted);font-size:12px">Aucun paiement sur cette période</div>';
     return;
   }
-  det.innerHTML=recus.map(function(r){
+  det.innerHTML=rows.map(function(r){
     var dt=new Date(r.date+'T12:00:00').toLocaleDateString('fr-FR',{day:'2-digit',month:'short'});
-    var rUrls=(r.photos_json && Array.isArray(r.photos_json) && r.photos_json.length)?r.photos_json:(r.photo_url?[r.photo_url]:[]);
-    var photoTag=rUrls.length?'<button onclick="event.stopPropagation();openLightboxGallery('+JSON.stringify(rUrls).replace(/"/g,'&quot;')+')" style="background:transparent;border:1px solid var(--border);border-radius:var(--radius-btn);padding:4px 10px;font-size:11px;font-family:var(--font-main);font-weight:600;color:var(--text);cursor:pointer">📷 '+(rUrls.length>1?rUrls.length+' captures':'Capture')+'</button>':'';
-    var notes=r.notes?'<div style="font-size:11px;color:var(--muted);margin-top:3px">'+r.notes+'</div>':'';
-    return '<div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border)">'
+    var notes=r.notes?'<div style="font-size:11px;color:var(--muted);margin-top:2px">'+r.notes+'</div>':'';
+    return '<div style="display:flex;align-items:center;gap:12px;padding:9px 0;border-bottom:1px solid var(--border)">'
       +'<div style="font-size:11px;color:var(--muted);min-width:60px">'+dt+'</div>'
-      +'<div style="flex:1;min-width:0"><div style="font-weight:600;font-size:13px">+'+Math.round(r.montant_mad).toLocaleString('fr-FR')+' MAD</div>'+notes+'</div>'
-      +photoTag
-      +'<button onclick="event.stopPropagation();deleteRecu(\''+r.id+'\')" style="background:none;border:none;color:var(--muted2);cursor:pointer;font-size:18px;padding:0 4px">×</button>'
+      +'<div style="flex:1;min-width:0"><div style="font-weight:600;font-size:13px">'+Math.round(r.montant_mad).toLocaleString('fr-FR')+' MAD</div>'+notes+'</div>'
+      +(r.nb_commandes?'<span style="font-size:11px;color:var(--muted)">'+r.nb_commandes+' cdes</span>':'')
       +'</div>';
   }).join('');
 }
