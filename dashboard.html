@@ -1435,17 +1435,43 @@ function renderNotificationsList(){
   }
   list.innerHTML=notifications.map(function(n){
     var dt=new Date(n.created_at).toLocaleString('fr-FR',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
-    var variant=[n.variant_size,n.variant_color].filter(Boolean).join(' / ')||'—';
+    var isSyncNotif=['sync_shopify','sync_dry_run','rupture_shopify','rupture_dry_run'].indexOf(n.type)!==-1;
+    var body='';
+    if(isSyncNotif){
+      // Notification de sync ou de rupture
+      var d=n.data||{};
+      var icon=n.type.indexOf('rupture')!==-1?'🔴':'🔄';
+      var label=n.type.indexOf('rupture')!==-1?'Sync Rupture':'Sync Stock';
+      var isDry=n.type.indexOf('dry_run')!==-1;
+      var statusColor=d.status==='succes'?'var(--green)':d.status==='partiel'?'var(--warning)':'var(--muted)';
+      body='<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px">'
+        +'<div style="font-family:var(--font-main);font-size:12px;font-weight:700;color:var(--text)">'+icon+' '+label+(isDry?' <span style="font-size:10px;color:var(--warning);font-weight:600">[DRY-RUN]</span>':'')+'</div>'
+        +'<div style="font-size:10px;color:var(--muted)">'+dt+'</div>'
+        +'</div>'
+        +'<div style="font-size:12px;color:var(--muted);margin-bottom:6px">'
+        +(d.pushed!==undefined?'<b style="color:var(--green)">'+d.pushed+' poussés</b> · ':'')
+        +(d.set_to_zero!==undefined?'<b style="color:var(--signal)">'+d.set_to_zero+' mis à 0</b> · ':'')
+        +'<span>'+d.checked+' vérifiés</span>'
+        +(d.skipped_no_match?' · '+d.skipped_no_match+' sans match':'')
+        +(d.skipped_has_stock?' · '+d.skipped_has_stock+' en stock':'')
+        +(d.errors?' · <span style="color:var(--signal)">'+d.errors+' erreurs</span>':'')
+        +'</div>'
+        +(n.message?'<div style="font-size:11px;color:var(--muted);font-style:italic;margin-bottom:6px">'+n.message+'</div>':'');
+    } else {
+      // Notification de commande Shopify
+      var variant=[n.variant_size,n.variant_color].filter(Boolean).join(' / ')||'—';
+      body='<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px">'
+        +'<div style="font-family:var(--font-main);font-size:12px;font-weight:700;color:var(--text)">📦 '+(n.shopify_order_number||'Commande')+'</div>'
+        +'<div style="font-size:10px;color:var(--muted)">'+dt+'</div>'
+        +'</div>'
+        +'<div style="font-size:13px;color:var(--text);margin-bottom:4px;font-weight:500">'+(n.product_title||n.message||'—')+'</div>'
+        +'<div style="font-size:12px;color:var(--muted);margin-bottom:6px">Taille : <b>'+variant+'</b> · Stock retours : <b style="color:var(--green)">'+(n.matched_qty||0)+' dispo</b></div>'
+        +(n.customer_name?'<div style="font-size:11px;color:var(--muted)">👤 '+n.customer_name+(n.customer_city?' · '+n.customer_city:'')+'</div>':'');
+    }
     return '<div style="padding:12px;border-bottom:1px solid var(--border);transition:.2s ease" onmouseover="this.style.background=\'var(--bg-soft)\'" onmouseout="this.style.background=\'transparent\'">'
-      +'<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px">'
-      +'<div style="font-family:var(--font-main);font-size:12px;font-weight:700;color:var(--text)">📦 '+n.shopify_order_number+'</div>'
-      +'<div style="font-size:10px;color:var(--muted)">'+dt+'</div>'
-      +'</div>'
-      +'<div style="font-size:13px;color:var(--text);margin-bottom:4px;font-weight:500">'+n.product_title+'</div>'
-      +'<div style="font-size:12px;color:var(--muted);margin-bottom:6px">Taille : <b>'+variant+'</b> · Stock retours : <b style="color:var(--green)">'+n.matched_qty+' dispo</b></div>'
-      +(n.customer_name?'<div style="font-size:11px;color:var(--muted)">👤 '+n.customer_name+(n.customer_city?' · '+n.customer_city:'')+'</div>':'')
+      +body
       +'<div style="margin-top:8px;display:flex;gap:6px">'
-      +'<a href="/" style="background:var(--text);color:#fff;border:none;border-radius:var(--radius-btn);padding:6px 12px;font-family:var(--font-main);font-size:11px;font-weight:600;cursor:pointer;text-transform:uppercase;letter-spacing:.04em;text-decoration:none">Voir stock →</a>'
+      +(!isSyncNotif?'<a href="/" style="background:var(--text);color:#fff;border:none;border-radius:var(--radius-btn);padding:6px 12px;font-family:var(--font-main);font-size:11px;font-weight:600;cursor:pointer;text-transform:uppercase;letter-spacing:.04em;text-decoration:none">Voir stock →</a>':'')
       +'<button onclick="event.stopPropagation();markNotifRead(\''+n.id+'\')" style="background:transparent;border:1px solid var(--border);border-radius:var(--radius-btn);padding:6px 12px;font-family:var(--font-main);font-size:11px;font-weight:600;cursor:pointer;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">✓ Lu</button>'
       +'<button onclick="event.stopPropagation();archiveNotif(\''+n.id+'\')" style="background:transparent;border:1px solid var(--border);border-radius:var(--radius-btn);padding:6px 12px;font-family:var(--font-main);font-size:11px;font-weight:600;cursor:pointer;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Archiver</button>'
       +'</div>'

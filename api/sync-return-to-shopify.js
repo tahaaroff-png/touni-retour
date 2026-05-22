@@ -24,15 +24,65 @@ const {
   normalizeSize, normalizeColor,
 } = require('./_shopify-helpers.js');
 
-// Shopify REST allows 2 req/s on the standard plan.
-// We call getInventoryLevel() once per matched group — throttle to avoid 429s.
+// ── Shopify rate-limiter (2 req/s max on standard plan) ──────────────────────
+// Token bucket: allows short bursts then throttles to 2 req/s.
+// Each Shopify API call should go through shopifyThrottle() first.
+const _throttle = {
+  tokens: 2,          // start with 2 tokens (burst allowance)
+  maxTokens: 2,
+  refillRate: 2,      // tokens per second
+  lastRefill: Date.now(),
+};
+
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function shopifyThrottle() {
+  const now = Date.now();
+  const elapsed = (now - _throttle.lastRefill) / 1000;
+  _throttle.tokens = Math.min(_throttle.maxTokens, _throttle.tokens + elapsed * _throttle.refillRate);
+  _throttle.lastRefill = now;
+
+  if (_throttle.tokens >= 1) {
+    _throttle.tokens -= 1;
+    return; // proceed immediately
+  }
+  // Need to wait for a token to refill
+  const waitMs = Math.ceil((1 - _throttle.tokens) / _throttle.refillRate * 1000) + 50;
+  await sleep(waitMs);
+  _throttle.tokens = 0;
 }
 
 function groupKey(title, size, color) {
   return `${title}||${normalizeSize(size) || ''}||${normalizeColor(color) || ''}`;
 }
+
+// ── Fuzzy title matching ─────────────────────────────────────────────────────
+// Normalise un titre de produit : minuscules, sans accents, sans ponctuation
+function normTitle(s) {
+  if (!s) return '';
+  return String(s)
+    .toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '') // accents
+    .replace(/[^a-z0-9\s]/g, ' ')                     // ponctuation → espace
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// Score de similarité entre deux titres (0..1) basé sur le chevauchement de mots
+// Jaccard : |intersection| / |union|
+function titleSimilarity(a, b) {
+  const wordsA = new Set(normTitle(a).split(' ').filter(w => w.length > 1));
+  const wordsB = new Set(normTitle(b).split(' ').filter(w => w.length > 1));
+  if (wordsA.size === 0 || wordsB.size === 0) return 0;
+  let inter = 0;
+  for (const w of wordsA) if (wordsB.has(w)) inter++;
+  const union = wordsA.size + wordsB.size - inter;
+  return inter / union;
+}
+
+const FUZZY_THRESHOLD = 0.55; // 55% de mots en commun → match accepté
 
 function parseSize(stockSize) {
   // stock.size est au format "M | Black" ou "M" ou "" ou "—" (em-dash sentinel = inconnu)
@@ -146,19 +196,54 @@ module.exports = async function handler(req, res) {
       details: [],
     };
 
-    let shopifyCallCount = 0;
-
     for (const key in groups) {
       const grp = groups[key];
       results.checked++;
       try {
-        // Match variant via cache
-        const cacheUrl = `${SB_URL}/rest/v1/shopify_variants_cache?select=variant_id,inventory_item_id,inventory_quantity,size,color&product_title=eq.${encodeURIComponent(grp.product)}`;
-        const cacheRes = await fetch(cacheUrl, { headers: supabaseHeaders() });
-        if (!cacheRes.ok) throw new Error('Cache fetch error');
-        const candidates = await cacheRes.json();
+        // Match variant via cache — exact title first, then fuzzy fallback
         const normSize = normalizeSize(grp.size);
         const normColor = normalizeColor(grp.color);
+        let candidates = [];
+        let matchedTitle = grp.product;
+        let fuzzyScore = null;
+
+        // Step 1 : exact title match
+        const exactUrl = `${SB_URL}/rest/v1/shopify_variants_cache?select=variant_id,inventory_item_id,inventory_quantity,size,color,product_title&product_title=eq.${encodeURIComponent(grp.product)}`;
+        const exactRes = await fetch(exactUrl, { headers: supabaseHeaders() });
+        if (!exactRes.ok) throw new Error('Cache fetch error (exact)');
+        candidates = await exactRes.json();
+
+        // Step 2 : fuzzy title match if no exact candidates found
+        if (candidates.length === 0) {
+          // Fetch all distinct product_titles from cache
+          const allTitlesUrl = `${SB_URL}/rest/v1/shopify_variants_cache?select=product_title&limit=2000`;
+          const allTitlesRes = await fetch(allTitlesUrl, { headers: supabaseHeaders() });
+          if (allTitlesRes.ok) {
+            const allRows = await allTitlesRes.json();
+            // Find best matching title
+            let bestScore = 0, bestTitle = null;
+            const seen = new Set();
+            for (const row of allRows) {
+              const t = row.product_title;
+              if (!t || seen.has(t)) continue;
+              seen.add(t);
+              const score = titleSimilarity(grp.product, t);
+              if (score > bestScore) { bestScore = score; bestTitle = t; }
+            }
+            if (bestScore >= FUZZY_THRESHOLD && bestTitle) {
+              // Fetch variants for best matching title
+              const fuzzyUrl = `${SB_URL}/rest/v1/shopify_variants_cache?select=variant_id,inventory_item_id,inventory_quantity,size,color,product_title&product_title=eq.${encodeURIComponent(bestTitle)}`;
+              const fuzzyRes = await fetch(fuzzyUrl, { headers: supabaseHeaders() });
+              if (fuzzyRes.ok) {
+                candidates = await fuzzyRes.json();
+                matchedTitle = bestTitle;
+                fuzzyScore = bestScore;
+                console.log(`[sync-return] Fuzzy match: "${grp.product}" → "${bestTitle}" (score=${bestScore.toFixed(2)})`);
+              }
+            }
+          }
+        }
+
         let match = candidates.find(c =>
           normalizeSize(c.size) === normSize &&
           (normColor ? normalizeColor(c.color) === normColor : true)
@@ -174,15 +259,13 @@ module.exports = async function handler(req, res) {
             product: grp.product, size: grp.size, color: grp.color, qty: grp.totalQty,
             reason: candidates.length === 0
               ? 'Aucune variante dans le cache (sync-products-cache requis ?)'
-              : `Aucune correspondance pour size=${grp.size} color=${grp.color} (${candidates.length} candidats)`,
+              : `Aucune correspondance pour size=${grp.size} color=${grp.color} parmi ${candidates.length} candidats de "${matchedTitle}"`,
           });
           continue;
         }
 
-        // FIX: Throttle Shopify REST calls to stay under 2 req/s limit (avoids 429)
-        // Every Shopify call (getInventoryLevel + adjustInventory) is preceded by a 550ms pause.
-        shopifyCallCount++;
-        if (shopifyCallCount > 1) await sleep(550);
+        // FIX: Token-bucket throttle before each Shopify REST call (max 2 req/s)
+        await shopifyThrottle();
 
         // Read live inventory (don't trust cache for the push decision)
         const liveInv = await getInventoryLevel(match.inventory_item_id);
@@ -207,10 +290,9 @@ module.exports = async function handler(req, res) {
 
         // Shopify is at 0 → push the full qty from our returns
         if (!isDryRun) {
-          // adjustInventory counts as another Shopify call — add extra delay
-          await sleep(550);
+          // adjustInventory is another Shopify call — throttle before it too
+          await shopifyThrottle();
           await adjustInventory(match.inventory_item_id, grp.totalQty);
-          shopifyCallCount++;
 
           // Mark all stock items as pushed
           const now = new Date().toISOString();
@@ -238,7 +320,10 @@ module.exports = async function handler(req, res) {
         results.pushed++;
         results.details.push({
           status: isDryRun ? 'would_push' : 'pushed',
-          product: grp.product, size: grp.size, color: grp.color,
+          product: grp.product,
+          shopify_title: fuzzyScore ? matchedTitle : undefined,
+          fuzzy_score: fuzzyScore ? Math.round(fuzzyScore * 100) : undefined,
+          size: grp.size, color: grp.color,
           qty_pushed: grp.totalQty,
           shopify_variant_id: match.variant_id,
         });

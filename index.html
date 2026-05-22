@@ -275,7 +275,8 @@ td{padding:12px 14px;vertical-align:middle}
     <div class="chip chip-dispo">✓ <b id="s-dispo">—</b></div>
     <div class="chip chip-rupture">✗ <b id="s-rup">—</b></div>
     <span id="role-badge" style="display:none;align-items:center;gap:5px;background:#fffbef;border:1px solid var(--warning);border-radius:var(--radius-btn);padding:5px 12px;font-family:var(--font-main);font-size:11px;font-weight:600;color:#7a5d1e;text-transform:uppercase;letter-spacing:.06em">👤 Confirmation</span>
-    <button id="btn-sync-shopify" onclick="syncShopify()" title="Vérifier le stock vs Shopify et pusher en rupture" style="background:transparent;border:1px solid var(--border);border-radius:var(--radius-btn);padding:6px 12px;font-family:var(--font-main);font-size:11px;font-weight:600;cursor:pointer;color:var(--text);text-transform:uppercase;letter-spacing:.06em;display:none">🔄 Sync Shopify</button>
+    <button id="btn-sync-shopify" onclick="syncShopify()" title="Vérifier le stock vs Shopify et pousser les retours disponibles" style="background:transparent;border:1px solid var(--border);border-radius:var(--radius-btn);padding:6px 12px;font-family:var(--font-main);font-size:11px;font-weight:600;cursor:pointer;color:var(--text);text-transform:uppercase;letter-spacing:.06em;display:none">🔄 Sync Shopify</button>
+    <button id="btn-sync-rupture" onclick="syncRupture()" title="Mettre en rupture les articles vendus/mystère sur Shopify" style="background:transparent;border:1px solid var(--signal);border-radius:var(--radius-btn);padding:6px 12px;font-family:var(--font-main);font-size:11px;font-weight:600;cursor:pointer;color:var(--signal);text-transform:uppercase;letter-spacing:.06em;display:none">🔴 Rupture Shopify</button>
     <button id="bell-btn" onclick="toggleNotifications()" title="Notifications" style="position:relative;background:transparent;border:1px solid var(--border);border-radius:var(--radius-btn);padding:6px 10px;font-family:var(--font-main);font-size:14px;cursor:pointer;color:var(--text);display:none">🔔<span id="bell-count" style="display:none;position:absolute;top:-4px;right:-4px;background:var(--signal);color:#fff;font-size:9px;font-weight:700;padding:1px 5px;border-radius:8px;min-width:16px;text-align:center;font-family:var(--font-main)">0</span></button>
     <a id="admin-dashboard-btn" href="/dashboard" style="display:none;background:var(--text);color:#fff;border-radius:20px;padding:5px 14px;font-family:'Jost',sans-serif;font-size:10px;font-weight:700;text-decoration:none;letter-spacing:.8px">📊 Dashboard</a>
     <button class="btn-logout" onclick="logout()">Déconnexion</button>
@@ -814,9 +815,10 @@ async function startApp() {
   await loadCatalog();
   await dbLoad();
   setInterval(dbLoad, 30000);
-  // Affiche le bouton Sync Shopify uniquement pour l'admin
+  // Affiche les boutons Sync/Rupture Shopify uniquement pour l'admin
   if(sessionStorage.getItem('role')==='admin'){
     var btn=document.getElementById('btn-sync-shopify'); if(btn) btn.style.display='inline-flex';
+    var btnR=document.getElementById('btn-sync-rupture'); if(btnR) btnR.style.display='inline-flex';
   }
   document.getElementById('bell-btn').style.display='inline-flex';
   // Charge les notifications au boot puis poll toutes les 60s
@@ -894,24 +896,48 @@ async function archiveNotif(id){
   }catch(e){ alert('Erreur : '+e.message); }
 }
 
-// ── Sync Shopify (push retours en rupture) ──
-var SYNC_SECRET='touni-sync-2026'; // doit matcher process.env.SYNC_SECRET côté Vercel
+// ── Sync Shopify (push retours disponibles) ──
+var SYNC_SECRET='touni-sync-2026';
 async function syncShopify(){
   var btn=document.getElementById('btn-sync-shopify');
-  if(!confirm('Vérifier le stock retours vs Shopify et pousser les produits en rupture ?')) return;
-  btn.disabled=true; var orig=btn.textContent; btn.textContent='⏳ Vérification…';
+  if(!confirm('Vérifier le stock retours vs Shopify et pousser les produits disponibles ?\n\nSeuls les produits en rupture sur Shopify seront mis à jour.')) return;
+  btn.disabled=true; var orig=btn.textContent; btn.textContent='⏳ Sync…';
   try{
     var r=await fetch('/api/sync-return-to-shopify?secret='+SYNC_SECRET,{method:'POST'});
     var data=await r.json();
     if(!r.ok) throw new Error(data.error||'Erreur sync');
+    var fuzzyItems=(data.details||[]).filter(function(d){return d.fuzzy_score;});
     var msg='✅ Sync terminée\n\n'
       +(data.checked||0)+' combinaisons vérifiées\n'
-      +(data.pushed||0)+' poussées à Shopify (rupture détectée)\n'
+      +(data.pushed||0)+' poussées à Shopify\n'
       +(data.skipped_has_stock||0)+' ignorées (Shopify a déjà du stock)\n'
-      +(data.skipped_no_match||0)+' sans correspondance Shopify\n'
+      +(data.skipped_no_match||0)+' sans correspondance\n'
+      +(data.errors||0)+' erreurs'
+      +(fuzzyItems.length?'\n\n🔍 '+fuzzyItems.length+' produit(s) trouvé(s) par correspondance approximative':'');
+    alert(msg);
+    loadNotifications();
+  }catch(e){
+    alert('❌ Erreur : '+e.message);
+  } finally {
+    btn.disabled=false; btn.textContent=orig;
+  }
+}
+// ── Sync Rupture (met à 0 les articles vendu/mystère précédemment pushés) ──
+async function syncRupture(){
+  var btn=document.getElementById('btn-sync-rupture');
+  if(!confirm('Mettre en rupture sur Shopify les articles vendus/mystère de votre stock retours ?\n\n⚠️ Seuls les articles précédemment poussés par ce système seront touchés.\nLe stock Shopify original ne sera pas modifié.')) return;
+  btn.disabled=true; var orig=btn.textContent; btn.textContent='⏳ Rupture…';
+  try{
+    var r=await fetch('/api/sync-rupture-shopify?secret='+SYNC_SECRET,{method:'POST'});
+    var data=await r.json();
+    if(!r.ok) throw new Error(data.error||'Erreur rupture sync');
+    var msg='🔴 Sync Rupture terminée\n\n'
+      +(data.checked||0)+' variants vérifiés\n'
+      +(data.set_to_zero||0)+' mis à 0 sur Shopify\n'
+      +(data.skipped_already_zero||0)+' déjà à 0\n'
       +(data.errors||0)+' erreurs';
     alert(msg);
-    await dbLoad();
+    loadNotifications();
   }catch(e){
     alert('❌ Erreur : '+e.message);
   } finally {
