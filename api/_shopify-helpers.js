@@ -74,13 +74,26 @@ function normalizeSize(s) {
   if (!s) return null;
   const k = String(s).trim().toLowerCase();
   if (k === 'default title' || k === 'default') return null;
+  // Taille unique variants — treat as "no size" so they match null-size stock items
+  if (k === 'standard' || k === 'taille unique' || k === 'unique') return null;
   return SIZE_MAP[k] || String(s).trim();
 }
+
+// English → French color translations (for stock items where color was entered in English)
+const COLOR_EN_FR = {
+  'black': 'Noir', 'white': 'Blanc', 'red': 'Rouge', 'blue': 'Bleu',
+  'green': 'Vert', 'yellow': 'Jaune', 'orange': 'Orange', 'pink': 'Rose',
+  'purple': 'Violet', 'grey': 'Gris', 'gray': 'Gris', 'brown': 'Marron',
+  'gold': 'Or', 'silver': 'Argent', 'navy': 'Marine', 'beige': 'Beige',
+  'light brown': 'Light Brown',
+};
 
 function normalizeColor(c) {
   if (!c) return null;
   const k = String(c).trim().toLowerCase();
   if (k === 'default title' || k === 'default') return null;
+  // Translate English color names to French (Shopify uses French on this store)
+  if (COLOR_EN_FR[k]) return COLOR_EN_FR[k];
   return String(c).trim();
 }
 

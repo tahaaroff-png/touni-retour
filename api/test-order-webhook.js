@@ -1,113 +1,143 @@
-// Endpoint de diagnostic — simule un ordre Shopify sans HMAC
-// GET /api/test-order-webhook?secret=touni-sync-2026&title=TITRE&size=M&color=Noir
-// POST /api/test-order-webhook?secret=touni-sync-2026  (body JSON = payload Shopify réel)
+// Endpoint de diagnostic multi-mode (protégé par secret)
+// GET ?secret=...&mode=match&title=...&size=...&color=... → simule le matching
+// GET ?secret=...&mode=orders&limit=5             → dernières commandes Shopify + matching
+// GET ?secret=...&mode=selftest&title=...&size=...→ envoie un vrai webhook HMAC-signé
+// POST ?secret=...  (body JSON order Shopify)      → simule le matching sur un payload réel
 
-const { SB_URL, supabaseHeaders, normalizeSize, normalizeColor } = require('./_shopify-helpers.js');
+const crypto = require('crypto');
+const { SB_URL, supabaseHeaders, shopifyAdminHeaders, SHOPIFY_DOMAIN, SHOPIFY_API_VERSION, normalizeSize, normalizeColor } = require('./_shopify-helpers.js');
+
+const SHOPIFY_CLIENT_SECRET = process.env.SHOPIFY_CLIENT_SECRET || '';
 
 function jaccardSim(a, b) {
-  const tokenize = s => new Set(String(s).toLowerCase().replace(/[^a-z0-9]/g, ' ').split(/\s+/).filter(Boolean));
-  const sa = tokenize(a); const sb = tokenize(b);
+  const tok = s => new Set(String(s).toLowerCase().replace(/[^a-z0-9]/g, ' ').split(/\s+/).filter(Boolean));
+  const sa = tok(a), sb = tok(b);
   if (!sa.size || !sb.size) return 0;
-  let inter = 0;
-  for (const t of sa) if (sb.has(t)) inter++;
+  let inter = 0; for (const t of sa) if (sb.has(t)) inter++;
   return inter / (sa.size + sb.size - inter);
 }
 
-async function findMatchingStock(productTitle, size, color) {
-  const normSize = normalizeSize(size);
-  const normColor = normalizeColor(color);
+function parseVariantTitle(variantTitle) {
+  if (!variantTitle) return { size: null, color: null };
+  const parts = variantTitle.split(/\s*[\/\|]\s*/).map(p => p.trim());
+  const SL = new Set(['XS','S','M','L','XL','XXL','2XL','3XL','4XL']);
+  if (parts.length === 1) {
+    return SL.has(parts[0].toUpperCase()) ? { size: parts[0], color: null } : { size: null, color: parts[0] };
+  }
+  return { size: parts[0]||null, color: parts.slice(1).join('/')||null };
+}
 
-  const filterBySizeColor = (rows) => rows.filter(c => {
-    const parts = String(c.size || '').split('|');
-    const cSize = parts[0] ? parts[0].trim() : '';
-    const cColor = parts.length > 1 ? parts[1].trim() : '';
-    const ms = normalizeSize(cSize);
-    const mc = normalizeColor(cColor);
-    if (ms !== normSize) return false;
-    if (normColor && mc !== normColor) return false;
+async function getRetourStock() {
+  const r = await fetch(`${SB_URL}/rest/v1/stock?select=id,product,size,qty&qty=gt.0&status=eq.retour&limit=500`, { headers: supabaseHeaders() });
+  return r.ok ? r.json() : [];
+}
+
+function matchStock(retourStock, title, size, color) {
+  const normSize = normalizeSize(size), normColor = normalizeColor(color);
+  const filterSC = rows => rows.filter(c => {
+    const p = String(c.size||'').split('|');
+    const cs = p[0]?p[0].trim():'', cc = p.length>1?p[1].trim():'';
+    if (normalizeSize(cs) !== normSize) return false;
+    if (normColor && normalizeColor(cc) !== normColor) return false;
     return true;
   });
-
-  // 1) Exact
-  const exactUrl = `${SB_URL}/rest/v1/stock?select=id,product,size,qty,status&product=eq.${encodeURIComponent(productTitle)}&qty=gt.0&status=eq.retour`;
-  const exactRes = await fetch(exactUrl, { headers: supabaseHeaders() });
-  const exactAll = exactRes.ok ? await exactRes.json() : [];
-  const exactMatched = filterBySizeColor(exactAll);
-  if (exactMatched.length) return { method: 'exact', matches: exactMatched, allByTitle: exactAll };
-
-  // 2) Fuzzy
-  const allUrl = `${SB_URL}/rest/v1/stock?select=id,product,size,qty,status&qty=gt.0&status=eq.retour&limit=500`;
-  const allRes = await fetch(allUrl, { headers: supabaseHeaders() });
-  const allStock = allRes.ok ? await allRes.json() : [];
-
-  const scored = allStock
-    .map(s => ({ ...s, _score: jaccardSim(productTitle, s.product) }))
-    .sort((a, b) => b._score - a._score)
-    .slice(0, 10); // top 10 pour debug
-
-  const above = scored.filter(s => s._score >= 0.55);
-  if (above.length) {
-    const topScore = above[0]._score;
-    const bestGroup = above.filter(s => s._score >= topScore - 0.05);
-    return { method: 'fuzzy', topScore, matches: filterBySizeColor(bestGroup), bestGroup };
+  // exact
+  let candidates = retourStock.filter(s => s.product === title);
+  let method = 'exact';
+  if (!candidates.length) {
+    const scored = retourStock.map(s=>({...s,_sc:jaccardSim(title,s.product)})).filter(s=>s._sc>=0.50).sort((a,b)=>b._sc-a._sc);
+    if (scored.length) { const top=scored[0]._sc; candidates=scored.filter(s=>s._sc>=top-0.05); }
+    method = candidates.length ? 'fuzzy' : 'none';
   }
-
-  return { method: 'none', matches: [], top10: scored };
+  return { method, candidates: candidates.length, matched: filterSC(candidates), normSize, normColor };
 }
 
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   if (req.method === 'OPTIONS') return res.status(204).end();
 
-  const expectedSecret = process.env.SYNC_SECRET || 'touni-sync-2026';
-  const secret = req.query?.secret || req.headers['x-sync-secret'];
-  if (secret !== expectedSecret) return res.status(401).json({ error: 'Unauthorized' });
+  const expected = process.env.SYNC_SECRET || 'touni-sync-2026';
+  if ((req.query?.secret || req.headers['x-sync-secret']) !== expected)
+    return res.status(401).json({ error: 'Unauthorized' });
 
-  // ── GET : simulation manuelle ──
-  if (req.method === 'GET') {
+  const mode = req.query.mode || (req.method === 'POST' ? 'post' : 'match');
+
+  // ── MODE: match (GET) ──────────────────────────────────────────────────────
+  if (mode === 'match') {
     const { title, size, color } = req.query;
-    if (!title) return res.status(400).json({ error: 'Missing ?title= param' });
+    if (!title) return res.status(400).json({ error: 'Missing ?title=' });
+    const retourStock = await getRetourStock();
+    const result = matchStock(retourStock, title, size||null, color||null);
+    return res.status(200).json({ input: { title, size, color }, ...result,
+      topSimilar: retourStock.map(s=>({product:s.product,score:jaccardSim(title,s.product)})).sort((a,b)=>b.score-a.score).slice(0,5) });
+  }
 
-    const result = await findMatchingStock(title, size || null, color || null);
-    const normSize = normalizeSize(size);
-    const normColor = normalizeColor(color);
+  // ── MODE: orders (GET) ─────────────────────────────────────────────────────
+  if (mode === 'orders') {
+    const limit = parseInt(req.query.limit)||5;
+    const headers = await shopifyAdminHeaders();
+    const base = `https://${SHOPIFY_DOMAIN}/admin/api/${SHOPIFY_API_VERSION}`;
+    const ordRes = await fetch(`${base}/orders.json?limit=${limit}&status=any&order=created_at+desc`, { headers });
+    const { orders } = await ordRes.json();
+    const whRes = await fetch(`${base}/webhooks.json`, { headers });
+    const { webhooks } = await whRes.json();
+    const retourStock = await getRetourStock();
+
+    const report = orders.map(o => ({
+      order: o.name, id: o.id, created_at: o.created_at,
+      customer: `${o.customer?.first_name||''} ${o.customer?.last_name||''}`.trim() || o.shipping_address?.name,
+      line_items: (o.line_items||[]).map(item => {
+        const {size,color} = parseVariantTitle(item.variant_title||'');
+        const m = matchStock(retourStock, item.title||'', size, color);
+        return { title: item.title, variant_title: item.variant_title, size, color, ...m };
+      }),
+    }));
 
     return res.status(200).json({
-      input: { title, size, color },
-      normalized: { normSize, normColor },
-      ...result,
+      secret_ok: !!SHOPIFY_CLIENT_SECRET,
+      secret_prefix: SHOPIFY_CLIENT_SECRET ? SHOPIFY_CLIENT_SECRET.slice(0,6)+'...' : null,
+      retour_stock_count: retourStock.length,
+      webhooks: webhooks.map(w=>({id:w.id,topic:w.topic,address:w.address})),
+      orders: report,
     });
   }
 
-  // ── POST : tester avec un vrai payload Shopify order ──
-  if (req.method === 'POST') {
-    let body;
-    try {
-      body = req.body || {};
-    } catch(e) {
-      return res.status(400).json({ error: 'Bad JSON: '+e.message });
-    }
-
-    const lineItems = body.line_items || [];
-    const report = [];
-    for (const item of lineItems) {
-      const productTitle = item.title || '';
-      const variantTitle = item.variant_title || '';
-      const parts = variantTitle.split(/\s*[\/\|]\s*/).map(p => p.trim());
-      const SIZE_LITERALS = new Set(['XS','S','M','L','XL','XXL','2XL','3XL','4XL']);
-      let size = null, color = null;
-      if (parts.length === 1) {
-        if (SIZE_LITERALS.has(parts[0].toUpperCase())) size = parts[0];
-        else color = parts[0];
-      } else {
-        size = parts[0] || null;
-        color = parts.slice(1).join(' / ') || null;
-      }
-      const result = await findMatchingStock(productTitle, size, color);
-      report.push({ productTitle, variantTitle, size, color, ...result });
-    }
-    return res.status(200).json({ line_items_count: lineItems.length, report });
+  // ── MODE: selftest (GET) — envoie un webhook HMAC-signé au vrai endpoint ──
+  if (mode === 'selftest') {
+    const title = req.query.title || 'Maillot Maroc domicile coupe du monde 2026/2027';
+    const size  = req.query.size  || 'L';
+    const color = req.query.color || null;
+    const variantId = parseInt(req.query.variant_id) || 88000000001;
+    const fakeOrder = {
+      id: 99888000001, name: '#TEST-SELFTEST', order_number: 9001, total_price: '350.00',
+      customer: { first_name: 'Test', last_name: 'SelfTest' },
+      shipping_address: { city: 'Casablanca', name: 'Test SelfTest' },
+      line_items: [{ id: 1, title, variant_title: color ? `${size} / ${color}` : size, variant_id: variantId, quantity: 1, price: '350.00' }],
+    };
+    const body = JSON.stringify(fakeOrder);
+    const hmac = SHOPIFY_CLIENT_SECRET
+      ? crypto.createHmac('sha256', SHOPIFY_CLIENT_SECRET).update(body).digest('base64')
+      : 'NO_SECRET';
+    const webhookRes = await fetch(`https://touni-retour.vercel.app/api/shopify-order-webhook`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Shopify-Topic': 'orders/create', 'X-Shopify-Hmac-Sha256': hmac, 'X-Shopify-Shop-Domain': SHOPIFY_DOMAIN },
+      body,
+    });
+    const webhookBody = await webhookRes.json().catch(() => webhookRes.text());
+    return res.status(200).json({ test_payload: {title,size,color,variantId}, secret_configured: !!SHOPIFY_CLIENT_SECRET, webhook_status: webhookRes.status, webhook_response: webhookBody });
   }
 
-  return res.status(405).json({ error: 'Use GET or POST' });
+  // ── MODE: post (POST body JSON) ────────────────────────────────────────────
+  if (mode === 'post' || req.method === 'POST') {
+    const body = req.body || {};
+    const retourStock = await getRetourStock();
+    const report = (body.line_items||[]).map(item => {
+      const {size,color} = parseVariantTitle(item.variant_title||'');
+      const m = matchStock(retourStock, item.title||'', size, color);
+      return { title: item.title, variant_title: item.variant_title, size, color, ...m };
+    });
+    return res.status(200).json({ line_items_count: (body.line_items||[]).length, report });
+  }
+
+  return res.status(400).json({ error: 'Unknown mode. Use ?mode=match|orders|selftest or POST.' });
 };

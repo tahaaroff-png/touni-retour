@@ -24,34 +24,70 @@ const {
   normalizeSize, normalizeColor,
 } = require('./_shopify-helpers.js');
 
-// ── Shopify rate-limiter (2 req/s max on standard plan) ──────────────────────
-// Token bucket: allows short bursts then throttles to 2 req/s.
-// Each Shopify API call should go through shopifyThrottle() first.
-const _throttle = {
-  tokens: 2,          // start with 2 tokens (burst allowance)
-  maxTokens: 2,
-  refillRate: 2,      // tokens per second
-  lastRefill: Date.now(),
-};
+function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 
-function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
+// ── Adaptive Shopify throttle based on live bucket state ─────────────────────
+// Shopify REST: leaky bucket of 40 calls, refills at 2/s.
+// After each API call we read X-Shopify-Shop-Api-Call-Limit: "used/total"
+// and pace the next call accordingly — no guessing needed.
+const _bucket = { used: 0, total: 40 };
+
+function _parseBucket(header) {
+  if (!header) return;
+  const [u, t] = header.split('/').map(Number);
+  if (!isNaN(u)) _bucket.used = u;
+  if (!isNaN(t)) _bucket.total = t;
 }
 
-async function shopifyThrottle() {
-  const now = Date.now();
-  const elapsed = (now - _throttle.lastRefill) / 1000;
-  _throttle.tokens = Math.min(_throttle.maxTokens, _throttle.tokens + elapsed * _throttle.refillRate);
-  _throttle.lastRefill = now;
+async function _bucketDelay() {
+  const remaining = _bucket.total - _bucket.used;
+  // Pause duration scales with how full the bucket is
+  if (remaining <= 4)  return sleep(4000);   // almost full → big pause
+  if (remaining <= 10) return sleep(2000);   // getting low → moderate pause
+  if (remaining <= 20) return sleep(1000);   // mid-range → 1 req/s
+  return sleep(500);                          // plenty left → 2 req/s
+}
 
-  if (_throttle.tokens >= 1) {
-    _throttle.tokens -= 1;
-    return; // proceed immediately
+// Shared Shopify API helper (adaptive throttle + 429 retry)
+const {
+  SHOPIFY_DOMAIN: _SD, SHOPIFY_API_VERSION: _SV, SHOPIFY_LOCATION_ID: _SL,
+} = require('./_shopify-helpers.js');
+
+async function _shopifyFetch(url, options) {
+  const { shopifyAdminHeaders } = require('./_shopify-helpers.js');
+  for (let attempt = 1; attempt <= 4; attempt++) {
+    await _bucketDelay();
+    const hdrs = await shopifyAdminHeaders();
+    const res = await fetch(url, { ...options, headers: { ...hdrs, ...(options.headers || {}) } });
+    _parseBucket(res.headers.get('X-Shopify-Shop-Api-Call-Limit'));
+    if (res.status === 429) {
+      const wait = parseInt(res.headers.get('Retry-After') || '2') * 1000;
+      console.warn(`[sync-return] 429 — bucket ${_bucket.used}/${_bucket.total}, wait ${wait}ms (attempt ${attempt}/4)`);
+      if (attempt < 4) { await sleep(wait); continue; }
+      throw new Error('429: Rate limit after 4 attempts');
+    }
+    if (!res.ok) throw new Error(`Shopify ${res.status}: ${await res.text()}`);
+    return res.json();
   }
-  // Need to wait for a token to refill
-  const waitMs = Math.ceil((1 - _throttle.tokens) / _throttle.refillRate * 1000) + 50;
-  await sleep(waitMs);
-  _throttle.tokens = 0;
+}
+
+// GET live inventory for a variant at our location
+async function getLiveInventory(inventoryItemId) {
+  const url = `https://${_SD}/admin/api/${_SV}/inventory_levels.json?inventory_item_ids=${inventoryItemId}&location_ids=${_SL}`;
+  const data = await _shopifyFetch(url, {});
+  const level = (data.inventory_levels || [])[0];
+  return level !== undefined ? (level.available || 0) : null;
+}
+
+// Adjust inventory (+qty) — only called when Shopify stock = 0
+async function adjustInventoryWithRetry(inventoryItemId, delta) {
+  const url = `https://${_SD}/admin/api/${_SV}/inventory_levels/adjust.json`;
+  const body = JSON.stringify({
+    location_id: parseInt(_SL),
+    inventory_item_id: parseInt(inventoryItemId),
+    available_adjustment: parseInt(delta),
+  });
+  return _shopifyFetch(url, { method: 'POST', body });
 }
 
 function groupKey(title, size, color) {
@@ -84,12 +120,27 @@ function titleSimilarity(a, b) {
 
 const FUZZY_THRESHOLD = 0.65; // 65% de mots en commun → match accepté
 
+// Color words that operators sometimes enter in the "size" field by mistake
+const COLOR_WORDS_IN_SIZE = new Set([
+  'black','white','rouge','blanc','bleu','vert','noir','jaune','orange','rose',
+  'violet','gris','brown','light brown','beige','gold','silver','or','argent',
+  'red','blue','green','yellow','purple','grey','gray','pink','navy','marron','kaki',
+]);
+
 function parseSize(stockSize) {
   // stock.size est au format "M | Black" ou "M" ou "" ou "—" (em-dash sentinel = inconnu)
   if (!stockSize) return { size: null, color: null };
   const s = String(stockSize).trim();
   // Ignore sentinel values used in the DB to mean "no size"
   if (s === '—' || s === '-' || s === 'N/A' || s === 'n/a') return { size: null, color: null };
+  // Taille unique entries
+  const sLow = s.toLowerCase();
+  if (sLow === 'taille unique' || sLow === 'standard' || sLow === 'unique') {
+    return { size: null, color: null };
+  }
+  // If the ENTIRE size field is a color word, treat it as color (operator error)
+  if (COLOR_WORDS_IN_SIZE.has(sLow)) return { size: null, color: s };
+  // Normal format: "M" or "M | Black"
   const parts = s.split('|');
   return {
     size: parts[0] ? parts[0].trim() : null,
@@ -104,9 +155,10 @@ async function insertSyncNotification(isDryRun, results) {
       d.status === 'pushed' || d.status === 'would_push'
     );
     const status =
-      pushedItems.length === 0 ? 'rien_a_pousser' :
-      results.errors > 0       ? 'partiel' :
-                                  'succes';
+      results.errors > 0 && pushedItems.length === 0 ? 'erreur' :
+      pushedItems.length === 0                        ? 'rien_a_pousser' :
+      results.errors > 0                             ? 'partiel' :
+                                                       'succes';
 
     const message = isDryRun
       ? `[DRY-RUN] Simulation sync : ${pushedItems.length} articles seraient poussés`
@@ -151,14 +203,6 @@ async function insertSyncNotification(isDryRun, results) {
             size: d.size,
             reason: d.reason,
             stock_ids: d.stock_ids || [],
-          })),
-        skipped_stock_items: results.details
-          .filter(d => d.status === 'skipped_has_stock')
-          .slice(0, 20) // cap à 20 pour éviter payload trop lourd
-          .map(d => ({
-            product: d.product,
-            size: d.size,
-            shopify_inventory: d.shopify_inventory,
           })),
       },
     };
@@ -275,13 +319,29 @@ module.exports = async function handler(req, res) {
           }
         }
 
+        // Case-insensitive color comparison (handles FR/EN translations)
+        const colMatch = (a, b) => {
+          const na = normalizeColor(a), nb = normalizeColor(b);
+          if (!na && !nb) return true;
+          if (!na || !nb) return false;
+          return na.toLowerCase() === nb.toLowerCase();
+        };
+
         let match = candidates.find(c =>
           normalizeSize(c.size) === normSize &&
-          (normColor ? normalizeColor(c.color) === normColor : true)
+          (normColor ? colMatch(c.color, normColor) : true)
         );
         if (!match && normSize) {
-          // Fallback : same size, color ignored
+          // Fallback 1: same size, color ignored
           match = candidates.find(c => normalizeSize(c.size) === normSize);
+        }
+        if (!match && !normSize && normColor) {
+          // Fallback 2: color-only match (taille unique products — casquettes, etc.)
+          match = candidates.find(c => normalizeSize(c.size) === null && colMatch(c.color, normColor));
+        }
+        if (!match && !normSize && !normColor) {
+          // Fallback 3: no size, no color → grab any "taille unique" variant (size=null)
+          match = candidates.find(c => normalizeSize(c.size) === null);
         }
         if (!match) {
           results.skipped_no_match++;
@@ -302,35 +362,51 @@ module.exports = async function handler(req, res) {
           continue;
         }
 
-        // FIX: Token-bucket throttle before each Shopify REST call (max 2 req/s)
-        await shopifyThrottle();
+        // ── Inventory check : cache first, live verify only when cache = 0 ────────
+        // Using cache avoids a Shopify API call for every item on every sync.
+        // Cache is updated by: sync-products-cache (full refresh) + our own pushes.
+        // We trust cache > 0 to skip (item not sold yet).
+        // When cache = 0, we do a live verify before actually pushing (safety check).
+        const cachedInv = match.inventory_quantity !== undefined ? (match.inventory_quantity || 0) : null;
 
-        // Read live inventory (don't trust cache for the push decision)
-        const liveInv = await getInventoryLevel(match.inventory_item_id);
+        if (cachedInv !== null && cachedInv > 0) {
+          results.skipped_has_stock++;
+          results.details.push({
+            status: 'skipped_has_stock',
+            product: grp.product, size: grp.size, color: grp.color,
+            qty: grp.totalQty, shopify_inventory: cachedInv,
+          });
+          continue;
+        }
+
+        // Cache = 0 (or unknown) → verify live before pushing
+        const liveInv = await getLiveInventory(match.inventory_item_id);
         if (liveInv === null) {
           results.errors++;
           results.details.push({
             status: 'error', product: grp.product, size: grp.size,
-            reason: 'inventory_level introuvable',
+            reason: 'inventory_level introuvable sur Shopify',
           });
           continue;
         }
-
         if (liveInv > 0) {
           results.skipped_has_stock++;
+          // Update stale cache entry
+          await fetch(`${SB_URL}/rest/v1/shopify_variants_cache?variant_id=eq.${match.variant_id}`, {
+            method: 'PATCH', headers: supabaseHeaders(),
+            body: JSON.stringify({ inventory_quantity: liveInv, updated_at: new Date().toISOString() }),
+          });
           results.details.push({
             status: 'skipped_has_stock',
-            product: grp.product, size: grp.size, color: grp.color, qty: grp.totalQty,
-            shopify_inventory: liveInv,
+            product: grp.product, size: grp.size, color: grp.color,
+            qty: grp.totalQty, shopify_inventory: liveInv,
           });
           continue;
         }
 
-        // Shopify is at 0 → push the full qty from our returns
+        // Shopify = 0 → push the returned qty back
         if (!isDryRun) {
-          // adjustInventory is another Shopify call — throttle before it too
-          await shopifyThrottle();
-          await adjustInventory(match.inventory_item_id, grp.totalQty);
+          await adjustInventoryWithRetry(match.inventory_item_id, grp.totalQty);
 
           // Mark all stock items as pushed
           const now = new Date().toISOString();
@@ -348,11 +424,12 @@ module.exports = async function handler(req, res) {
             });
             if (!updateRes.ok) console.warn('Stock update error:', await updateRes.text());
           }
-          // Update cache to reflect the push
+          // Update cache (add to current cached qty)
+          const cachedQty = (match.inventory_quantity || 0) + grp.totalQty;
           await fetch(`${SB_URL}/rest/v1/shopify_variants_cache?variant_id=eq.${match.variant_id}`, {
             method: 'PATCH',
             headers: supabaseHeaders(),
-            body: JSON.stringify({ inventory_quantity: grp.totalQty, updated_at: now }),
+            body: JSON.stringify({ inventory_quantity: cachedQty, updated_at: new Date().toISOString() }),
           });
         }
         results.pushed++;

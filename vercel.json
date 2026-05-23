@@ -10,9 +10,7 @@
     "api/unsync-item.js": { "maxDuration": 30 },
     "api/oauth-callback.js": { "maxDuration": 15 },
     "api/setup-webhooks.js": { "maxDuration": 15 },
-    "api/test-order-webhook.js": { "maxDuration": 15 },
-    "api/selftest-webhook.js": { "maxDuration": 20 },
-    "api/diag-orders.js": { "maxDuration": 30 }
+    "api/test-order-webhook.js": { "maxDuration": 30 }
   },
   "rewrites": [
     { "source": "/dashboard", "destination": "/dashboard.html" },
