@@ -80,14 +80,52 @@ async function getLiveInventory(inventoryItemId) {
 }
 
 // Adjust inventory (+qty) — only called when Shopify stock = 0
+// On 422: tries to connect the inventory item to the location first, then retries adjust.
 async function adjustInventoryWithRetry(inventoryItemId, delta) {
-  const url = `https://${_SD}/admin/api/${_SV}/inventory_levels/adjust.json`;
-  const body = JSON.stringify({
+  const { shopifyAdminHeaders } = require('./_shopify-helpers.js');
+  const adjustUrl = `https://${_SD}/admin/api/${_SV}/inventory_levels/adjust.json`;
+  const connectUrl = `https://${_SD}/admin/api/${_SV}/inventory_levels/connect.json`;
+  const adjustBody = JSON.stringify({
     location_id: parseInt(_SL),
     inventory_item_id: parseInt(inventoryItemId),
     available_adjustment: parseInt(delta),
   });
-  return _shopifyFetch(url, { method: 'POST', body });
+
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    await _bucketDelay();
+    const hdrs = await shopifyAdminHeaders();
+    const res = await fetch(adjustUrl, { method: 'POST', body: adjustBody, headers: hdrs });
+    _parseBucket(res.headers.get('X-Shopify-Shop-Api-Call-Limit'));
+
+    if (res.status === 429) {
+      const wait = parseInt(res.headers.get('Retry-After') || '2') * 1000;
+      console.warn(`[sync-return] 429 on adjust — wait ${wait}ms (attempt ${attempt}/3)`);
+      if (attempt < 3) { await sleep(wait); continue; }
+      throw new Error('429: Rate limit after 3 attempts on adjust');
+    }
+
+    if (res.status === 422 && attempt === 1) {
+      // Inventory item not connected to this location — connect it first, then retry
+      console.warn(`[sync-return] 422 on adjust for item ${inventoryItemId} — connecting to location ${_SL} first`);
+      await _bucketDelay();
+      const hdrs2 = await shopifyAdminHeaders();
+      const connectRes = await fetch(connectUrl, {
+        method: 'POST',
+        headers: hdrs2,
+        body: JSON.stringify({ location_id: parseInt(_SL), inventory_item_id: parseInt(inventoryItemId) }),
+      });
+      _parseBucket(connectRes.headers.get('X-Shopify-Shop-Api-Call-Limit'));
+      if (!connectRes.ok) {
+        const connectErr = await connectRes.text();
+        console.warn(`[sync-return] connect.json failed (${connectRes.status}): ${connectErr}`);
+      }
+      continue; // retry adjust
+    }
+
+    if (!res.ok) throw new Error(`Shopify ${res.status}: ${await res.text()}`);
+    return res.json();
+  }
+  throw new Error('adjustInventoryWithRetry: max attempts reached');
 }
 
 function groupKey(title, size, color) {
