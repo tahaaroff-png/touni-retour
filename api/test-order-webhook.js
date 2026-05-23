@@ -2,6 +2,8 @@
 // GET ?secret=...&mode=match&title=...&size=...&color=... → simule le matching
 // GET ?secret=...&mode=orders&limit=5             → dernières commandes Shopify + matching
 // GET ?secret=...&mode=selftest&title=...&size=...→ envoie un vrai webhook HMAC-signé
+// GET ?secret=...&mode=titles                     → compare admin titles vs storefront displayed titles
+// GET ?secret=...&mode=fix-titles&dry=1           → corrige les titres admin (dry=1 = preview seulement)
 // POST ?secret=...  (body JSON order Shopify)      → simule le matching sur un payload réel
 
 const crypto = require('crypto');
@@ -139,5 +141,105 @@ module.exports = async function handler(req, res) {
     return res.status(200).json({ line_items_count: (body.line_items||[]).length, report });
   }
 
-  return res.status(400).json({ error: 'Unknown mode. Use ?mode=match|orders|selftest or POST.' });
+  // ── MODE: titles / fix-titles ─────────────────────────────────────────────
+  if (mode === 'titles' || mode === 'fix-titles') {
+    const isDry = req.query.dry !== '0'; // dry=0 pour vraiment appliquer
+    const GQL_URL = `https://${SHOPIFY_DOMAIN}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`;
+    const adminHdrs = await shopifyAdminHeaders();
+
+    // Récupérer toutes les traductions produit via GraphQL (Translate & Adapt)
+    async function getAllTranslatedTitles() {
+      const results = {}; // resourceId → { adminTitle, translatedTitle }
+      let cursor = null;
+      let page = 0;
+      while (page < 20) { // max 20 pages × 100 = 2000 produits
+        page++;
+        const query = `{
+          translatableResources(resourceType: PRODUCT, first: 100${cursor ? `, after: "${cursor}"` : ''}) {
+            pageInfo { hasNextPage endCursor }
+            edges {
+              node {
+                resourceId
+                translatableContent { key value locale }
+                translations(locale: "fr") { key value }
+              }
+            }
+          }
+        }`;
+        const r = await fetch(GQL_URL, { method: 'POST', headers: { ...adminHdrs, 'Content-Type': 'application/json' }, body: JSON.stringify({ query }) });
+        const { data, errors } = await r.json();
+        if (errors) return { error: errors };
+        const { edges, pageInfo } = data.translatableResources;
+        for (const { node } of edges) {
+          const id = node.resourceId; // gid://shopify/Product/XXXXX
+          const adminTitleObj = node.translatableContent.find(c => c.key === 'title');
+          const translatedTitleObj = node.translations.find(t => t.key === 'title');
+          if (adminTitleObj) {
+            results[id] = {
+              adminTitle: adminTitleObj.value,
+              translatedTitle: translatedTitleObj ? translatedTitleObj.value : null,
+            };
+          }
+        }
+        if (!pageInfo.hasNextPage) break;
+        cursor = pageInfo.endCursor;
+      }
+      return results;
+    }
+
+    const titles = await getAllTranslatedTitles();
+    if (titles.error) return res.status(500).json({ error: titles.error });
+
+    const mismatches = [];
+    const same = [];
+    for (const [gid, { adminTitle, translatedTitle }] of Object.entries(titles)) {
+      const numId = gid.split('/').pop();
+      if (translatedTitle && translatedTitle !== adminTitle) {
+        mismatches.push({ id: numId, gid, adminTitle, translatedTitle });
+      } else {
+        same.push({ id: numId, adminTitle });
+      }
+    }
+
+    if (mode === 'titles') {
+      return res.status(200).json({
+        total: Object.keys(titles).length,
+        mismatches_count: mismatches.length,
+        same_count: same.length,
+        mismatches,
+      });
+    }
+
+    // fix-titles: mettre à jour le titre admin = titre traduit, puis supprimer la traduction
+    const fixed = [], errors_arr = [];
+    for (const m of mismatches) {
+      if (!isDry) {
+        // 1. Mettre à jour le titre admin via REST
+        const updateRes = await fetch(`https://${SHOPIFY_DOMAIN}/admin/api/${SHOPIFY_API_VERSION}/products/${m.id}.json`, {
+          method: 'PUT',
+          headers: adminHdrs,
+          body: JSON.stringify({ product: { id: m.id, title: m.translatedTitle } }),
+        });
+        if (!updateRes.ok) {
+          errors_arr.push({ id: m.id, error: await updateRes.text() });
+          continue;
+        }
+        // 2. Supprimer la traduction (DELETE via GraphQL)
+        const delQuery = `mutation { translationsRemove(resourceId: "${m.gid}", translationKeys: ["title"], locales: ["fr"]) { userErrors { field message } } }`;
+        await fetch(GQL_URL, { method: 'POST', headers: { ...adminHdrs, 'Content-Type': 'application/json' }, body: JSON.stringify({ query: delQuery }) });
+      }
+      fixed.push({ id: m.id, old: m.adminTitle, new: m.translatedTitle, applied: !isDry });
+    }
+
+    return res.status(200).json({
+      dry_run: isDry,
+      total_mismatches: mismatches.length,
+      fixed_count: fixed.length,
+      errors_count: errors_arr.length,
+      fixed,
+      errors: errors_arr,
+    });
+  }
+
+  return res.status(400).json({ error: 'Unknown mode. Use ?mode=match|orders|selftest|titles|fix-titles or POST.' });
 };
