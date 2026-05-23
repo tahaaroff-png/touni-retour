@@ -8,7 +8,9 @@
     "api/notifications.js": { "maxDuration": 10 },
     "api/sync-rupture-shopify.js": { "maxDuration": 60 },
     "api/unsync-item.js": { "maxDuration": 30 },
-    "api/oauth-callback.js": { "maxDuration": 15 }
+    "api/oauth-callback.js": { "maxDuration": 15 },
+    "api/setup-webhooks.js": { "maxDuration": 15 },
+    "api/test-order-webhook.js": { "maxDuration": 15 }
   },
   "rewrites": [
     { "source": "/dashboard", "destination": "/dashboard.html" },

@@ -2,12 +2,17 @@
 // Pour chaque ligne de commande, vérifie si le produit + variante existe dans notre stock retours
 // Si OUI → crée une entrée dans shopify_notifications (visible côté admin)
 //
+// IMPORTANT: bodyParser must be disabled so we can read the raw body for HMAC verification
 // L'OPÉRATRICE gère ensuite manuellement le statut (vendu / mystère) — pas d'auto-déduction.
 
 const crypto = require('crypto');
 const { SB_URL, supabaseHeaders, normalizeSize, normalizeColor } = require('./_shopify-helpers.js');
 
-const SHOPIFY_WEBHOOK_SECRET = process.env.SHOPIFY_ORDER_WEBHOOK_SECRET || process.env.SHOPIFY_WEBHOOK_SECRET || '';
+// Shopify REST API webhooks are signed with the app's CLIENT_SECRET (not a separate webhook secret)
+const SHOPIFY_WEBHOOK_SECRET = process.env.SHOPIFY_CLIENT_SECRET
+  || process.env.SHOPIFY_ORDER_WEBHOOK_SECRET
+  || process.env.SHOPIFY_WEBHOOK_SECRET
+  || '';
 
 function verifySignature(rawBody, signature) {
   if (!SHOPIFY_WEBHOOK_SECRET) return true; // dev mode : skip
@@ -34,17 +39,30 @@ function parseVariantTitle(variantTitle) {
   return { size: parts[0] || null, color: parts.slice(1).join(' / ') || null };
 }
 
+// Jaccard token similarity (same as sync-return-to-shopify.js)
+function jaccardSim(a, b) {
+  const tokenize = s => new Set(String(s).toLowerCase().replace(/[^a-z0-9]/g, ' ').split(/\s+/).filter(Boolean));
+  const sa = tokenize(a);
+  const sb = tokenize(b);
+  if (!sa.size || !sb.size) return 0;
+  let inter = 0;
+  for (const t of sa) if (sb.has(t)) inter++;
+  return inter / (sa.size + sb.size - inter);
+}
+
+const FUZZY_THRESHOLD = 0.55; // slightly lower than sync (0.65) to catch more variants
+
 async function findMatchingStock(productTitle, size, color) {
   const normSize = normalizeSize(size);
   const normColor = normalizeColor(color);
-  // Fetch all matching products by title with qty > 0 and status = retour
-  const url = `${SB_URL}/rest/v1/stock?select=id,size,qty,status&product=eq.${encodeURIComponent(productTitle)}&qty=gt.0&status=eq.retour`;
-  const res = await fetch(url, { headers: supabaseHeaders() });
-  if (!res.ok) return [];
-  const candidates = await res.json();
-  if (!candidates.length) return [];
-  // Filter by size + color (using stock.size format "M | Black")
-  return candidates.filter(c => {
+
+  // 1) Try exact title match first (fast path)
+  const exactUrl = `${SB_URL}/rest/v1/stock?select=id,product,size,qty,status&product=eq.${encodeURIComponent(productTitle)}&qty=gt.0&status=eq.retour`;
+  const exactRes = await fetch(exactUrl, { headers: supabaseHeaders() });
+  let exactCandidates = exactRes.ok ? (await exactRes.json()) : [];
+
+  // Filter by size+color
+  const filterBySizeColor = (rows) => rows.filter(c => {
     const parts = String(c.size || '').split('|');
     const cSize = parts[0] ? parts[0].trim() : '';
     const cColor = parts.length > 1 ? parts[1].trim() : '';
@@ -52,19 +70,55 @@ async function findMatchingStock(productTitle, size, color) {
     if (normColor && normalizeColor(cColor) !== normColor) return false;
     return true;
   });
+
+  const exactMatched = filterBySizeColor(exactCandidates);
+  if (exactMatched.length) return exactMatched;
+
+  // 2) Fuzzy fallback: fetch all retour stock items and score by title similarity
+  const allUrl = `${SB_URL}/rest/v1/stock?select=id,product,size,qty,status&qty=gt.0&status=eq.retour&limit=500`;
+  const allRes = await fetch(allUrl, { headers: supabaseHeaders() });
+  if (!allRes.ok) return [];
+  const allStock = await allRes.json();
+
+  // Group by product title, take best title match above threshold
+  const scored = allStock
+    .map(s => ({ ...s, _score: jaccardSim(productTitle, s.product) }))
+    .filter(s => s._score >= FUZZY_THRESHOLD)
+    .sort((a, b) => b._score - a._score);
+
+  if (!scored.length) {
+    console.log(`[order-webhook] No fuzzy match for "${productTitle}" (threshold ${FUZZY_THRESHOLD})`);
+    return [];
+  }
+
+  // Take the best score cluster (within 5% of top score)
+  const topScore = scored[0]._score;
+  const bestGroup = scored.filter(s => s._score >= topScore - 0.05);
+  console.log(`[order-webhook] Fuzzy match "${productTitle}" → "${bestGroup[0].product}" (score=${topScore.toFixed(2)})`);
+
+  return filterBySizeColor(bestGroup);
 }
 
-module.exports = async function handler(req, res) {
+async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  // Read raw body for HMAC verification
+  // Read raw body for HMAC verification (bodyParser: false is required above)
   const chunks = [];
   for await (const chunk of req) chunks.push(chunk);
   const rawBody = Buffer.concat(chunks).toString();
 
   const signature = req.headers['x-shopify-hmac-sha256'];
+  const topic = req.headers['x-shopify-topic'] || 'unknown';
+  console.log(`[order-webhook] Received topic=${topic} rawBody.length=${rawBody.length} sig=${signature ? 'present' : 'MISSING'} secret_env=${SHOPIFY_WEBHOOK_SECRET ? 'SET('+SHOPIFY_WEBHOOK_SECRET.slice(0,6)+'...)' : 'EMPTY→skip'}`);
+
   if (!verifySignature(rawBody, signature)) {
-    console.warn('[order-webhook] Invalid HMAC signature');
+    console.warn('[order-webhook] HMAC FAILED — secret may be wrong. sig=', signature, 'secret_prefix=', SHOPIFY_WEBHOOK_SECRET.slice(0,6));
+    // Log to Supabase for visibility
+    await fetch(`${SB_URL}/rest/v1/shopify_notifications`, {
+      method: 'POST',
+      headers: { ...supabaseHeaders(), Prefer: 'return=minimal' },
+      body: JSON.stringify([{ type: 'webhook_error', status: 'unread', message: `HMAC failed — topic:${topic} sig:${signature?.slice(0,12)} rawLen:${rawBody.length}` }]),
+    }).catch(() => {});
     return res.status(401).json({ error: 'Invalid signature' });
   }
 
@@ -72,7 +126,8 @@ module.exports = async function handler(req, res) {
   try {
     order = JSON.parse(rawBody);
   } catch (e) {
-    return res.status(400).json({ error: 'Invalid JSON' });
+    console.error('[order-webhook] JSON parse error:', e.message, '| rawBody[:100]:', rawBody.slice(0, 100));
+    return res.status(400).json({ error: 'Invalid JSON', detail: e.message });
   }
 
   try {
@@ -143,4 +198,9 @@ module.exports = async function handler(req, res) {
     console.error('[order-webhook] Error:', e.message);
     return res.status(500).json({ error: e.message });
   }
-};
+}
+
+// MUST be set after function declaration — disables Vercel body auto-parsing
+// so we can read the raw body and verify Shopify's HMAC signature
+handler.config = { api: { bodyParser: false } };
+module.exports = handler;

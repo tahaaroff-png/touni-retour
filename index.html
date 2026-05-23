@@ -95,7 +95,7 @@ input::placeholder{color:var(--muted2)}
 .btn-add{background:#222;color:#fff;border:none;border-radius:var(--radius-btn);padding:0 22px;font-family:var(--font-main);font-size:13px;font-weight:600;letter-spacing:.02em;cursor:pointer;height:42px;white-space:nowrap;transition:.3s ease-in-out}
 .btn-add:hover{background:#050505}.btn-add:disabled{opacity:.4;cursor:not-allowed}
 .err{color:var(--signal);font-size:12px;margin-top:8px;display:none}
-.fbar{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px 18px;margin-bottom:14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.fbar{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px 18px;margin-bottom:14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;position:sticky;top:82px;z-index:90;box-shadow:0 2px 12px rgba(0,0,0,.06)}
 .fsw{flex:1;min-width:160px;position:relative}
 .fsw input{padding-left:34px;font-size:13px}
 .fsw::before{content:'';position:absolute;left:10px;top:50%;transform:translateY(-50%);width:13px;height:13px;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23aaa' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.35-4.35'/%3E%3C/svg%3E") center/contain no-repeat;pointer-events:none}
@@ -108,9 +108,9 @@ input::placeholder{color:var(--muted2)}
 .fb-all{border-color:#151515;color:#fff;background:#151515}
 .fb-dispo{border-color:var(--green);color:var(--green);background:transparent}
 .fb-rupture{border-color:var(--signal);color:var(--signal);background:transparent}
-.tbl-wrap{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+.tbl-wrap{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:clip}
 table{width:100%;border-collapse:collapse;font-size:13px}
-thead th{background:var(--bg-soft);padding:12px 14px;text-align:left;font-family:var(--font-main);font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);border-bottom:1px solid var(--border);white-space:nowrap}
+thead th{background:var(--bg-soft);padding:12px 14px;text-align:left;font-family:var(--font-main);font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);border-bottom:1px solid var(--border);white-space:nowrap;position:sticky;top:144px;z-index:80}
 tbody tr{border-bottom:1px solid var(--border);transition:background .2s}
 tbody tr:last-child{border-bottom:none}
 tbody tr:hover{background:var(--bg-soft)}
@@ -206,7 +206,7 @@ td{padding:12px 14px;vertical-align:middle}
   .panel{padding:14px 14px}
   .panel-ttl{margin-bottom:12px}
   .fgrid{grid-template-columns:1fr;gap:10px}
-  .fbar{gap:8px;padding:10px 12px}
+  .fbar{gap:8px;padding:10px 12px;top:64px;box-shadow:0 2px 8px rgba(0,0,0,.07)}
   .fsw{min-width:0;flex:1 1 100%}
   .fg-row{flex:0 0 auto}
   .fbtns{flex-wrap:wrap}
@@ -274,7 +274,7 @@ td{padding:12px 14px;vertical-align:middle}
     <div class="chip chip-total">Total : <b id="s-tot">—</b></div>
     <div class="chip chip-dispo">✓ <b id="s-dispo">—</b></div>
     <div class="chip chip-rupture">✗ <b id="s-rup">—</b></div>
-    <div id="chip-shopify" style="display:none;align-items:center;gap:5px;background:#dcfce7;border:1px solid #bbf7d0;border-radius:var(--radius-btn);padding:5px 10px;font-family:var(--font-main);font-size:11px;font-weight:700;color:#166534">🛍 <b id="s-shopify">0</b> Shopify</div>
+    <div id="chip-shopify" title="Articles retours actuellement disponibles sur Shopify (poussés + non vendus)" style="display:none;align-items:center;gap:5px;background:#dcfce7;border:1px solid #bbf7d0;border-radius:var(--radius-btn);padding:5px 10px;font-family:var(--font-main);font-size:11px;font-weight:700;color:#166534">🛍 <b id="s-shopify">0</b> dispo sur Shopify</div>
     <span id="role-badge" style="display:none;align-items:center;gap:5px;background:#fffbef;border:1px solid var(--warning);border-radius:var(--radius-btn);padding:5px 12px;font-family:var(--font-main);font-size:11px;font-weight:600;color:#7a5d1e;text-transform:uppercase;letter-spacing:.06em">👤 Confirmation</span>
     <button id="btn-sync-shopify" onclick="syncAll()" title="Synchronise les retours disponibles vers Shopify ET met en rupture les articles vendus/mystère" style="background:transparent;border:1px solid var(--border);border-radius:var(--radius-btn);padding:6px 12px;font-family:var(--font-main);font-size:11px;font-weight:600;cursor:pointer;color:var(--text);text-transform:uppercase;letter-spacing:.06em;display:none">🔄 Sync Shopify</button>
     <button id="bell-btn" onclick="toggleNotifications()" title="Notifications" style="position:relative;background:transparent;border:1px solid var(--border);border-radius:var(--radius-btn);padding:6px 10px;font-family:var(--font-main);font-size:14px;cursor:pointer;color:var(--text);display:none">🔔<span id="bell-count" style="display:none;position:absolute;top:-4px;right:-4px;background:var(--signal);color:#fff;font-size:9px;font-weight:700;padding:1px 5px;border-radius:8px;min-width:16px;text-align:center;font-family:var(--font-main)">0</span></button>
@@ -802,7 +802,8 @@ function updateStats() {
   var dispo=stock.filter(function(i){ return i.qty>0; }).length;
   var rupt=stock.filter(function(i){ return i.qty<=0; }).length;
   var vendu=stock.filter(function(i){ return i.status==='vendu'; }).length;
-  var pushed=stock.filter(function(i){ return !!i.shopify_pushed_at; }).length;
+  // Shopify actif = poussé + encore en stock retour disponible (pas vendu, pas mystère, qty > 0)
+  var pushed=stock.filter(function(i){ return !!i.shopify_pushed_at && i.status==='retour' && i.qty>0; }).length;
   document.getElementById('s-tot').textContent=tot;
   document.getElementById('s-dispo').textContent=dispo;
   document.getElementById('s-rup').textContent=rupt;
@@ -876,24 +877,56 @@ async function startApp() {
   await loadCatalog();
   await dbLoad();
   setInterval(dbLoad, 30000);
-  // Affiche le bouton Sync Shopify uniquement pour l'admin
-  if(sessionStorage.getItem('role')==='admin'){
-    var btn=document.getElementById('btn-sync-shopify'); if(btn) btn.style.display='inline-flex';
-  }
+  // Bouton Sync Shopify visible pour admin ET staff (opératrice)
+  var btn=document.getElementById('btn-sync-shopify'); if(btn) btn.style.display='inline-flex';
   document.getElementById('bell-btn').style.display='inline-flex';
-  // Charge les notifications au boot puis poll toutes les 60s
+  // Charge les notifications au boot puis poll toutes les 15s
   loadNotifications();
-  setInterval(loadNotifications, 60000);
+  setInterval(loadNotifications, 15000);
+}
+
+// ── Son de notification (Web Audio API) ──
+var _audioCtx=null;
+function _getAudioCtx(){
+  if(!_audioCtx) _audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+  return _audioCtx;
+}
+function playNotifSound(){
+  try{
+    var ctx=_getAudioCtx();
+    // Double-chime : deux notes montantes douces
+    var notes=[880,1109]; // A5 → C#6
+    notes.forEach(function(freq,i){
+      var osc=ctx.createOscillator();
+      var gain=ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.type='sine';
+      osc.frequency.setValueAtTime(freq, ctx.currentTime+i*0.18);
+      gain.gain.setValueAtTime(0, ctx.currentTime+i*0.18);
+      gain.gain.linearRampToValueAtTime(0.22, ctx.currentTime+i*0.18+0.04);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime+i*0.18+0.55);
+      osc.start(ctx.currentTime+i*0.18);
+      osc.stop(ctx.currentTime+i*0.18+0.6);
+    });
+  }catch(e){ console.warn('playNotifSound:',e.message); }
 }
 
 // ── Notifications Shopify (commandes matchées) ──
 var notifications=[];
+var _prevOrderNotifCount=-1; // pour détecter nouvelles commandes
+var _SYNC_TYPES_SET=['sync_shopify','sync_dry_run','rupture_shopify','rupture_dry_run'];
 async function loadNotifications(){
   try{
     var r=await fetch('/api/notifications?status=unread&limit=50&secret='+SYNC_SECRET);
     if(!r.ok){ console.warn('loadNotifications HTTP',r.status,await r.text()); return; }
     var data=await r.json();
     notifications=data.notifications||[];
+    // Détecter les nouvelles notifications de commande (hors sync) et jouer un son
+    var orderCount=notifications.filter(function(n){ return _SYNC_TYPES_SET.indexOf(n.type)===-1; }).length;
+    if(_prevOrderNotifCount>=0 && orderCount>_prevOrderNotifCount){
+      playNotifSound();
+    }
+    _prevOrderNotifCount=orderCount;
     renderBellCounter();
   }catch(e){ console.warn('loadNotifications:',e.message); }
 }
@@ -902,8 +935,7 @@ function renderBellCounter(){
   var bell=document.getElementById('bell-count');
   var banner=document.getElementById('shopify-banner');
   // La bannière jaune ne concerne que les commandes (pas les notifs de sync/rupture)
-  var SYNC_TYPES=['sync_shopify','sync_dry_run','rupture_shopify','rupture_dry_run'];
-  var orderNotifs=notifications.filter(function(n){ return SYNC_TYPES.indexOf(n.type)===-1; });
+  var orderNotifs=notifications.filter(function(n){ return _SYNC_TYPES_SET.indexOf(n.type)===-1; });
   if(c>0){
     bell.textContent=c>99?'99+':c;
     bell.style.display='block';
@@ -1158,7 +1190,13 @@ async function syncAll(){
     await loadNotifications();
     openNotifDropdown();
   }catch(e){
-    showSyncError(e.message);
+    // Même en cas d'erreur (ex: timeout), on recharge les notifs créées en DB
+    try{ await loadNotifications(); } catch(_){}
+    openNotifDropdown();
+    // Afficher l'erreur dans la liste après les notifs
+    var list=document.getElementById('notif-list');
+    if(list) list.insertAdjacentHTML('afterbegin',
+      '<div style="padding:12px 16px;color:var(--signal);font-size:12px;border-bottom:1px solid var(--border);background:#fff5f5">⚠️ '+e.message+'</div>');
   }finally{
     btn.disabled=false; btn.innerHTML=orig;
   }
