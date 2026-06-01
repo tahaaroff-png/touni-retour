@@ -691,19 +691,29 @@ td{padding:12px 14px;vertical-align:middle}
     </div>
   </div>
 
-  <!-- ── Consommation personnelle ── -->
+  <!-- ── Dépenses personnelles ── -->
   <div class="card" style="margin-bottom:20px;border:1px solid var(--border);background:var(--bg-soft)">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
       <div>
-        <div class="section-title" style="margin:0">👤 Consommation personnelle</div>
-        <div style="font-size:11px;color:var(--muted);margin-top:4px">Calculée séparément — n'affecte pas le résultat business. Affichée à titre informatif dans le P&L.</div>
+        <div class="section-title" style="margin:0">👤 Dépenses personnelles</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:4px">Journal de dépenses personnelles — séparé du business. Classé par date.</div>
       </div>
       <button onclick="addPersoEntry()" style="background:#222;color:#fff;border:none;border-radius:var(--radius-btn);padding:9px 16px;font-family:var(--font-main);font-size:12px;font-weight:600;cursor:pointer;flex-shrink:0;transition:.3s ease">+ Ajouter</button>
     </div>
-    <div id="perso-list" style="display:flex;flex-direction:column;gap:12px">
-      <div style="font-size:12px;color:var(--muted);padding:8px">Aucune dépense personnelle. Ex : loyer, alimentation, transport...</div>
+    <!-- En-tête tableau -->
+    <div id="perso-header" style="display:none;display:grid;grid-template-columns:120px 1fr 110px 32px;gap:8px;padding:0 4px 8px 4px;border-bottom:1.5px solid var(--border);margin-bottom:8px">
+      <span style="font-size:10px;font-weight:700;font-family:Jost,sans-serif;text-transform:uppercase;letter-spacing:.8px;color:var(--muted)">Date</span>
+      <span style="font-size:10px;font-weight:700;font-family:Jost,sans-serif;text-transform:uppercase;letter-spacing:.8px;color:var(--muted)">Libellé</span>
+      <span style="font-size:10px;font-weight:700;font-family:Jost,sans-serif;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);text-align:right">Montant</span>
+      <span></span>
     </div>
-    <div style="margin-top:12px;padding:10px 14px;background:var(--bg-soft);border-radius:var(--radius-btn);font-size:12px;color:var(--text);font-weight:600" id="perso-total-display" style="display:none"></div>
+    <div id="perso-list" style="display:flex;flex-direction:column;gap:6px">
+      <div style="font-size:12px;color:var(--muted);padding:8px">Aucune dépense. Cliquez "+ Ajouter" pour enregistrer une dépense.</div>
+    </div>
+    <div style="margin-top:14px;padding:10px 14px;background:var(--bg);border-radius:var(--radius-btn);display:flex;justify-content:space-between;align-items:center" id="perso-total-display" style="display:none">
+      <span style="font-size:11px;color:var(--muted)">Total dépenses personnelles</span>
+      <span id="perso-total-val" style="font-family:Jost,sans-serif;font-weight:900;font-size:18px;color:var(--text)">0 MAD</span>
+    </div>
   </div>
 
   <div class="card">
@@ -1630,50 +1640,91 @@ function deleteCustom(type,id){
   else               saveCustomVar(getCustomVar().filter(function(i){return i.id!==id;}));
 }
 
-// ── Consommation personnelle (localStorage) ──
+// ── Dépenses personnelles — journal daté (localStorage) ──
 function getPersoEntries(){ return JSON.parse(localStorage.getItem('touni_perso')||'[]'); }
-function savePersoEntries(arr){ localStorage.setItem('touni_perso',JSON.stringify(arr)); renderPersoList(); renderOverview(); }
+
+function _sortPerso(arr){
+  // Tri décroissant : entrée la plus récente en premier
+  return arr.slice().sort(function(a,b){
+    var da=a.date||'', db=b.date||'';
+    if(da===db) return 0;
+    return da>db ? -1 : 1;
+  });
+}
+
+function savePersoEntries(arr){
+  // Toujours sauvegarder trié
+  var sorted=_sortPerso(arr);
+  localStorage.setItem('touni_perso',JSON.stringify(sorted));
+  renderPersoList();
+  renderOverview();
+}
+
 function addPersoEntry(){
   var arr=getPersoEntries();
-  arr.push({id:Date.now()+'',name:'Nouvelle dépense',amount:0});
+  var today=new Date();
+  var dd=String(today.getDate()).padStart(2,'0');
+  var mm=String(today.getMonth()+1).padStart(2,'0');
+  var yyyy=today.getFullYear();
+  var dateVal=yyyy+'-'+mm+'-'+dd; // format YYYY-MM-DD pour l'input[type=date]
+  arr.push({id:Date.now()+'', date:dateVal, name:'', amount:0});
   savePersoEntries(arr);
 }
+
 function updatePerso(id,field,val){
   var arr=getPersoEntries();
-  arr.forEach(function(i){if(i.id===id)i[field]=val;});
+  arr.forEach(function(i){if(i.id===id) i[field]=(field==='amount'?+val:val);});
   savePersoEntries(arr);
 }
+
 function deletePerso(id){
   savePersoEntries(getPersoEntries().filter(function(i){return i.id!==id;}));
 }
+
 function renderPersoList(){
   var list=document.getElementById('perso-list');
   var totalEl=document.getElementById('perso-total-display');
+  var totalValEl=document.getElementById('perso-total-val');
+  var header=document.getElementById('perso-header');
   if(!list) return;
-  var entries=getPersoEntries();
+  var entries=_sortPerso(getPersoEntries());
   var total=entries.reduce(function(s,e){return s+(+e.amount||0);},0);
+
   if(!entries.length){
-    list.innerHTML='<div style="font-size:12px;color:var(--muted);padding:8px">Aucune dépense personnelle. Ex : loyer, alimentation, transport...</div>';
-  } else {
-    list.innerHTML=entries.map(function(e){
-      return '<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px;background:var(--bg);border-radius:10px;flex-wrap:wrap;gap:8px">'
-        +'<input value="'+e.name+'" style="flex:1;min-width:120px;font-weight:600;font-size:13px;border:none;border-bottom:1.5px solid var(--border);background:transparent;outline:none;padding:2px 4px" '
-        +'onchange="updatePerso(\''+e.id+'\',\'name\',this.value)">'
-        +'<div style="display:flex;align-items:center;gap:6px">'
-        +'<input type="number" value="'+e.amount+'" min="0" style="width:90px;text-align:right;font-weight:700;font-family:Jost,sans-serif" '
-        +'onchange="updatePerso(\''+e.id+'\',\'amount\',+this.value)">'
-        +'<span style="font-size:12px;color:var(--muted)">MAD/mois</span>'
-        +'<button onclick="deletePerso(\''+e.id+'\')" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:18px;line-height:1;padding:0 4px">×</button>'
-        +'</div></div>';
-    }).join('');
+    if(header) header.style.display='none';
+    list.innerHTML='<div style="font-size:12px;color:var(--muted);padding:8px">Aucune dépense. Cliquez "+ Ajouter" pour enregistrer une dépense.</div>';
+    if(totalEl) totalEl.style.display='none';
+    return;
   }
-  if(totalEl){
-    if(total>0){
-      totalEl.textContent='Total consommation personnelle : '+total.toLocaleString('fr-FR')+' MAD/mois';
-      totalEl.style.display='block';
-    } else {
-      totalEl.style.display='none';
+
+  if(header) header.style.display='grid';
+  list.innerHTML=entries.map(function(e){
+    var displayDate='';
+    if(e.date){
+      var parts=e.date.split('-');
+      if(parts.length===3) displayDate=parts[2]+'/'+parts[1]+'/'+parts[0].slice(2);
     }
+    return '<div style="display:grid;grid-template-columns:120px 1fr 110px 32px;gap:8px;align-items:center;padding:8px 4px;border-bottom:1px solid var(--border)">'
+      // Date
+      +'<input type="date" value="'+(e.date||'')+'" style="font-size:12px;color:var(--text);border:none;border-bottom:1.5px solid var(--border);background:transparent;outline:none;padding:2px 2px;font-family:var(--font-main);cursor:pointer" '
+      +'onchange="updatePerso(\''+e.id+'\',\'date\',this.value)">'
+      // Libellé
+      +'<input value="'+(e.name||'')+'" placeholder="Libellé..." style="font-size:13px;font-weight:600;border:none;border-bottom:1.5px solid var(--border);background:transparent;outline:none;padding:2px 4px;font-family:var(--font-main)" '
+      +'onchange="updatePerso(\''+e.id+'\',\'name\',this.value)">'
+      // Montant
+      +'<div style="display:flex;align-items:center;gap:4px;justify-content:flex-end">'
+      +'<input type="number" value="'+(e.amount||0)+'" min="0" style="width:72px;text-align:right;font-weight:700;font-family:Jost,sans-serif;font-size:14px;border:none;border-bottom:1.5px solid var(--border);background:transparent;outline:none;padding:2px 2px" '
+      +'onchange="updatePerso(\''+e.id+'\',\'amount\',this.value)">'
+      +'<span style="font-size:11px;color:var(--muted);white-space:nowrap">MAD</span>'
+      +'</div>'
+      // Supprimer
+      +'<button onclick="deletePerso(\''+e.id+'\')" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:18px;line-height:1;padding:0;text-align:center">×</button>'
+      +'</div>';
+  }).join('');
+
+  if(totalEl && totalValEl){
+    totalValEl.textContent=total.toLocaleString('fr-FR')+' MAD';
+    totalEl.style.display='flex';
   }
 }
 
@@ -1851,9 +1902,15 @@ function renderOverview(){
   var nbExpedies=eg.nbExpedies||0;
   var customVarTotal=getCustomVar().reduce(function(s,c){return s+(+c.amount||0)*nbExpedies;},0);
 
-  // Consommation personnelle (multi-entrées, non déduite du business net)
+  // Dépenses personnelles — filtrées par la période sélectionnée (non déduites du business net)
   var persoEntries=getPersoEntries();
-  var persoTotal=Math.round(persoEntries.reduce(function(s,e){return s+(+e.amount||0);},0)*daysRatio);
+  var persoTotal=Math.round(persoEntries.filter(function(e){
+    if(!e.date) return true; // entrée sans date : toujours incluse
+    var d=new Date(e.date);
+    if(filterFrom && d<filterFrom) return false;
+    if(filterTo   && d>filterTo)   return false;
+    return true;
+  }).reduce(function(s,e){return s+(+e.amount||0);},0));
 
   // CA auto = eGrow livrees COD − frais Ozone (si simulateur vide)
   var autoCA = eg.ca>0 ? Math.round(eg.ca - fraisOzoneInfo) : 0;
