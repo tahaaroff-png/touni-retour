@@ -76,8 +76,12 @@ async function getBatchInventoryLevels(inventoryItemIds) {
   return results;
 }
 
-// ── Adjust inventory avec retry + connect si 422 ─────────────────────────────
-async function adjustInventoryWithRetry(inventoryItemId, delta) {
+// ── Adjust inventory avec retry complet (tracking + connect + adjust) ─────────
+// Séquence sur 422 :
+//   1. Activer inventory_management:"shopify" sur la variante (tracking désactivé = cause principale)
+//   2. Connecter l'inventory_item à la location
+//   3. Réessayer l'adjust
+async function adjustInventoryWithRetry(inventoryItemId, variantId, delta) {
   const adjustUrl = `https://${_SD}/admin/api/${_SV}/inventory_levels/adjust.json`;
   const connectUrl = `https://${_SD}/admin/api/${_SV}/inventory_levels/connect.json`;
   const adjustBody = JSON.stringify({
@@ -97,17 +101,44 @@ async function adjustInventoryWithRetry(inventoryItemId, delta) {
       if (attempt < 3) { await sleep(wait); continue; }
       throw new Error('429: Rate limit on adjust');
     }
+
     if (res.status === 422 && attempt === 1) {
-      console.warn(`[sync-return] 422 on adjust for item ${inventoryItemId} — connecting to location first`);
+      const errBody = await res.text();
+      console.warn(`[sync-return] 422 on adjust item=${inventoryItemId} variant=${variantId}: ${errBody}`);
+
+      // Étape A — activer le tracking Shopify sur la variante
+      if (variantId) {
+        await _bucketDelay();
+        const hA = await shopifyAdminHeaders();
+        const trackRes = await fetch(`https://${_SD}/admin/api/${_SV}/variants/${variantId}.json`, {
+          method: 'PUT', headers: hA,
+          body: JSON.stringify({ variant: { id: parseInt(variantId), inventory_management: 'shopify' } }),
+        });
+        _parseBucket(trackRes.headers.get('X-Shopify-Shop-Api-Call-Limit'));
+        if (!trackRes.ok) {
+          console.warn(`[sync-return] Enable tracking failed (${trackRes.status}): ${await trackRes.text()}`);
+        } else {
+          console.log(`[sync-return] Tracking enabled for variant ${variantId}`);
+        }
+      }
+
+      // Étape B — connecter à la location
       await _bucketDelay();
-      const hdrs2 = await shopifyAdminHeaders();
+      const hB = await shopifyAdminHeaders();
       const connectRes = await fetch(connectUrl, {
-        method: 'POST', headers: hdrs2,
+        method: 'POST', headers: hB,
         body: JSON.stringify({ location_id: parseInt(SHOPIFY_LOCATION_ID), inventory_item_id: parseInt(inventoryItemId) }),
       });
       _parseBucket(connectRes.headers.get('X-Shopify-Shop-Api-Call-Limit'));
-      continue;
+      if (!connectRes.ok) {
+        console.warn(`[sync-return] Connect failed (${connectRes.status}): ${await connectRes.text()}`);
+      } else {
+        console.log(`[sync-return] Connected item ${inventoryItemId} to location ${SHOPIFY_LOCATION_ID}`);
+      }
+
+      continue; // Étape C — réessayer l'adjust
     }
+
     if (!res.ok) throw new Error(`Shopify ${res.status}: ${await res.text()}`);
     return res.json();
   }
@@ -383,7 +414,7 @@ module.exports = async function handler(req, res) {
 
         // Shopify = 0 → push
         if (!isDryRun) {
-          await adjustInventoryWithRetry(match.inventory_item_id, grp.totalQty);
+          await adjustInventoryWithRetry(match.inventory_item_id, match.variant_id, grp.totalQty);
           const now = new Date().toISOString();
           for (const item of grp.items) {
             const upRes = await fetch(`${SB_URL}/rest/v1/stock?id=eq.${item.id}`, {
