@@ -336,20 +336,16 @@ module.exports = async function handler(req, res) {
       }
     }
 
-    // ── ÉTAPE 5 : Batch inventory check (1-2 appels Shopify max) ─────────────
-    // On ne vérifie live que les items où cachedInv ≤ 0 ou null
-    const needsLiveCheck = matchedGroups.filter(mg => {
-      const cachedInv = mg.match.inventory_quantity !== undefined ? (mg.match.inventory_quantity || 0) : null;
-      return cachedInv === null || cachedInv <= 0;
-    });
-    const liveInventoryIds = [...new Set(needsLiveCheck.map(mg => String(mg.match.inventory_item_id)))];
+    // ── ÉTAPE 5 : Batch inventory check LIVE pour tous les articles matchés ──────
+    // On vérifie TOUJOURS le vrai stock Shopify (pas le cache) pour éviter les
+    // faux "skipped_has_stock" quand le cache est périmé.
+    // Le batch rend ça rapide : 1 appel Shopify pour 50 ids au lieu de N appels.
+    const liveInventoryIds = [...new Set(matchedGroups.map(mg => String(mg.match.inventory_item_id)))];
 
-    console.log(`[sync-return] ${matchedGroups.length} matched, ${needsLiveCheck.length} need live inventory check, ${unmatchedGroups.length} unmatched`);
+    console.log(`[sync-return] ${matchedGroups.length} matched → live inventory check for all ${liveInventoryIds.length} items (batch), ${unmatchedGroups.length} unmatched`);
 
-    // Un seul appel Shopify batché pour tous les IDs
     let liveInventory = {};
     if (liveInventoryIds.length > 0) {
-      console.log(`[sync-return] Batch inventory check for ${liveInventoryIds.length} items`);
       liveInventory = await getBatchInventoryLevels(liveInventoryIds);
     }
 
@@ -381,32 +377,24 @@ module.exports = async function handler(req, res) {
     // Articles matchés
     for (const { grp, match, matchedTitle, fuzzyScore } of matchedGroups) {
       try {
-        const cachedInv = match.inventory_quantity !== undefined ? (match.inventory_quantity || 0) : null;
         const invItemId = String(match.inventory_item_id);
 
-        // Déterminer l'inventaire réel
-        let finalInv;
-        if (cachedInv !== null && cachedInv > 0) {
-          finalInv = cachedInv;
-        } else {
-          finalInv = liveInventory[invItemId];
-          if (finalInv === undefined) finalInv = null;
-        }
+        // Stock Shopify en temps réel (toujours live, jamais cache)
+        const liveInv = liveInventory[invItemId];
+        const finalInv = liveInv !== undefined ? liveInv : null;
 
         if (finalInv === null) {
-          results.errors++;
-          results.details.push({ status: 'error', product: grp.product, size: grp.size, reason: 'inventory_level introuvable sur Shopify' });
-          continue;
+          // Pas de niveau d'inventaire → variante non connectée à la location
+          // On tente quand même de pousser (adjustInventoryWithRetry gère le 422)
+          console.warn(`[sync-return] No inventory level for item ${invItemId} — will attempt push anyway`);
         }
 
-        if (finalInv > 0) {
-          // Stock dispo → skip + mise à jour cache si cache était stale
-          if (cachedInv !== null && cachedInv <= 0) {
-            await fetch(`${SB_URL}/rest/v1/shopify_variants_cache?variant_id=eq.${match.variant_id}`, {
-              method: 'PATCH', headers: supabaseHeaders(),
-              body: JSON.stringify({ inventory_quantity: finalInv, updated_at: new Date().toISOString() }),
-            });
-          }
+        if (finalInv !== null && finalInv > 0) {
+          // Stock dispo sur Shopify → mettre à jour le cache et sauter
+          await fetch(`${SB_URL}/rest/v1/shopify_variants_cache?variant_id=eq.${match.variant_id}`, {
+            method: 'PATCH', headers: supabaseHeaders(),
+            body: JSON.stringify({ inventory_quantity: finalInv, updated_at: new Date().toISOString() }),
+          });
           results.skipped_has_stock++;
           results.details.push({ status: 'skipped_has_stock', product: grp.product, size: grp.size, color: grp.color, qty: grp.totalQty, shopify_inventory: finalInv });
           continue;
