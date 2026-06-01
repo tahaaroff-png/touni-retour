@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Aperçu — Ticker Aïd</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Jost:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Jost', sans-serif; background: #f5f5f5; }
+
+    /* ── TICKER ── */
+    .touni-ticker {
+      background: #000;
+      color: #fff;
+      height: 38px;
+      display: flex;
+      align-items: stretch;
+      overflow: hidden;
+      position: relative;
+      cursor: pointer;
+    }
+    .touni-ticker::after {
+      content: '';
+      position: absolute;
+      right: 0; top: 0;
+      width: 50px; height: 100%;
+      background: linear-gradient(to left, #000 20%, transparent);
+      pointer-events: none;
+      z-index: 1;
+    }
+    .touni-ticker__badge {
+      flex-shrink: 0;
+      background: #f52c2c;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 0 12px 0 10px;
+      position: relative;
+      z-index: 2;
+      font-family: 'Jost', sans-serif;
+      font-size: 9.5px;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+    .touni-ticker__badge::after {
+      content: '';
+      position: absolute;
+      right: -9px; top: 0;
+      border-top: 19px solid #f52c2c;
+      border-bottom: 19px solid #f52c2c;
+      border-right: 9px solid transparent;
+    }
+    .touni-ticker__badge-img {
+      width: 13px; height: 13px;
+      object-fit: contain;
+      filter: invert(1);
+      opacity: 0.9;
+    }
+    .touni-ticker__overflow {
+      flex: 1;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      padding-left: 16px;
+    }
+    .touni-ticker__track {
+      display: flex;
+      align-items: center;
+      white-space: nowrap;
+      animation: touni-scroll 35s linear infinite;
+      will-change: transform;
+    }
+    @keyframes touni-scroll {
+      0%   { transform: translateX(0); }
+      100% { transform: translateX(-50%); }
+    }
+    .touni-ticker__item {
+      padding: 0 2.5rem;
+      font-family: 'Jost', sans-serif;
+      font-size: 13px;
+      font-weight: 400;
+      letter-spacing: 0.03em;
+      color: #fff;
+      line-height: 1;
+    }
+    .touni-ticker__accent { color: #f52c2c; font-weight: 600; }
+    .touni-ticker__sep { color: rgba(255,255,255,0.25); padding: 0 0.8rem; }
+
+    /* ── POPUP V3 (injecté dans body via JS) ── */
+    .touni-popup {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.82);
+      z-index: 99999;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .touni-popup.is-open { display: flex; }
+    .touni-popup__box {
+      background: #111;
+      border: 1px solid #2a2a2a;
+      border-radius: 4px;
+      padding: 2.2rem 2rem 1.8rem;
+      max-width: 380px;
+      width: 100%;
+      position: relative;
+      text-align: center;
+      font-family: 'Jost', sans-serif;
+    }
+    .touni-popup__close {
+      position: absolute;
+      top: 12px; right: 14px;
+      background: none;
+      border: none;
+      color: rgba(255,255,255,0.45);
+      font-size: 20px;
+      cursor: pointer;
+      line-height: 1;
+      padding: 4px 8px;
+      font-family: inherit;
+      transition: color 0.15s;
+    }
+    .touni-popup__close:hover { color: #fff; }
+    .touni-popup__moon { font-size: 28px; margin-bottom: 0.8rem; }
+    .touni-popup__title {
+      font-family: 'Jost', sans-serif;
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: #fff;
+      margin-bottom: 1.1rem;
+    }
+    .touni-popup__body {
+      font-family: 'Jost', sans-serif;
+      font-size: 14px;
+      color: rgba(255,255,255,0.8);
+      line-height: 1.75;
+      margin-bottom: 1.2rem;
+    }
+    .touni-popup__accent { color: #f52c2c; font-weight: 600; }
+    .touni-popup__sub {
+      font-family: 'Jost', sans-serif;
+      font-size: 11px;
+      letter-spacing: 0.04em;
+      color: rgba(255,255,255,0.3);
+    }
+
+    /* ── FAKE SITE ── */
+    .fake-promo {
+      background: #111;
+      color: #bbb;
+      font-family: 'Jost', sans-serif;
+      font-size: 12px;
+      letter-spacing: 0.04em;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 3rem;
+      padding: 8px 40px;
+      position: relative;
+    }
+    .fake-promo__close {
+      position: absolute;
+      right: 16px;
+      background: none;
+      border: none;
+      color: #888;
+      font-size: 18px;
+      cursor: pointer;
+      line-height: 1;
+      padding: 4px 6px;
+    }
+    .fake-promo__close:hover { color: #fff; }
+    .fake-header {
+      background: #fff;
+      border-bottom: 1px solid #e0e0e0;
+      padding: 14px 40px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .fake-logo { font-family: 'Jost', sans-serif; font-size: 22px; font-weight: 600; color: #111; }
+    .fake-nav { display: flex; gap: 2rem; font-family: 'Jost', sans-serif; font-size: 13px; color: #555; }
+    .fake-hero { background: #1a1a1a; height: 260px; display: flex; align-items: center; justify-content: center; }
+    .fake-hero span { color: #555; font-family: 'Jost', sans-serif; font-size: 13px; }
+
+    .demo-note {
+      position: fixed; bottom: 18px; right: 18px;
+      background: #fff; border: 1px solid #e0e0e0; border-radius: 8px;
+      padding: 10px 16px; font-family: 'Jost', sans-serif;
+      font-size: 11.5px; color: #888;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ★ TICKER (pas de wrapper avec overflow/pointer-events) -->
+  <div class="touni-ticker" id="touni-ticker">
+    <div class="touni-ticker__badge">
+      <img src="/favicon.png" alt="" class="touni-ticker__badge-img">
+      <span>Aïd</span>
+    </div>
+    <div class="touni-ticker__overflow">
+      <div class="touni-ticker__track" id="touni-track">
+        <span class="touni-ticker__item">🌙 Aïd Moubarak ! En raison des congés de l'Aïd Al-Adha, les livraisons reprennent le&nbsp;<strong class="touni-ticker__accent">lundi 2 juin</strong>&nbsp;pour toute commande passée après le&nbsp;<strong class="touni-ticker__accent">27 mai</strong>.</span>
+        <span class="touni-ticker__sep">·</span>
+        <span class="touni-ticker__item">🌙 Aïd Moubarak ! En raison des congés de l'Aïd Al-Adha, les livraisons reprennent le&nbsp;<strong class="touni-ticker__accent">lundi 2 juin</strong>&nbsp;pour toute commande passée après le&nbsp;<strong class="touni-ticker__accent">27 mai</strong>.</span>
+        <span class="touni-ticker__sep">·</span>
+        <span class="touni-ticker__item">🌙 Aïd Moubarak ! En raison des congés de l'Aïd Al-Adha, les livraisons reprennent le&nbsp;<strong class="touni-ticker__accent">lundi 2 juin</strong>&nbsp;pour toute commande passée après le&nbsp;<strong class="touni-ticker__accent">27 mai</strong>.</span>
+        <span class="touni-ticker__sep">·</span>
+        <span class="touni-ticker__item">🌙 Aïd Moubarak ! En raison des congés de l'Aïd Al-Adha, les livraisons reprennent le&nbsp;<strong class="touni-ticker__accent">lundi 2 juin</strong>&nbsp;pour toute commande passée après le&nbsp;<strong class="touni-ticker__accent">27 mai</strong>.</span>
+        <span class="touni-ticker__sep">·</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Fake promo bar avec × fonctionnel -->
+  <div class="fake-promo" id="fake-promo">
+    <span>🇲🇦 Livraison gratuite partout au Maroc</span>
+    <span>🎁 2 achetés = 3ème offert</span>
+    <button class="fake-promo__close" onclick="document.getElementById('fake-promo').style.display='none'" aria-label="Fermer">&#215;</button>
+  </div>
+
+  <div class="fake-header">
+    <div class="fake-logo">TOUNI.MA</div>
+    <div class="fake-nav"><span>Accueil</span><span>Collections</span></div>
+    <div style="display:flex;gap:1rem;color:#555;font-size:18px;">🔍 🛒</div>
+  </div>
+  <div class="fake-hero"><span>[ Hero carousel ]</span></div>
+
+  <div class="demo-note">Cliquez sur la barre noire → popup · × → ferme la barre grise</div>
+
+  <!-- ★ POPUP injecté dans body directement (pas dans un wrapper clippé) -->
+  <div class="touni-popup" id="touni-popup">
+    <div class="touni-popup__box">
+      <button class="touni-popup__close" id="touni-popup-close" aria-label="Fermer">&#215;</button>
+      <p class="touni-popup__moon">🌙</p>
+      <h2 class="touni-popup__title">Information livraison — Aïd Al-Adha</h2>
+      <p class="touni-popup__body">
+        En raison des congés de l'Aïd Al-Adha, les livraisons reprennent le&nbsp;<strong class="touni-popup__accent">lundi 2 juin</strong>&nbsp;pour toute commande passée après le&nbsp;<strong class="touni-popup__accent">27 mai</strong>.
+      </p>
+      <p class="touni-popup__sub">Merci pour votre compréhension 🤍</p>
+    </div>
+  </div>
+
+  <script>
+    var ticker = document.getElementById('touni-ticker');
+    var popup  = document.getElementById('touni-popup');
+    var closeBtn = document.getElementById('touni-popup-close');
+
+    function openPopup()  { popup.classList.add('is-open'); }
+    function closePopup() { popup.classList.remove('is-open'); }
+
+    ticker.addEventListener('click', openPopup);
+    closeBtn.addEventListener('click', function(e) { e.stopPropagation(); closePopup(); });
+    popup.addEventListener('click', function(e) { if (e.target === popup) closePopup(); });
+    document.addEventListener('keydown', function(e) { if (e.key === 'Escape') closePopup(); });
+  </script>
+</body>
+</html>

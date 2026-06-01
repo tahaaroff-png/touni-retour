@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Touni Dashboard — Gestion Business</title>
+<link rel="icon" type="image/png" href="/favicon.png">
+<link rel="apple-touch-icon" href="/favicon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Jost:wght@400;500;600;700;800&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
@@ -1213,6 +1215,7 @@ function renderReleveResults(){
 const SB_URL = 'https://dwjjrgjbkftejdcmwpgc.supabase.co';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR3ampyZ2pia2Z0ZWpkY213cGdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU0NzI2MDYsImV4cCI6MjA5MTA0ODYwNn0.6GxM9u1Om7zP-_MEYVhdtHBESyGLDZGFofxSKGwixPo';
 const PWD_ADMIN = 'Fitfat25!';
+const SYNC_SECRET = 'touni-sync-2026';
 const H = {'Content-Type':'application/json','apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Prefer':'return=representation'};
 const EGROW_ME  = 'b1561dd7a5bf51060e3ef52084b3cc5fc0e23f6b0430c4523e8cd48e8b16542c';
 const EGROW_KEY = '11aaf7ee-c8e5-11f0-8839-9c6b003e9239';
@@ -1410,7 +1413,7 @@ async function sbDelete(table,id){
 var notifications=[];
 async function loadNotifications(){
   try{
-    var r=await fetch('/api/notifications?status=unread&limit=50');
+    var r=await fetch('/api/notifications?secret='+SYNC_SECRET+'&status=unread&limit=50');
     if(!r.ok) return;
     var data=await r.json();
     notifications=data.notifications||[];
@@ -1483,14 +1486,14 @@ function renderNotificationsList(){
 }
 async function markNotifRead(id){
   try{
-    await fetch('/api/notifications?id='+id+'&status=read',{method:'PATCH'});
+    await fetch('/api/notifications?secret='+SYNC_SECRET+'&id='+id+'&status=read',{method:'PATCH'});
     notifications=notifications.filter(function(n){return n.id!==id;});
     renderBellCounter(); renderNotificationsList();
   }catch(e){ alert('Erreur : '+e.message); }
 }
 async function archiveNotif(id){
   try{
-    await fetch('/api/notifications?id='+id+'&status=archived',{method:'PATCH'});
+    await fetch('/api/notifications?secret='+SYNC_SECRET+'&id='+id+'&status=archived',{method:'PATCH'});
     notifications=notifications.filter(function(n){return n.id!==id;});
     renderBellCounter(); renderNotificationsList();
   }catch(e){ alert('Erreur : '+e.message); }

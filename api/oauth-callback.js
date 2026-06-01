@@ -4,8 +4,11 @@
 const CLIENT_ID = process.env.SHOPIFY_CLIENT_ID || '65e7c4bb41dec7a0383faf39512459da';
 const CLIENT_SECRET = process.env.SHOPIFY_CLIENT_SECRET || '';
 const SHOP = process.env.SHOPIFY_DOMAIN || 'bjuanm-1r.myshopify.com';
-const SCOPES = 'read_products,write_products,read_inventory,write_inventory,read_locations,read_orders,write_orders,read_customers,write_customers,read_themes,write_themes,read_discounts,write_discounts,read_shipping,read_fulfillments,write_fulfillments';
+const SCOPES = 'read_products,write_products,read_inventory,write_inventory,read_locations,read_orders,write_orders,read_customers,write_customers,read_themes,write_themes,read_discounts,write_discounts,read_shipping,read_fulfillments,write_fulfillments,read_translations,write_translations';
 const REDIRECT_URI = 'https://touni-retour.vercel.app/api/oauth-callback';
+
+const SB_URL = process.env.SUPABASE_URL || 'https://dwjjrgjbkftejdcmwpgc.supabase.co';
+const SB_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR3ampyZ2pia2Z0ZWpkY213cGdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU0NzI2MDYsImV4cCI6MjA5MTA0ODYwNn0.6GxM9u1Om7zP-_MEYVhdtHBESyGLDZGFofxSKGwixPo';
 
 module.exports = async function handler(req, res) {
   const { code, shop, error, secret } = req.query;
@@ -39,6 +42,13 @@ module.exports = async function handler(req, res) {
     if (!tokenRes.ok || !tokenData.access_token) {
       return res.status(400).json({ error: 'Token exchange failed', details: tokenData });
     }
+
+    // Sauvegarder le token d'installation dans Supabase (a les scopes OAuth complets)
+    await fetch(`${SB_URL}/rest/v1/app_settings`, {
+      method: 'POST',
+      headers: { apikey: SB_ANON_KEY, Authorization: `Bearer ${SB_ANON_KEY}`, 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates' },
+      body: JSON.stringify({ key: 'shopify_install_token', value: tokenData.access_token, updated_at: new Date().toISOString() }),
+    }).catch(() => {});
 
     // App is now installed — verify with client_credentials
     const ccRes = await fetch(`https://${SHOP}/admin/oauth/access_token`, {
