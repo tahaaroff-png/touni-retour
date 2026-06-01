@@ -1176,17 +1176,13 @@ var SYNC_SECRET='touni-sync-2026';
 // ── Sync unifié : push retours EN RUPTURE + mise à 0 des vendus/mystère pushés ──
 async function syncAll(){
   var btn=document.getElementById('btn-sync-shopify');
-  if(!confirm('Lancer la synchronisation Shopify ?\n\n① Push : retours disponibles → Shopify si rupture détectée\n② Rupture : articles vendus/mystère → remise à 0 sur Shopify\n\nSeuls les articles gérés par ce système seront touchés.')) return;
+  if(!confirm('Lancer la synchronisation Shopify ?\n\nPush : retours disponibles → Shopify si rupture détectée\n\nSeuls les articles en retour avec qty > 0 seront touchés.')) return;
   btn.disabled=true; var orig=btn.innerHTML; btn.innerHTML='⏳ Sync…';
   try{
-    // Phase 1 : push retours disponibles
+    // Push retours disponibles vers Shopify
     var r1=await fetch('/api/sync-return-to-shopify?secret='+SYNC_SECRET,{method:'POST'});
     var d1; try{ d1=await r1.json(); }catch(je){ throw new Error('Sync timeout — la synchronisation a pris trop de temps. Réessayez dans quelques secondes.'); }
     if(!r1.ok) throw new Error((d1&&d1.error)||'Erreur sync retours');
-    // Phase 2 : mise en rupture des vendus/mystère pushés
-    var r2=await fetch('/api/sync-rupture-shopify?secret='+SYNC_SECRET,{method:'POST'});
-    var d2; try{ d2=await r2.json(); }catch(je){ throw new Error('Sync rupture timeout — réessayez dans quelques secondes.'); }
-    if(!r2.ok) throw new Error((d2&&d2.error)||'Erreur sync rupture');
     // Rafraîchir le stock local (shopify_pushed_at peut avoir changé)
     await dbLoad();
     await loadNotifications();
