@@ -30,7 +30,7 @@ function parseVariantTitle(variantTitle) {
 }
 
 async function getRetourStock() {
-  const r = await fetch(`${SB_URL}/rest/v1/stock?select=id,product,size,qty&qty=gt.0&status=eq.retour&limit=500`, { headers: supabaseHeaders() });
+  const r = await fetch(`${SB_URL}/rest/v1/stock?select=id,product,size,qty&qty=gt.0&status=eq.retour&limit=500`, { headers: supabaseHeaders(true) });
   return r.ok ? r.json() : [];
 }
 
@@ -260,7 +260,7 @@ module.exports = async function handler(req, res) {
     // 1. Récupérer les titres originaux depuis le cache Supabase (le plus récent par produit)
     const cacheRes = await fetch(
       `${SB_URL}/rest/v1/rpc/get_original_titles`,
-      { method: 'POST', headers: supabaseHeaders() }
+      { method: 'POST', headers: supabaseHeaders(true) }
     ).catch(() => null);
 
     // Récupérer toutes les lignes du cache via pagination (PostgREST limite à 1000 par défaut)
@@ -270,7 +270,7 @@ module.exports = async function handler(req, res) {
     while (true) {
       const sbRes = await fetch(
         `${SB_URL}/rest/v1/shopify_variants_cache?select=product_id,product_title,updated_at&order=product_id,updated_at.desc&limit=${PAGE_SIZE}&offset=${cacheOffset}`,
-        { headers: { ...supabaseHeaders(), Prefer: 'count=none' } }
+        { headers: { ...supabaseHeaders(true), Prefer: 'count=none' } }
       );
       if (!sbRes.ok) return res.status(500).json({ error: 'Cache fetch failed', status: sbRes.status });
       const rows = await sbRes.json();
@@ -508,7 +508,7 @@ module.exports = async function handler(req, res) {
 
     // Récupérer le token d'installation (potentiellement plus de scopes)
     let installToken = null;
-    const settingsRes = await fetch(`${SB_URL}/rest/v1/app_settings?key=eq.shopify_install_token&select=value`, { headers: supabaseHeaders() });
+    const settingsRes = await fetch(`${SB_URL}/rest/v1/app_settings?key=eq.shopify_install_token&select=value`, { headers: supabaseHeaders(true) });
     if (settingsRes.ok) {
       const rows = await settingsRes.json();
       installToken = rows[0]?.value || null;

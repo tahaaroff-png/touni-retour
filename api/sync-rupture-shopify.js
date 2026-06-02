@@ -108,7 +108,7 @@ async function insertRuptureNotification(isDryRun, results) {
     };
     const r = await fetch(`${SB_URL}/rest/v1/shopify_notifications`, {
       method: 'POST',
-      headers: { ...supabaseHeaders(), Prefer: 'return=minimal' },
+      headers: { ...supabaseHeaders(true), Prefer: 'return=minimal' },
       body: JSON.stringify(notification),
     });
     if (!r.ok) console.warn('[sync-rupture] Notification insert failed:', await r.text());
@@ -154,7 +154,7 @@ module.exports = async function handler(req, res) {
     const baseFilter = `shopify_pushed_at=not.is.null&select=id,product,size,qty,status,shopify_inventory_item_id,shopify_variant_id,shopify_pushed_at,shopify_qty_pushed`;
     const urlStatus = `${SB_URL}/rest/v1/stock?${baseFilter}&status=in.(vendu,mystere)`;
 
-    const resStatus = await fetch(urlStatus, { headers: supabaseHeaders() });
+    const resStatus = await fetch(urlStatus, { headers: supabaseHeaders(true) });
     if (!resStatus.ok) throw new Error('Stock fetch error: ' + await resStatus.text());
     const byStatus = await resStatus.json();
 
@@ -231,7 +231,7 @@ module.exports = async function handler(req, res) {
           const now = new Date().toISOString();
           await fetch(`${SB_URL}/rest/v1/shopify_variants_cache?variant_id=eq.${grp.variant_id}`, {
             method: 'PATCH',
-            headers: supabaseHeaders(),
+            headers: supabaseHeaders(true),
             body: JSON.stringify({ inventory_quantity: 0, updated_at: now }),
           });
         }

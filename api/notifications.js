@@ -23,7 +23,7 @@ module.exports = async function handler(req, res) {
       const status = req.query?.status || 'unread';
       const limit = parseInt(req.query?.limit || '50');
       const url = `${SB_URL}/rest/v1/shopify_notifications?select=*&status=eq.${status}&order=created_at.desc&limit=${limit}`;
-      const r = await fetch(url, { headers: supabaseHeaders() });
+      const r = await fetch(url, { headers: supabaseHeaders(true) });
       if (!r.ok) throw new Error(await r.text());
       const data = await r.json();
       return res.status(200).json({ notifications: data, count: data.length });
@@ -40,7 +40,7 @@ module.exports = async function handler(req, res) {
       if (newStatus === 'read') updateBody.read_at = new Date().toISOString();
       const r = await fetch(`${SB_URL}/rest/v1/shopify_notifications?id=eq.${id}`, {
         method: 'PATCH',
-        headers: supabaseHeaders(),
+        headers: supabaseHeaders(true),
         body: JSON.stringify(updateBody),
       });
       if (!r.ok) throw new Error(await r.text());
@@ -52,7 +52,7 @@ module.exports = async function handler(req, res) {
       if (!id) return res.status(400).json({ error: 'Missing id' });
       const r = await fetch(`${SB_URL}/rest/v1/shopify_notifications?id=eq.${id}`, {
         method: 'DELETE',
-        headers: supabaseHeaders(),
+        headers: supabaseHeaders(true),
       });
       if (!r.ok) throw new Error(await r.text());
       return res.status(200).json({ success: true });

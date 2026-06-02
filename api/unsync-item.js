@@ -59,7 +59,7 @@ module.exports = async function handler(req, res) {
 
   try {
     // 1. Lire l'item dans Supabase
-    const sbH = supabaseHeaders();
+    const sbH = supabaseHeaders(true);
     const itemRes = await fetch(`${SB_URL}/rest/v1/stock?id=eq.${itemId}&select=*`, { headers: sbH });
     if (!itemRes.ok) throw new Error('Supabase read error: ' + await itemRes.text());
     const items = await itemRes.json();

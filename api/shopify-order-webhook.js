@@ -58,7 +58,7 @@ async function findMatchingStock(productTitle, size, color) {
 
   // 1) Try exact title match first (fast path)
   const exactUrl = `${SB_URL}/rest/v1/stock?select=id,product,size,qty,status&product=eq.${encodeURIComponent(productTitle)}&qty=gt.0&status=eq.retour`;
-  const exactRes = await fetch(exactUrl, { headers: supabaseHeaders() });
+  const exactRes = await fetch(exactUrl, { headers: supabaseHeaders(true) });
   let exactCandidates = exactRes.ok ? (await exactRes.json()) : [];
 
   // Filter by size+color
@@ -76,7 +76,7 @@ async function findMatchingStock(productTitle, size, color) {
 
   // 2) Fuzzy fallback: fetch all retour stock items and score by title similarity
   const allUrl = `${SB_URL}/rest/v1/stock?select=id,product,size,qty,status&qty=gt.0&status=eq.retour&limit=500`;
-  const allRes = await fetch(allUrl, { headers: supabaseHeaders() });
+  const allRes = await fetch(allUrl, { headers: supabaseHeaders(true) });
   if (!allRes.ok) return [];
   const allStock = await allRes.json();
 
@@ -116,7 +116,7 @@ async function handler(req, res) {
     // Log to Supabase for visibility
     await fetch(`${SB_URL}/rest/v1/shopify_notifications`, {
       method: 'POST',
-      headers: { ...supabaseHeaders(), Prefer: 'return=minimal' },
+      headers: { ...supabaseHeaders(true), Prefer: 'return=minimal' },
       body: JSON.stringify([{ type: 'webhook_error', status: 'unread', message: `HMAC failed — topic:${topic} sig:${signature?.slice(0,12)} rawLen:${rawBody.length}` }]),
     }).catch(() => {});
     return res.status(401).json({ error: 'Invalid signature' });
@@ -183,7 +183,7 @@ async function handler(req, res) {
     const insertUrl = `${SB_URL}/rest/v1/shopify_notifications?on_conflict=shopify_order_id,shopify_variant_id`;
     const insertRes = await fetch(insertUrl, {
       method: 'POST',
-      headers: { ...supabaseHeaders(), Prefer: 'resolution=ignore-duplicates,return=representation' },
+      headers: { ...supabaseHeaders(true), Prefer: 'resolution=ignore-duplicates,return=representation' },
       body: JSON.stringify(notifications),
     });
     if (!insertRes.ok) {

@@ -111,7 +111,7 @@ module.exports = async function handler(req, res) {
       const slice = enriched.slice(i, i + CHUNK);
       const r = await fetch(upsertUrl, {
         method: 'POST',
-        headers: { ...supabaseHeaders(), Prefer: 'resolution=merge-duplicates,return=minimal' },
+        headers: { ...supabaseHeaders(true), Prefer: 'resolution=merge-duplicates,return=minimal' },
         body: JSON.stringify(slice),
       });
       if (!r.ok) {

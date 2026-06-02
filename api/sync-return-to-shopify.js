@@ -224,7 +224,7 @@ async function insertSyncNotification(isDryRun, results) {
 
     const r = await fetch(`${SB_URL}/rest/v1/shopify_notifications`, {
       method: 'POST',
-      headers: { ...supabaseHeaders(), Prefer: 'return=minimal' },
+      headers: { ...supabaseHeaders(true), Prefer: 'return=minimal' },
       body: JSON.stringify(notification),
     });
     if (!r.ok) console.warn('[sync-return] Notification insert failed:', await r.text());
@@ -253,7 +253,7 @@ module.exports = async function handler(req, res) {
     // ── ÉTAPE 1 : Charger le stock retours éligible ───────────────────────────
     const stockRes = await fetch(
       `${SB_URL}/rest/v1/stock?select=*&status=eq.retour&qty=gt.0&shopify_pushed_at=is.null`,
-      { headers: supabaseHeaders() }
+      { headers: supabaseHeaders(true) }
     );
     if (!stockRes.ok) throw new Error('Stock fetch error: ' + await stockRes.text());
     const stockItems = await stockRes.json();
@@ -274,7 +274,7 @@ module.exports = async function handler(req, res) {
     // ── ÉTAPE 3 : Pré-charger TOUS les titres du cache (1 seul appel Supabase) ─
     const allTitlesRes = await fetch(
       `${SB_URL}/rest/v1/shopify_variants_cache?select=product_title&limit=3000`,
-      { headers: supabaseHeaders() }
+      { headers: supabaseHeaders(true) }
     );
     const allCacheTitles = allTitlesRes.ok
       ? [...new Set((await allTitlesRes.json()).map(r => r.product_title).filter(Boolean))]
@@ -296,7 +296,7 @@ module.exports = async function handler(req, res) {
       // Exact title match
       const exactRes = await fetch(
         `${SB_URL}/rest/v1/shopify_variants_cache?select=variant_id,inventory_item_id,inventory_quantity,size,color,product_title&product_title=eq.${encodeURIComponent(grp.product)}`,
-        { headers: supabaseHeaders() }
+        { headers: supabaseHeaders(true) }
       );
       if (exactRes.ok) candidates = await exactRes.json();
 
@@ -310,7 +310,7 @@ module.exports = async function handler(req, res) {
         if (bestScore >= FUZZY_THRESHOLD && bestTitle) {
           const fuzzyRes = await fetch(
             `${SB_URL}/rest/v1/shopify_variants_cache?select=variant_id,inventory_item_id,inventory_quantity,size,color,product_title&product_title=eq.${encodeURIComponent(bestTitle)}`,
-            { headers: supabaseHeaders() }
+            { headers: supabaseHeaders(true) }
           );
           if (fuzzyRes.ok) {
             candidates = await fuzzyRes.json();
@@ -392,7 +392,7 @@ module.exports = async function handler(req, res) {
         if (finalInv !== null && finalInv > 0) {
           // Stock dispo sur Shopify → mettre à jour le cache et sauter
           await fetch(`${SB_URL}/rest/v1/shopify_variants_cache?variant_id=eq.${match.variant_id}`, {
-            method: 'PATCH', headers: supabaseHeaders(),
+            method: 'PATCH', headers: supabaseHeaders(true),
             body: JSON.stringify({ inventory_quantity: finalInv, updated_at: new Date().toISOString() }),
           });
           results.skipped_has_stock++;
@@ -406,7 +406,7 @@ module.exports = async function handler(req, res) {
           const now = new Date().toISOString();
           for (const item of grp.items) {
             const upRes = await fetch(`${SB_URL}/rest/v1/stock?id=eq.${item.id}`, {
-              method: 'PATCH', headers: supabaseHeaders(),
+              method: 'PATCH', headers: supabaseHeaders(true),
               body: JSON.stringify({
                 shopify_pushed_at: now,
                 shopify_variant_id: String(match.variant_id),
@@ -418,7 +418,7 @@ module.exports = async function handler(req, res) {
           }
           // Mettre à jour le cache local
           await fetch(`${SB_URL}/rest/v1/shopify_variants_cache?variant_id=eq.${match.variant_id}`, {
-            method: 'PATCH', headers: supabaseHeaders(),
+            method: 'PATCH', headers: supabaseHeaders(true),
             body: JSON.stringify({ inventory_quantity: grp.totalQty, updated_at: new Date().toISOString() }),
           });
         }
