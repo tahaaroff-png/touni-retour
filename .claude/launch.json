@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "preview-banner",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["serve", "-p", "4200", "/Users/macbook/Desktop/touni-retour"],
+      "port": 4200
+    }
+  ]
+}
