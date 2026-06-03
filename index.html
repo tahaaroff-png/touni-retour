@@ -1016,18 +1016,20 @@ function renderNotificationsList(){
       var isDry=n.type.indexOf('dry_run')!==-1;
       var isExpanded=expandedNotifs.has(n.id);
       var label=isRupture?'Sync Rupture':'Sync Stock Retours';
-      var accent=d.status==='succes'?'#16a34a':d.status==='partiel'?'#d97706':'#94a3b8';
-      var statusTxt=d.status==='succes'?'#16a34a':d.status==='partiel'?'#d97706':'#94a3b8';
-      var statusLbl=d.status==='succes'?'Succès':d.status==='partiel'?'Partiel':'Rien à faire';
+      var _hasNoMatch=(d.skipped_no_match||0)>0;
+      var _hasErr=(d.errors||0)>0;
+      var accent=d.status==='succes'?'#16a34a':d.status==='partiel'?'#d97706':(_hasNoMatch||_hasErr)?'#d97706':'#94a3b8';
+      var statusTxt=accent;
+      var statusLbl=d.status==='succes'?'Succès':d.status==='partiel'?'Partiel':(_hasNoMatch||_hasErr)?'À vérifier':'Rien à faire';
 
-      // ── Ligne stats (résumé compact) ──
+      // ── Ligne stats (résumé compact — toujours les 3 chiffres clés) ──
       var stats='<div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:5px;font-size:11px;color:var(--muted)">';
       if(!isRupture){
-        stats+='<span><b style="color:var(--text)">'+(d.checked||0)+'</b> vérifiés</span>';
-        if((d.pushed||0)>0) stats+='<span>· <b style="color:#16a34a">'+d.pushed+'</b> poussés</span>';
-        if((d.skipped_has_stock||0)>0) stats+='<span>· <b style="color:var(--muted)">'+d.skipped_has_stock+'</b> avec stock</span>';
-        if((d.skipped_no_match||0)>0) stats+='<span>· <b style="color:#d97706">'+d.skipped_no_match+'</b> sans correspondance</span>';
-        if((d.errors||0)>0) stats+='<span>· <b style="color:#dc2626">'+d.errors+'</b> erreurs</span>';
+        var _pushed=d.pushed||0, _stock=d.skipped_has_stock||0, _nm=d.skipped_no_match||0, _err=d.errors||0;
+        stats+='<span><b style="color:'+(_pushed>0?'#16a34a':'var(--muted)')+'">'+_pushed+'</b> poussé'+ (_pushed>1?'s':'')+'</span>';
+        stats+='<span>· <b style="color:var(--muted)">'+_stock+'</b> avec stock</span>';
+        if(_nm>0) stats+='<span>· <b style="color:#d97706">'+_nm+'</b> sans correspondance</span>';
+        if(_err>0) stats+='<span>· <b style="color:#dc2626">'+_err+'</b> erreur'+(_err>1?'s':'')+'</span>';
       } else {
         stats+='<span><b style="color:var(--text)">'+(d.checked||0)+'</b> vérifiés</span>';
         if((d.set_to_zero||0)>0) stats+='<span>· <b style="color:#dc2626">'+d.set_to_zero+'</b> mis à 0</span>';
