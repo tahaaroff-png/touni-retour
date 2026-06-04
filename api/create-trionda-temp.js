@@ -26,20 +26,26 @@ module.exports = async (req, res) => {
     // 2. Créer le produit
     const hdrs = await shopifyAdminHeaders();
 
-    const body_html = `<p><strong>Le ballon officiel de la Coupe du Monde FIFA 2026™</strong> — l'Adidas Trionda Pro est le ballon de match officiel utilisé lors des rencontres du Mondial 2026 organisé au Canada, aux États-Unis et au Mexique.</p>
+    const body_html = `<p><strong>LE BALLON OFFICIEL DE LA COUPE DU MONDE 2026™ ⚽🔥</strong></p>
 
-<p>Conçu avec la technologie <strong>Adidas Pro</strong> et certifié <strong>FIFA Quality Pro</strong>, il offre une précision de vol, une touche de balle et une durabilité d'exception. Disponible en 3 coloris exclusifs : Orange, Blanc Multicolore et Jaune Fluo.</p>
+<p><strong>Adidas Trionda Pro — Ballon de Match Officiel FIFA Coupe du Monde 2026</strong></p>
 
+<p>L'Adidas Trionda Pro est le ballon officiel utilisé lors de toutes les rencontres de la Coupe du Monde FIFA 2026™, organisée au Canada, aux États-Unis et au Mexique. Certifié <strong>FIFA Quality Pro</strong>, il allie précision de vol, touche de balle irréprochable et durabilité d'exception — conçu pour les plus grandes scènes du football mondial.</p>
+
+<p><strong>NOS AVANTAGES</strong></p>
 <ul>
-  <li>✅ Ballon officiel FIFA Quality Pro — Coupe du Monde 2026</li>
-  <li>⚽ Technologie de vol stabilisé — trajectoire parfaite</li>
-  <li>🔶 Taille officielle 5 — pour compétition et entraînement</li>
+  <li><strong>Livraison GRATUITE PARTOUT AU MAROC 🇲🇦</strong></li>
+  <li><strong>Expédition rapide — 1 à 3 jours ouvrables</strong></li>
+  <li><strong>Paiement à la livraison disponible</strong></li>
+  <li>✅ Certifié FIFA Quality Pro — ballon de match officiel CdM 2026</li>
+  <li>⚽ Technologie de vol stabilisé — trajectoire parfaite à chaque frappe</li>
+  <li>🔶 Taille officielle 5 — compétition & entraînement</li>
   <li>🌍 Édition collector — design inspiré des 3 nations hôtes</li>
-  <li>💧 Revêtement texturé haute performance</li>
-  <li>🎨 3 coloris exclusifs : Orange · Blanc · Jaune Fluo</li>
+  <li>💧 Revêtement texturé haute performance — grip optimal</li>
+  <li>🎨 3 coloris exclusifs : Orange · Blanc Multicolore · Jaune Fluo</li>
 </ul>
 
-<p>Un ballon d'exception pour les passionnés de football. Que ce soit pour une utilisation en match ou en collection, le <strong>Trionda Pro</strong> est un incontournable de la Coupe du Monde 2026.</p>`;
+<p><strong>Commandez maintenant sur touni.ma — paiement à la livraison disponible partout au Maroc.</strong></p>`;
 
     const product = {
       product: {
