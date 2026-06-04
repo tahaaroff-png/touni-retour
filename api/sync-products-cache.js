@@ -81,6 +81,7 @@ module.exports = async function handler(req, res) {
         variants.push({
           product_id: product.id,
           product_title: product.title,
+          product_image: (product.images && product.images[0]) ? product.images[0].src : '',
           variant_id: variant.id,
           inventory_item_id: variant.inventory_item_id,
           size,

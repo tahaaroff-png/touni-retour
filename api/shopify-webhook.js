@@ -108,11 +108,13 @@ module.exports = async function handler(req, res) {
   const inventoryMap = await fetchInventory(inventoryItemIds);
 
   // Build upsert payload
+  const productImage = (product.images && product.images[0]) ? product.images[0].src : '';
   const rows = product.variants.map(variant => {
     const { size, color } = extractSizeColor(product, variant);
     return {
       product_id: product.id,
       product_title: product.title,
+      product_image: productImage,
       variant_id: variant.id,
       inventory_item_id: variant.inventory_item_id,
       size: size || null,
