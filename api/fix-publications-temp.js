@@ -1,7 +1,8 @@
-// TEMPORARY — Publish all active products to all sales channels (Facebook, Instagram, etc.)
+// TEMPORARY — Publish all active products to all sales channels via GraphQL
 // DELETE AFTER USE
-// ?action=list  → list channels
-// ?action=fix   → publish all active products to all channels (paginated: ?page=1,2,...)
+// ?action=list        → list all publications (channels)
+// ?action=fix         → publish all products to all channels (paginated via cursor)
+// ?action=fix&cursor=XXX → next page
 
 const {
   SHOPIFY_DOMAIN: _SD, SHOPIFY_API_VERSION: _SV,
@@ -10,83 +11,99 @@ const {
 
 const SYNC_SECRET = process.env.SYNC_SECRET || '';
 
+async function gql(query, variables, hdrs) {
+  const r = await fetch(`https://${_SD}/admin/api/${_SV}/graphql.json`, {
+    method: 'POST',
+    headers: { ...hdrs, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query, variables }),
+  });
+  return r.json();
+}
+
 module.exports = async (req, res) => {
   if (req.query.secret !== SYNC_SECRET) return res.status(403).json({ error: 'Forbidden' });
 
   const hdrs = await shopifyAdminHeaders();
 
   try {
-    // 1. List all publications (sales channels)
-    const pubR = await fetch(`https://${_SD}/admin/api/${_SV}/publications.json`, { headers: hdrs });
-    const pubData = await pubR.json();
-    const publications = pubData.publications || [];
+    // 1. Get all publication IDs via GraphQL
+    const pubQuery = `{
+      publications(first: 20) {
+        edges {
+          node { id name supportsFuturePublishing }
+        }
+      }
+    }`;
+    const pubRes = await gql(pubQuery, {}, hdrs);
+    const publications = pubRes.data?.publications?.edges?.map(e => e.node) || [];
 
     if (req.query.action === 'list') {
       return res.json({ publications });
     }
 
-    // 2. Get all active products (paginated, 50 per batch to avoid timeout)
-    const page = parseInt(req.query.page || '1');
-    const pageSize = 50;
-    const since_id = req.query.since_id ? parseInt(req.query.since_id) : 0;
-
-    const prodUrl = `https://${_SD}/admin/api/${_SV}/products.json?status=active&limit=${pageSize}&fields=id,title,published_scope${since_id ? `&since_id=${since_id}` : ''}`;
-    const prodR = await fetch(prodUrl, { headers: hdrs });
-    const prodData = await prodR.json();
-    const products = prodData.products || [];
-
-    if (products.length === 0) {
-      return res.json({ success: true, message: 'No more products', page, processed: 0 });
-    }
-
-    const lastId = products[products.length - 1].id;
-    const results = { page, batch_size: products.length, next_since_id: lastId, details: [] };
-
-    for (const product of products) {
-      const productResult = { id: product.id, title: product.title, scope: product.published_scope, channels: [] };
-
-      // 3. Publish to each channel via product_publications
-      for (const pub of publications) {
-        const r = await fetch(`https://${_SD}/admin/api/${_SV}/product_publications.json`, {
-          method: 'POST',
-          headers: hdrs,
-          body: JSON.stringify({
-            product_publication: {
-              product_id: product.id,
-              publication_id: pub.id,
+    // 2. Get a page of active products
+    const cursor = req.query.cursor || null;
+    const productQuery = `
+      query getProducts($cursor: String) {
+        products(first: 20, after: $cursor, query: "status:active") {
+          pageInfo { hasNextPage endCursor }
+          edges {
+            node {
+              id
+              title
+              publishedOnCurrentPublication
             }
-          }),
-        });
-
-        const txt = await r.text();
-        let data = {};
-        try { data = txt ? JSON.parse(txt) : {}; } catch (_) {}
-
-        if (r.ok) {
-          productResult.channels.push({ pub: pub.name, status: 'published' });
-        } else {
-          const msg = (JSON.stringify(data.errors || data) + txt).slice(0, 100);
-          const alreadyPublished = r.status === 422 || msg.includes('already') || msg.includes('taken');
-          productResult.channels.push({ pub: pub.name, status: alreadyPublished ? 'already_ok' : 'error', msg: alreadyPublished ? undefined : msg });
+          }
         }
       }
+    `;
+    const prodRes = await gql(productQuery, { cursor }, hdrs);
+    const pageInfo = prodRes.data?.products?.pageInfo;
+    const products = prodRes.data?.products?.edges?.map(e => e.node) || [];
 
-      results.details.push(productResult);
+    if (products.length === 0) {
+      return res.json({ success: true, message: 'No more products to process', hasNextPage: false });
     }
 
-    const published = results.details.reduce((acc, p) => acc + p.channels.filter(c => c.status === 'published').length, 0);
-    const already = results.details.reduce((acc, p) => acc + p.channels.filter(c => c.status === 'already_ok').length, 0);
-    const errors = results.details.reduce((acc, p) => acc + p.channels.filter(c => c.status === 'error').length, 0);
+    // 3. Publish each product to all publications
+    const publishMutation = `
+      mutation publishProduct($id: ID!, $input: [PublicationInput!]!) {
+        publishablePublish(id: $id, input: $input) {
+          userErrors { field message }
+        }
+      }
+    `;
+
+    const publicationInput = publications.map(p => ({ publicationId: p.id }));
+    const results = [];
+
+    for (const product of products) {
+      const mutRes = await gql(publishMutation, {
+        id: product.id,
+        input: publicationInput,
+      }, hdrs);
+
+      const errors = mutRes.data?.publishablePublish?.userErrors || [];
+      results.push({
+        id: product.id,
+        title: product.title,
+        ok: errors.length === 0,
+        errors: errors.length > 0 ? errors : undefined,
+      });
+    }
+
+    const ok = results.filter(r => r.ok).length;
+    const failed = results.filter(r => !r.ok).length;
 
     return res.json({
       success: true,
-      page,
-      batch_size: products.length,
-      next_since_id: lastId,
-      published,
-      already_ok: already,
-      errors,
-      details: results.details,
+      batch: products.length,
+      published_ok: ok,
+      failed,
+      hasNextPage: pageInfo?.hasNextPage,
+      nextCursor: pageInfo?.endCursor,
+      channels: publications.map(p => p.name),
+      results,
     });
 
   } catch (e) {
