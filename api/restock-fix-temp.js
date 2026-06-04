@@ -5,7 +5,14 @@ const {
   shopifyAdminHeaders, fetchShopifyProductsAdmin,
 } = require('./_shopify-helpers.js');
 
-const TARGET_KEYWORDS = ['brésil', 'bresil', 'allemagne'];
+// Only the 5 exact products that were failing (original 19 variants)
+const TARGET_EXACT = [
+  'Brésil - Maillot Domicile 2024/25',
+  'Brésil - Maillot Domicile Manches Longues 2025/26',
+  'Maillot Brésil Domicile 1998 – Version Rétro',
+  'Allemagne - Maillot Domicile 2026',
+  'Maillot Domicile Allemagne 26 Manches Longues Blanc',
+];
 const TARGET_SIZES = ['S', 'M', 'L', 'XL', '2XL'];
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -21,10 +28,10 @@ module.exports = async function handler(req, res) {
 
   const results = { updated: [], skipped: [], failed: [] };
 
-  // Fetch all products and filter Brésil + Allemagne
+  // Fetch all products and filter only the 5 exact failing products
   const allProducts = await fetchShopifyProductsAdmin();
   const relevant = allProducts.filter(p =>
-    TARGET_KEYWORDS.some(kw => p.title.toLowerCase().includes(kw))
+    TARGET_EXACT.some(t => p.title.trim() === t)
   );
 
   for (const product of relevant) {
