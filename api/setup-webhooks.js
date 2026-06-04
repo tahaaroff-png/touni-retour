@@ -1,4 +1,4 @@
-// Setup webhooks : enregistre orders/create sur Shopify
+// Setup webhooks : enregistre orders/create + products/* sur Shopify
 // GET /api/setup-webhooks?secret=touni-sync-2026  → liste + crée si absent
 // GET /api/setup-webhooks?secret=...&delete=ID     → supprime un webhook par ID
 
@@ -7,8 +7,17 @@ const {
   shopifyAdminHeaders,
 } = require('./_shopify-helpers.js');
 
-const CALLBACK_URL = 'https://touni-retour.vercel.app/api/shopify-order-webhook';
-const REQUIRED_TOPICS = ['orders/create'];
+const ORDER_WEBHOOK_URL   = 'https://touni-retour.vercel.app/api/shopify-order-webhook';
+const PRODUCT_WEBHOOK_URL = 'https://touni-retour.vercel.app/api/shopify-webhook';
+
+// topic → callback URL
+const REQUIRED_WEBHOOKS = [
+  { topic: 'orders/create',     url: ORDER_WEBHOOK_URL },
+  { topic: 'orders/cancelled',  url: ORDER_WEBHOOK_URL },
+  { topic: 'products/create',   url: PRODUCT_WEBHOOK_URL },
+  { topic: 'products/update',   url: PRODUCT_WEBHOOK_URL },
+  { topic: 'products/delete',   url: PRODUCT_WEBHOOK_URL },
+];
 
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -39,14 +48,14 @@ module.exports = async function handler(req, res) {
     existing.forEach(w => report.existing.push({ id: w.id, topic: w.topic, address: w.address }));
 
     // ── CREATE missing webhooks ───────────────────────────────────────────────
-    for (const topic of REQUIRED_TOPICS) {
-      const found = existing.find(w => w.topic === topic && w.address === CALLBACK_URL);
+    for (const { topic, url: callbackUrl } of REQUIRED_WEBHOOKS) {
+      const found = existing.find(w => w.topic === topic && w.address === callbackUrl);
       if (found) {
         report.already_ok.push({ id: found.id, topic });
         continue;
       }
       // Remove stale entries for same topic pointing elsewhere
-      const stale = existing.filter(w => w.topic === topic && w.address !== CALLBACK_URL);
+      const stale = existing.filter(w => w.topic === topic && w.address !== callbackUrl);
       for (const s of stale) {
         await fetch(`${base}/webhooks/${s.id}.json`, { method: 'DELETE', headers });
         console.log(`[setup-webhooks] Deleted stale webhook ${s.id} (${s.address})`);
@@ -58,7 +67,7 @@ module.exports = async function handler(req, res) {
         body: JSON.stringify({
           webhook: {
             topic,
-            address: CALLBACK_URL,
+            address: callbackUrl,
             format: 'json',
           },
         }),
@@ -76,7 +85,6 @@ module.exports = async function handler(req, res) {
 
     return res.status(200).json({
       success: true,
-      callback_url: CALLBACK_URL,
       ...report,
     });
   } catch (e) {

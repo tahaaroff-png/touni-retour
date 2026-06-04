@@ -1,211 +1,152 @@
-// Vercel serverless function — Shopify webhook handler
-// Triggers on: products/create, products/update, products/delete
-// Uses the public Shopify storefront JSON (no token needed)
-// Commits updated products.json to GitHub → Vercel auto-redeploys
+// Vercel serverless function — Shopify product webhook handler
+// Topics: products/create, products/update, products/delete
+// Action: syncs the changed product's variants into Supabase shopify_variants_cache
+// Uses _shopify-helpers.js for Supabase auth (service key)
 
 const crypto = require('crypto');
+const {
+  SHOPIFY_DOMAIN, SHOPIFY_API_VERSION, SHOPIFY_LOCATION_ID,
+  shopifyAdminHeaders, supabaseHeaders,
+  SIZE_OPTION_NAMES, COLOR_OPTION_NAMES,
+  SB_URL,
+} = require('./_shopify-helpers.js');
 
-const SHOPIFY_SECRET = process.env.SHOPIFY_WEBHOOK_SECRET;
-const SHOPIFY_DOMAIN = process.env.SHOPIFY_DOMAIN || 'tounikora.myshopify.com';
-const GITHUB_TOKEN   = process.env.GITHUB_TOKEN;
-const GITHUB_OWNER   = process.env.GITHUB_OWNER;
-const GITHUB_REPO    = process.env.GITHUB_REPO;
-const GITHUB_BRANCH  = process.env.GITHUB_BRANCH || 'main';
+const SHOPIFY_WEBHOOK_SECRET = process.env.SHOPIFY_WEBHOOK_SECRET;
 
-// ── Size normalization ────────────────────────────────────────────────────────
-const SIZE_MAP = {
-  's':'S','s (168-173 cm)':'S','s (168-173cm)':'S',
-  'm':'M','m (173-178 cm)':'M','m (173-178cm)':'M',
-  'l':'L','l (178-183 cm)':'L','l (178-183cm)':'L',
-  'xl':'XL','xl (183-188 cm)':'XL','xl (183-188cm)':'XL',
-  'xxl':'2XL','xxl (188-193 cm)':'2XL','xxl (188-193cm)':'2XL',
-  '2xl':'2XL','3xl':'3XL','4xl':'4XL','xs':'XS',
-};
-// Values that look like colors but appear as option1 — filter them out of sizes
-const SIZE_COLORS = new Set([
-  'black','blanc','rouge','beige','gray','noir','yellow','halo ivory',
-  'gris-clair','gris-fonces','with','without','light brown',
-  'black/field silver/field silver','thunder blue/safety orange/safety orange',
-  'bleu marine','jaune','vert','violet','orange','rose','marron','turquoise',
-  'bleu','bleu ciel','bleu nuit','bleu roi','bleu canard','bleu gris',
-  'gris','gris clair','gris foncé','blanc cassé','crème','camel',
-  'kaki','kaki foncé','olive','burgundy','bordeaux','corail','saumon',
-  'lavande','lilas','menthe','emeraude','anthracite','charcoal','taupe',
-  'slate','army','sand','stone','cobalt','indigo','navy','khaki',
-  'cream','ivory','chocolate','tan','rust','coral','teal','mint',
-  'mustard','gold','silver','bronze','copper','white','red','blue','green',
-  'purple','pink','brown','orange','grey','multicolor','multicolore',
-]);
-const SIZE_OPTION_NAMES = new Set(['taille','size','pointure','pointures','sizes','tailles']);
-const COLOR_OPTION_NAMES = new Set(['couleur','color','coloris','couleurs','colors']);
-const SIZE_ORDER = ['XS','S','M','L','XL','2XL','3XL','4XL'];
-
-function normalizeSize(s) {
-  if (!s) return null;
-  const k = s.trim().toLowerCase();
-  if (SIZE_COLORS.has(k)) return null;
-  if (k === 'default title') return null;
-  return SIZE_MAP[k] || s.trim();
-}
-function sortSizes(arr) {
-  return arr.slice().sort((a, b) => {
-    const ia = SIZE_ORDER.indexOf(a), ib = SIZE_ORDER.indexOf(b);
-    if (ia >= 0 && ib >= 0) return ia - ib;
-    if (ia >= 0) return -1;
-    if (ib >= 0) return 1;
-    return a.localeCompare(b);
-  });
-}
-
-function isColor(val) {
-  if (!val) return false;
-  return SIZE_COLORS.has(val.trim().toLowerCase());
-}
-
-// ── Fetch ALL products via public storefront JSON (no token needed) ──────────
-async function fetchAllProducts() {
-  const products = [];
-  let page = 1;
-  while (true) {
-    const url = `https://${SHOPIFY_DOMAIN}/products.json?limit=250&page=${page}`;
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`Shopify fetch error: ${res.status}`);
-    const data = await res.json();
-    if (!data.products || data.products.length === 0) break;
-    products.push(...data.products);
-    if (data.products.length < 250) break;
-    page++;
+// ── HMAC verification ─────────────────────────────────────────────────────────
+function verifyHmac(rawBody, signature) {
+  if (!SHOPIFY_WEBHOOK_SECRET) return true; // skip if not configured
+  const expected = crypto
+    .createHmac('sha256', SHOPIFY_WEBHOOK_SECRET)
+    .update(rawBody)
+    .digest('base64');
+  try {
+    return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature || ''));
+  } catch {
+    return false;
   }
-  return products;
 }
 
-function shopifyProductToEntry(p) {
-  // Use Shopify option names to determine which option is size vs color
-  const opts = (p.options || []).map(o => ({ name: (o.name || '').trim().toLowerCase(), pos: o.position - 1 }));
-
-  const sizeOpt = opts.find(o => SIZE_OPTION_NAMES.has(o.name));
-  const colorOpt = opts.find(o => COLOR_OPTION_NAMES.has(o.name));
-
-  const getVariantOpt = (v, pos) => {
+// ── Extract size/color from product options ───────────────────────────────────
+function extractSizeColor(product, variant) {
+  const opts = (product.options || []).map(o => ({
+    name: (o.name || '').trim().toLowerCase(),
+    pos: o.position - 1,
+  }));
+  const getOptVal = (v, pos) => {
     if (pos === 0) return v.option1;
     if (pos === 1) return v.option2;
     return v.option3;
   };
-
-  let rawSizes = [];
-  let rawColors = [];
-
-  if (sizeOpt !== undefined) {
-    rawSizes = p.variants.map(v => getVariantOpt(v, sizeOpt.pos)).filter(Boolean);
-  }
-  if (colorOpt !== undefined) {
-    rawColors = p.variants.map(v => getVariantOpt(v, colorOpt.pos)).filter(Boolean);
-  }
-
-  // Fallback: if no named options, try to infer from values
-  if (sizeOpt === undefined && colorOpt === undefined) {
-    const opt1vals = p.variants.map(v => v.option1).filter(Boolean);
-    const opt2vals = p.variants.flatMap(v => [v.option2, v.option3]).filter(Boolean);
-    // If all option1 values look like colors, treat them as colors
-    const allOpt1AreColors = opt1vals.length > 0 && opt1vals.every(v => isColor(v));
-    if (allOpt1AreColors) {
-      rawColors = opt1vals;
-    } else {
-      rawSizes = opt1vals;
-      rawColors = opt2vals;
-    }
-  } else if (sizeOpt === undefined) {
-    // Has color but no explicit size option — check other options for sizes
-    const usedPositions = new Set([colorOpt.pos]);
-    for (let i = 0; i < 3; i++) {
-      if (!usedPositions.has(i)) {
-        const vals = p.variants.map(v => getVariantOpt(v, i)).filter(Boolean);
-        rawSizes.push(...vals);
-      }
-    }
-  } else if (colorOpt === undefined) {
-    // Has size but no explicit color option — check other options for colors
-    const usedPositions = new Set([sizeOpt.pos]);
-    for (let i = 0; i < 3; i++) {
-      if (!usedPositions.has(i)) {
-        const vals = p.variants.map(v => getVariantOpt(v, i)).filter(Boolean);
-        rawColors.push(...vals);
-      }
-    }
-  }
-
-  const sizes = sortSizes([...new Set(rawSizes.map(normalizeSize).filter(Boolean))]);
-  const colors = [...new Set(rawColors.filter(c => {
-    const k = c.trim().toLowerCase();
-    return k !== 'default title' && !SIZE_MAP[k] && k !== 'standard';
-  }))];
-
-  const image = p.images && p.images[0] ? p.images[0].src : '';
-  return { title: p.title, sizes, colors, image };
+  const sizeOpt = opts.find(o => SIZE_OPTION_NAMES.has(o.name));
+  const colorOpt = opts.find(o => COLOR_OPTION_NAMES.has(o.name));
+  const size = sizeOpt !== undefined ? getOptVal(variant, sizeOpt.pos) : null;
+  const color = colorOpt !== undefined ? getOptVal(variant, colorOpt.pos) : null;
+  return { size: size || null, color: color || null };
 }
 
-// ── GitHub: commit products.json ──────────────────────────────────────────────
-async function getFileSha() {
-  const res = await fetch(
-    `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/products.json?ref=${GITHUB_BRANCH}`,
-    { headers: { Authorization: `token ${GITHUB_TOKEN}`, Accept: 'application/vnd.github.v3+json' } }
-  );
-  if (!res.ok) return null;
-  return (await res.json()).sha;
-}
-async function commitProductsJson(content) {
-  const sha = await getFileSha();
-  const body = {
-    message: '[auto] sync products from Shopify',
-    content: Buffer.from(JSON.stringify(content)).toString('base64'),
-    branch: GITHUB_BRANCH,
-  };
-  if (sha) body.sha = sha;
-  const res = await fetch(
-    `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/products.json`,
-    {
-      method: 'PUT',
-      headers: {
-        Authorization: `token ${GITHUB_TOKEN}`,
-        Accept: 'application/vnd.github.v3+json',
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(body),
-    }
-  );
-  if (!res.ok) throw new Error(`GitHub error: ${res.status} ${await res.text()}`);
-}
-
-// ── Webhook HMAC verification ─────────────────────────────────────────────────
-function verifySignature(rawBody, signature) {
-  if (!SHOPIFY_SECRET) return true;
-  const expected = crypto.createHmac('sha256', SHOPIFY_SECRET).update(rawBody).digest('base64');
-  try { return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature || '')); }
-  catch { return false; }
+// ── Fetch inventory for a list of inventory_item_ids ─────────────────────────
+async function fetchInventory(inventoryItemIds) {
+  const map = {};
+  if (!inventoryItemIds.length) return map;
+  const ids = inventoryItemIds.join(',');
+  const url = `https://${SHOPIFY_DOMAIN}/admin/api/${SHOPIFY_API_VERSION}/inventory_levels.json?inventory_item_ids=${ids}&location_ids=${SHOPIFY_LOCATION_ID}&limit=250`;
+  const res = await fetch(url, { headers: await shopifyAdminHeaders() });
+  if (!res.ok) {
+    console.warn(`[shopify-webhook] Inventory fetch error: ${res.status}`);
+    return map;
+  }
+  const data = await res.json();
+  (data.inventory_levels || []).forEach(lvl => {
+    map[lvl.inventory_item_id] = lvl.available ?? 0;
+  });
+  return map;
 }
 
 // ── Main handler ──────────────────────────────────────────────────────────────
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
+  // Read raw body for HMAC
   const chunks = [];
   for await (const chunk of req) chunks.push(chunk);
   const rawBody = Buffer.concat(chunks).toString();
 
-  if (!verifySignature(rawBody, req.headers['x-shopify-hmac-sha256'])) {
-    return res.status(401).json({ error: 'Invalid signature' });
+  if (!verifyHmac(rawBody, req.headers['x-shopify-hmac-sha256'])) {
+    return res.status(401).json({ error: 'Invalid HMAC signature' });
   }
 
+  const topic = req.headers['x-shopify-topic'] || '';
+  let product;
   try {
-    // Wait 15s for Shopify to index the new/updated product in the public feed
-    await new Promise(resolve => setTimeout(resolve, 15000));
-    const products = await fetchAllProducts();
-    const entries = products.map(shopifyProductToEntry);
-    await commitProductsJson(entries);
-    console.log(`[shopify-webhook] synced ${entries.length} products`);
-    return res.status(200).json({ synced: entries.length });
-  } catch (err) {
-    console.error('[shopify-webhook]', err.message);
-    return res.status(500).json({ error: err.message });
+    product = JSON.parse(rawBody);
+  } catch {
+    return res.status(400).json({ error: 'Invalid JSON payload' });
   }
-}
+
+  // ── DELETE: remove variants from cache ───────────────────────────────────
+  if (topic === 'products/delete') {
+    const productId = product.id;
+    if (!productId) return res.status(200).json({ ok: true, action: 'delete_skipped' });
+    const sbRes = await fetch(
+      `${SB_URL}/rest/v1/shopify_variants_cache?product_id=eq.${productId}`,
+      { method: 'DELETE', headers: supabaseHeaders(true) }
+    );
+    console.log(`[shopify-webhook] DELETE product ${productId}: ${sbRes.status}`);
+    return res.status(200).json({ ok: true, action: 'deleted', product_id: productId });
+  }
+
+  // ── CREATE / UPDATE: upsert variants ─────────────────────────────────────
+  if (!product.variants || !product.variants.length) {
+    return res.status(200).json({ ok: true, action: 'no_variants' });
+  }
+
+  // Fetch inventory
+  const inventoryItemIds = product.variants
+    .map(v => v.inventory_item_id)
+    .filter(Boolean);
+  const inventoryMap = await fetchInventory(inventoryItemIds);
+
+  // Build upsert payload
+  const rows = product.variants.map(variant => {
+    const { size, color } = extractSizeColor(product, variant);
+    return {
+      product_id: product.id,
+      product_title: product.title,
+      variant_id: variant.id,
+      inventory_item_id: variant.inventory_item_id,
+      size: size || null,
+      color: color || null,
+      inventory_quantity: inventoryMap[variant.inventory_item_id] ?? 0,
+      updated_at: new Date().toISOString(),
+    };
+  });
+
+  // Upsert to Supabase
+  const upsertRes = await fetch(
+    `${SB_URL}/rest/v1/shopify_variants_cache?on_conflict=variant_id`,
+    {
+      method: 'POST',
+      headers: {
+        ...supabaseHeaders(true),
+        Prefer: 'resolution=merge-duplicates,return=minimal',
+      },
+      body: JSON.stringify(rows),
+    }
+  );
+
+  if (!upsertRes.ok) {
+    const err = await upsertRes.text();
+    console.error(`[shopify-webhook] Upsert error: ${upsertRes.status}`, err);
+    return res.status(500).json({ error: `Supabase upsert failed: ${upsertRes.status}` });
+  }
+
+  console.log(`[shopify-webhook] ${topic} → upserted ${rows.length} variants for "${product.title}"`);
+  return res.status(200).json({
+    ok: true,
+    action: topic,
+    product_id: product.id,
+    product_title: product.title,
+    variants_synced: rows.length,
+  });
+};
