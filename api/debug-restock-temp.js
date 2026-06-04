@@ -4,82 +4,99 @@ export default async function handler(req, res) {
   const SHOP = 'bjuanm-1r.myshopify.com';
   const TOKEN = process.env.SHOPIFY_ADMIN_TOKEN;
   const LOC = '85067202779';
+  const HEADERS = { 'X-Shopify-Access-Token': TOKEN, 'Content-Type': 'application/json' };
 
-  const targets = [
-    { search: 'Brésil Domicile 2024', sizes: ['S','M','L','XL','2XL'] },
-    { search: 'Allemagne Domicile 2026', sizes: ['S','M','L','XL','2XL'] },
+  // Exact titles from prior failed batch
+  const TARGET_TITLES = [
+    'Brésil - Maillot Domicile 2024/25',
+    'Brésil - Maillot Domicile Manches Longues 2025/26',
+    'Maillot Brésil Domicile 1998',
+    'Allemagne - Maillot Domicile 2026',
+    'Maillot Domicile Allemagne 26 Manches Longues Blanc',
   ];
+  const TARGET_SIZES = ['S','M','L','XL','2XL'];
 
   const log = [];
+  let pageUrl = `https://${SHOP}/admin/api/2024-01/products.json?limit=250&status=any`;
+  let allProducts = [];
 
-  for (const target of targets) {
-    // Search product
-    const searchUrl = `https://${SHOP}/admin/api/2024-01/products.json?title=${encodeURIComponent(target.search)}&limit=5`;
-    const sRes = await fetch(searchUrl, { headers: { 'X-Shopify-Access-Token': TOKEN } });
-    const sData = await sRes.json();
-    const products = sData.products || [];
+  // Paginate through all products
+  while (pageUrl) {
+    const r = await fetch(pageUrl, { headers: HEADERS });
+    const d = await r.json();
+    allProducts = allProducts.concat(d.products || []);
+    const linkHeader = r.headers.get('Link') || '';
+    const next = linkHeader.match(/<([^>]+)>;\s*rel="next"/);
+    pageUrl = next ? next[1] : null;
+    if (allProducts.length > 500) break; // safety limit
+  }
 
-    if (!products.length) {
-      log.push({ search: target.search, error: 'product not found' });
-      continue;
-    }
+  // Find matching products
+  const matched = allProducts.filter(p =>
+    TARGET_TITLES.some(t => p.title.includes(t.split(' ')[1] || t)) ||
+    TARGET_TITLES.some(t => p.title === t || p.title.startsWith(t.substring(0, 20)))
+  );
 
-    for (const product of products) {
-      log.push({ product: product.title, id: product.id });
+  log.push({ total_products_scanned: allProducts.length, matched_count: matched.length });
 
-      for (const variant of product.variants) {
-        const sizeMatch = target.sizes.some(s =>
-          variant.title === s || variant.option1 === s || variant.option2 === s
-        );
-        if (!sizeMatch) continue;
+  // Better: find all Brésil and Allemagne products
+  const relevant = allProducts.filter(p =>
+    p.title.toLowerCase().includes('brésil') ||
+    p.title.toLowerCase().includes('bresil') ||
+    p.title.toLowerCase().includes('allemagne')
+  );
+  log.push({ relevant_products: relevant.map(p => ({ id: p.id, title: p.title, status: p.status })) });
 
-        const variantInfo = {
-          variant_id: variant.id,
-          title: variant.title,
-          inventory_management: variant.inventory_management,
-          inventory_item_id: variant.inventory_item_id,
-        };
+  // Now try inventory set on the relevant variants
+  for (const product of relevant) {
+    for (const variant of product.variants) {
+      const sizeMatch = TARGET_SIZES.some(s =>
+        variant.title === s || variant.option1 === s
+      );
+      if (!sizeMatch) continue;
 
-        // Step 1: Check inventory level
-        const levUrl = `https://${SHOP}/admin/api/2024-01/inventory_levels.json?inventory_item_ids=${variant.inventory_item_id}&location_ids=${LOC}`;
-        const levRes = await fetch(levUrl, { headers: { 'X-Shopify-Access-Token': TOKEN } });
-        const levData = await levRes.json();
-        variantInfo.current_levels = levData.inventory_levels;
+      const entry = {
+        product_title: product.title,
+        variant_title: variant.title,
+        variant_id: variant.id,
+        inventory_item_id: variant.inventory_item_id,
+        inventory_management: variant.inventory_management,
+      };
 
-        // Step 2: If management not shopify, try to enable
-        if (variant.inventory_management !== 'shopify') {
-          const putRes = await fetch(`https://${SHOP}/admin/api/2024-01/variants/${variant.id}.json`, {
-            method: 'PUT',
-            headers: { 'X-Shopify-Access-Token': TOKEN, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ variant: { id: variant.id, inventory_management: 'shopify' } })
-          });
-          const putData = await putRes.json();
-          variantInfo.enable_tracking_status = putRes.status;
-          variantInfo.enable_tracking_response = putData;
-
-          // Step 3: Connect
-          const conRes = await fetch(`https://${SHOP}/admin/api/2024-01/inventory_levels/connect.json`, {
-            method: 'POST',
-            headers: { 'X-Shopify-Access-Token': TOKEN, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ location_id: LOC, inventory_item_id: variant.inventory_item_id })
-          });
-          const conData = await conRes.json();
-          variantInfo.connect_status = conRes.status;
-          variantInfo.connect_response = conData;
+      // Enable tracking if needed
+      if (variant.inventory_management !== 'shopify') {
+        const putRes = await fetch(`https://${SHOP}/admin/api/2024-01/variants/${variant.id}.json`, {
+          method: 'PUT',
+          headers: HEADERS,
+          body: JSON.stringify({ variant: { id: variant.id, inventory_management: 'shopify' } })
+        });
+        entry.enable_tracking_status = putRes.status;
+        if (putRes.status !== 200) {
+          entry.enable_tracking_body = await putRes.text();
         }
 
-        // Step 4: Set inventory
-        const setRes = await fetch(`https://${SHOP}/admin/api/2024-01/inventory_levels/set.json`, {
+        // Connect to location
+        const conRes = await fetch(`https://${SHOP}/admin/api/2024-01/inventory_levels/connect.json`, {
           method: 'POST',
-          headers: { 'X-Shopify-Access-Token': TOKEN, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ location_id: LOC, inventory_item_id: variant.inventory_item_id, available: 50 })
+          headers: HEADERS,
+          body: JSON.stringify({ location_id: LOC, inventory_item_id: variant.inventory_item_id })
         });
-        const setData = await setRes.json();
-        variantInfo.set_status = setRes.status;
-        variantInfo.set_response = setData;
-
-        log.push(variantInfo);
+        entry.connect_status = conRes.status;
+        if (conRes.status !== 201) {
+          entry.connect_body = await conRes.text();
+        }
       }
+
+      // Set inventory
+      const setRes = await fetch(`https://${SHOP}/admin/api/2024-01/inventory_levels/set.json`, {
+        method: 'POST',
+        headers: HEADERS,
+        body: JSON.stringify({ location_id: LOC, inventory_item_id: variant.inventory_item_id, available: 50 })
+      });
+      entry.set_status = setRes.status;
+      entry.set_body = await setRes.text();
+
+      log.push(entry);
     }
   }
 
