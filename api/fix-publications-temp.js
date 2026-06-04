@@ -51,7 +51,6 @@ module.exports = async (req, res) => {
             node {
               id
               title
-              publishedOnCurrentPublication
             }
           }
         }
