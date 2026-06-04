@@ -58,13 +58,15 @@ module.exports = async (req, res) => {
           }),
         });
 
-        const data = await r.json();
+        const txt = await r.text();
+        let data = {};
+        try { data = txt ? JSON.parse(txt) : {}; } catch (_) {}
+
         if (r.ok) {
           productResult.channels.push({ pub: pub.name, status: 'published' });
         } else {
-          const msg = JSON.stringify(data.errors || data).slice(0, 80);
-          // Already published = not an error
-          const alreadyPublished = msg.includes('already') || msg.includes('taken') || r.status === 422;
+          const msg = (JSON.stringify(data.errors || data) + txt).slice(0, 100);
+          const alreadyPublished = r.status === 422 || msg.includes('already') || msg.includes('taken');
           productResult.channels.push({ pub: pub.name, status: alreadyPublished ? 'already_ok' : 'error', msg: alreadyPublished ? undefined : msg });
         }
       }
