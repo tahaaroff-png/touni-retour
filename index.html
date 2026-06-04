@@ -559,10 +559,26 @@ async function dbDelete(id) {
   if (!r.ok) throw new Error(await r.text());
 }
 
-// CATALOGUE
+// CATALOGUE — chargé depuis Supabase shopify_variants_cache (mis à jour en temps réel)
 async function loadCatalog() {
-  try { var r = await fetch('products.json'); CAT = await r.json(); }
-  catch(e) { CAT = []; }
+  try {
+    var r = await fetch(SB_URL+'/rest/v1/shopify_variants_cache?select=product_title,size,color&limit=5000&order=product_title.asc', {
+      headers: {'apikey': SB_KEY, 'Authorization': 'Bearer '+SB_KEY}
+    });
+    var rows = await r.json();
+    var catMap = {};
+    rows.forEach(function(row) {
+      var t = row.product_title;
+      if (!catMap[t]) catMap[t] = { title: t, _sizes: new Set(), _colors: new Set(), image: '', sizes: [], colors: [] };
+      if (row.size) catMap[t]._sizes.add(row.size);
+      if (row.color) catMap[t]._colors.add(row.color);
+    });
+    CAT = Object.values(catMap).map(function(p) {
+      p.sizes = sortSizes([...p._sizes].map(normalizeSize).filter(Boolean));
+      p.colors = [...p._colors].filter(Boolean);
+      return p;
+    });
+  } catch(e) { CAT = []; }
 }
 
 // DROPDOWN
