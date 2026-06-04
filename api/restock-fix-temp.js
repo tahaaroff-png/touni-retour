@@ -7,6 +7,7 @@ const {
 
 const TARGET_KEYWORDS = ['brésil', 'bresil', 'allemagne'];
 const TARGET_SIZES = ['S', 'M', 'L', 'XL', '2XL'];
+const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 module.exports = async function handler(req, res) {
   const secret = req.query?.secret || req.headers['x-sync-secret'];
@@ -33,6 +34,8 @@ module.exports = async function handler(req, res) {
 
       const iid = variant.inventory_item_id;
 
+      await sleep(600); // stay under 2 calls/sec
+
       // Step 1: enable tracking if needed
       if (variant.inventory_management !== 'shopify') {
         const putRes = await fetch(`${base}/variants/${variant.id}.json`, {
@@ -40,6 +43,7 @@ module.exports = async function handler(req, res) {
           headers,
           body: JSON.stringify({ variant: { id: variant.id, inventory_management: 'shopify' } }),
         });
+        await sleep(600);
         if (!putRes.ok) {
           results.failed.push({ product: product.title, size, reason: `enable_tracking ${putRes.status}: ${await putRes.text()}` });
           continue;
@@ -49,6 +53,7 @@ module.exports = async function handler(req, res) {
           method: 'POST', headers,
           body: JSON.stringify({ location_id: LOC, inventory_item_id: iid }),
         });
+        await sleep(600);
         if (!conRes.ok && conRes.status !== 422) { // 422 = already connected
           results.failed.push({ product: product.title, size, reason: `connect ${conRes.status}: ${await conRes.text()}` });
           continue;
@@ -60,6 +65,7 @@ module.exports = async function handler(req, res) {
         `${base}/inventory_levels.json?inventory_item_ids=${iid}&location_ids=${LOC}`,
         { headers }
       );
+      await sleep(600);
       const levData = await levRes.json();
       const current = levData.inventory_levels?.[0]?.available ?? 0;
       if (current >= 50) {
