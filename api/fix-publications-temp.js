@@ -45,7 +45,7 @@ module.exports = async (req, res) => {
     const cursor = req.query.cursor || null;
     const productQuery = `
       query getProducts($cursor: String) {
-        products(first: 20, after: $cursor, query: "status:active") {
+        products(first: 20, after: $cursor, query: "status:ACTIVE") {
           pageInfo { hasNextPage endCursor }
           edges {
             node {
