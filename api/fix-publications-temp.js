@@ -58,6 +58,8 @@ module.exports = async (req, res) => {
       }
     `;
     const prodRes = await gql(productQuery, { cursor }, hdrs);
+    // Debug: surface any GQL errors
+    if (prodRes.errors) return res.status(500).json({ gql_errors: prodRes.errors });
     const pageInfo = prodRes.data?.products?.pageInfo;
     const products = prodRes.data?.products?.edges?.map(e => e.node) || [];
 
