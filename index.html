@@ -562,10 +562,18 @@ async function dbDelete(id) {
 // CATALOGUE — chargé depuis Supabase shopify_variants_cache (mis à jour en temps réel, avec images)
 async function loadCatalog() {
   try {
-    var r = await fetch(SB_URL+'/rest/v1/shopify_variants_cache?select=product_title,product_image,size,color&limit=5000&order=product_title.asc', {
-      headers: {'apikey': SB_KEY, 'Authorization': 'Bearer '+SB_KEY}
-    });
-    var rows = await r.json();
+    // Supabase plafonne à 1000 lignes/requête → on pagine pour tout récupérer (catalogue > 1000 variantes)
+    var rows = [];
+    var CHUNK = 1000;
+    for (var _off = 0; ; _off += CHUNK) {
+      var r = await fetch(SB_URL+'/rest/v1/shopify_variants_cache?select=product_title,product_image,size,color&order=product_title.asc', {
+        headers: {'apikey': SB_KEY, 'Authorization': 'Bearer '+SB_KEY, 'Range-Unit':'items', 'Range': _off+'-'+(_off+CHUNK-1)}
+      });
+      var batch = await r.json();
+      if (!Array.isArray(batch) || batch.length === 0) break;
+      rows = rows.concat(batch);
+      if (batch.length < CHUNK) break;
+    }
     var catMap = {};
     rows.forEach(function(row) {
       var t = row.product_title;
