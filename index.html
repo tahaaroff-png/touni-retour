@@ -158,6 +158,8 @@ td{padding:12px 14px;vertical-align:middle}
 .btn-save{background:#222;color:#fff;border:none;border-radius:var(--radius-btn);padding:0 26px;font-family:var(--font-main);font-size:13px;font-weight:600;cursor:pointer;transition:.3s ease-in-out;height:44px;letter-spacing:.02em}
 .btn-save:hover{background:#050505}
 .btn-cancel{background:transparent;border:1px solid var(--border);border-radius:var(--radius-btn);padding:0 22px;font-family:var(--font-main);font-size:13px;font-weight:600;cursor:pointer;color:var(--secondary);height:44px;transition:.3s ease}
+.btn-del-modal{margin-right:auto;background:transparent;border:1px solid #fca5a5;color:#dc2626;border-radius:var(--radius-btn);padding:0 18px;font-family:var(--font-main);font-size:13px;font-weight:600;cursor:pointer;height:44px;transition:.3s ease}
+.btn-del-modal:hover{background:#fef2f2;border-color:#dc2626}
 .btn-cancel:hover{border-color:var(--border-strong);color:var(--text)}
 .del{background:none;border:none;color:var(--muted2);cursor:pointer;width:30px;height:30px;border-radius:var(--radius-btn);font-size:18px;display:flex;align-items:center;justify-content:center;transition:.25s ease}
 .del:hover{color:var(--signal);background:var(--bg-soft)}
@@ -442,6 +444,7 @@ td{padding:12px 14px;vertical-align:middle}
       <div class="mf full"><label>Notes</label><input type="text" id="m-notes"></div>
     </div>
     <div class="modal-actions">
+      <button class="btn-del-modal" id="m-del-btn" onclick="delFromModal()">🗑 Supprimer</button>
       <button class="btn-cancel" onclick="closeModal()">Annuler</button>
       <button class="btn-save" onclick="saveModal()">Enregistrer</button>
     </div>
@@ -668,6 +671,16 @@ async function del(id) {
   var r=sessionStorage.getItem('role'); if(r!=='admin'&&r!=='staff') return;
   if(!confirm('Supprimer ?')) return;
   try { await dbDelete(id); stock=stock.filter(function(i){ return i.id!==id; }); render(); updateStats(); }
+  catch(e){ dot('err'); }
+}
+
+// DELETE depuis la fenêtre d'édition (admin + opératrice)
+async function delFromModal() {
+  if(!editId) return;
+  var role=sessionStorage.getItem('role'); if(role!=='admin'&&role!=='staff') return;
+  if(!confirm('Supprimer cet article ?')) return;
+  var id=editId;
+  try { await dbDelete(id); stock=stock.filter(function(i){ return i.id!==id; }); closeModal(); render(); updateStats(); }
   catch(e){ dot('err'); }
 }
 
