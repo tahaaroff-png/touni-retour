@@ -86,6 +86,7 @@ module.exports = async function handler(req, res) {
           inventory_item_id: variant.inventory_item_id,
           size,
           color,
+          status: product.status || 'active',
         });
         if (variant.inventory_item_id) {
           inventoryItemIds.push(variant.inventory_item_id);

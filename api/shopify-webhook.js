@@ -120,6 +120,7 @@ module.exports = async function handler(req, res) {
       size: size || null,
       color: color || null,
       inventory_quantity: inventoryMap[variant.inventory_item_id] ?? 0,
+      status: product.status || 'active',
       updated_at: new Date().toISOString(),
     };
   });

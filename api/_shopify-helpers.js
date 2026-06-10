@@ -101,7 +101,7 @@ function normalizeColor(c) {
 async function fetchShopifyProductsAdmin() {
   const headers = await shopifyAdminHeaders();
   const products = [];
-  let url = `https://${SHOPIFY_DOMAIN}/admin/api/${SHOPIFY_API_VERSION}/products.json?limit=250&fields=id,title,options,variants,images`;
+  let url = `https://${SHOPIFY_DOMAIN}/admin/api/${SHOPIFY_API_VERSION}/products.json?limit=250&fields=id,title,status,options,variants,images`;
   while (url) {
     const res = await fetch(url, { headers });
     if (!res.ok) throw new Error(`Shopify Admin error ${res.status}: ${await res.text()}`);
