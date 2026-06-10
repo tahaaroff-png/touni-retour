@@ -110,17 +110,18 @@ input::placeholder{color:var(--muted2)}
 .fb-all{border-color:#151515;color:#fff;background:#151515}
 .fb-dispo{border-color:var(--green);color:var(--green);background:transparent}
 .fb-rupture{border-color:var(--signal);color:var(--signal);background:transparent}
-.tbl-wrap{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:clip}
+.tbl-wrap{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:visible}
 table{width:100%;border-collapse:collapse;font-size:13px}
+td:last-child,th:last-child{white-space:nowrap;padding-right:14px}
 thead th{background:var(--bg-soft);padding:12px 14px;text-align:left;font-family:var(--font-main);font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);border-bottom:1px solid var(--border);white-space:nowrap;position:sticky;top:144px;z-index:80}
 tbody tr{border-bottom:1px solid var(--border);transition:background .2s}
 tbody tr:last-child{border-bottom:none}
 tbody tr:hover{background:var(--bg-soft)}
-td{padding:12px 14px;vertical-align:middle}
+td{padding:11px 11px;vertical-align:middle}
 .prod-cell{display:flex;align-items:center;gap:10px}
 .prod-thumb{width:40px;height:40px;object-fit:cover;border-radius:var(--radius-btn);border:1px solid var(--border);flex-shrink:0;background:var(--bg-soft)}
 .prod-ph{width:40px;height:40px;border-radius:var(--radius-btn);border:1px solid var(--border);flex-shrink:0;background:var(--bg-soft);display:flex;align-items:center;justify-content:center;font-size:16px}
-.pname{font-weight:500;color:var(--text);max-width:280px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
+.pname{font-weight:500;color:var(--text);max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
 .nnum{color:var(--muted2);font-size:11px;font-family:var(--font-main);font-variant-numeric:tabular-nums}
 .date-cell{font-size:12px;color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums}
 .badge{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:var(--radius-btn);font-family:var(--font-main);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;white-space:nowrap}
