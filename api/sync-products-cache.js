@@ -68,6 +68,7 @@ module.exports = async function handler(req, res) {
   }
 
   try {
+    const syncStart = new Date().toISOString();
     console.log('[sync-products-cache] Starting full sync...');
     const products = await fetchShopifyProductsAdmin();
     console.log(`[sync-products-cache] Fetched ${products.length} products`);
@@ -123,11 +124,23 @@ module.exports = async function handler(req, res) {
       }
     }
 
+    // Nettoyage des lignes fantômes (produits/variantes supprimés depuis Shopify) :
+    // toute ligne non touchée par cette synchro (updated_at < syncStart) n'existe plus.
+    let purged = 0;
+    try {
+      const delRes = await fetch(
+        `${SB_URL}/rest/v1/shopify_variants_cache?updated_at=lt.${encodeURIComponent(syncStart)}`,
+        { method: 'DELETE', headers: { ...supabaseHeaders(true), Prefer: 'return=representation' } }
+      );
+      if (delRes.ok) { const del = await delRes.json(); purged = Array.isArray(del) ? del.length : 0; }
+    } catch (e) { console.warn('[sync-products-cache] purge error', e.message); }
+
     return res.status(200).json({
       success: true,
       products_count: products.length,
       variants_count: enriched.length,
       upserted,
+      purged,
       out_of_stock: enriched.filter(v => v.inventory_quantity <= 0).length,
     });
   } catch (e) {
