@@ -115,6 +115,7 @@ module.exports = async (req, res) => {
     const orderItems = body.order_items || body.products || body.items || '';
     const total = body.total || body.order_total || body.amount || '';
     const city = body.city || body.ville || '';
+    console.log('[ai-reply] IN method=%s ct=%s keys=%j text=%j name=%j', req.method, (req.headers || {})['content-type'], Object.keys(body || {}), String(text).slice(0, 80), name);
     if (!text || String(text).trim().length === 0) return res.status(200).json({ reply: '', send: false, intent: 'answer', skipped: 'no_text' });
 
     // ───────── Portes (l'intelligence est ici, pas dans eGrow) ─────────
