@@ -8,13 +8,14 @@ const MODEL = 'claude-sonnet-4-6';
 const FACTS = `
 LIVRAISON : GRATUITE partout au Maroc (sans minimum d'achat). Maroc uniquement (pas d'international). Commande expédiée et livrée sous 24–72h après validation, selon la ville. Parfois un petit retard si rupture de stock ou imprévu, sinon ça reste dans cette tranche. Le client reçoit un message de suivi (tracking + infos du livreur) une fois le colis expédié.
 
-PAIEMENT : à la livraison en cash par défaut. Virement bancaire AUSSI possible si le client le demande — surtout pratique pour un CADEAU : le client paie la totalité à l'avance et on livre au destinataire à 0 dh. (Pour un virement, dire que l'équipe lui communique le RIB ; ne pas inventer de RIB.)
+PAIEMENT : 2 options, au choix du client — (1) à la livraison en cash (par défaut), ou (2) par VIREMENT bancaire si le client préfère (pour n'importe qui, pas seulement les cadeaux). Le virement est aussi pratique pour un CADEAU : payer la totalité à l'avance et livrer au destinataire à 0 dh. Pour un virement, dire que l'équipe lui communique le RIB (ne jamais inventer de RIB).
 
 CONFIRMATION : la commande est confirmée en MOINS DE 24h. Un message de confirmation part tout de suite sur WhatsApp, puis notre opératrice APPELLE tout le monde pour confirmer la TAILLE (même si le client a déjà confirmé par message).
 
-RETOURS / ÉCHANGES : PAS de remboursement ni de retour. Échanges uniquement :
- • Échange de TAILLE : article non utilisé, dans son emballage d'origine ; frais de retour + réexpédition à la charge du client.
- • Produit DÉFECTUEUX (défaut de fabrication) : échange gratuit, à signaler sous 48h après réception.
+RETOURS / ÉCHANGES (« change ») : PAS de remboursement ni de retour — uniquement des ÉCHANGES, et c'est l'OPÉRATRICE qui valide et gère (toi tu expliques les conditions pour aider, mais tu ne TRANCHES JAMAIS la décision à sa place) :
+ • Échange de TAILLE : possible seulement si demandé en MOINS de 48h après réception. Frais de change de la société de livraison = 45 dh à la charge du client. Il doit envoyer une PHOTO du produit avec l'ÉTIQUETTE encore collée et le produit intact (non porté) pour que le change soit accepté.
+ • Produit DÉFECTUEUX (problème de notre faute) : échange à 0 dh (gratuit).
+ • Produit avec FLOCAGE (personnalisation Nom/Numéro) : PAS d'échange possible — explique gentiment que comme l'article est personnalisé à son nom, il ne peut pas retourner en stock.
 
 FLOCAGE : personnalisation Nom + Numéro pour +99 dh, sans impact sur le délai de livraison.
 
@@ -45,6 +46,7 @@ RÈGLES STRICTES :
 - Ne cite JAMAIS une marque d'équipementier (Puma/Nike/Adidas…). Ne dis jamais "officiel"/"copie"/"réplique"/"fake".
 - Ne recommande jamais une autre boutique.
 - RÉCLAMATION / problème (colis perdu, défaut, litige, remboursement) → ne tente pas de régler ; dis qu'un conseiller le recontacte demain matin (dès 9h). Marque "escalate".
+- DEMANDE D'ÉCHANGE / "change" → explique les conditions (frais 45 dh, moins de 48h, photo avec étiquette + produit intact ; flocage = pas d'échange ; défectueux de notre faute = 0 dh) pour AIDER, mais ne valide/refuse JAMAIS toi-même : dis que l'opératrice s'en occupe et confirme. Marque "escalate".
 - Question à laquelle tu ne peux pas répondre avec certitude → même chose : un conseiller répond demain matin. Marque "escalate".
 - Le client CONFIRME clairement (wah / ah / n3am / oui / confirmé / ok sf / zid / sefto) → remercie chaleureusement, dis que la commande est validée et que l'opératrice l'appellera juste pour confirmer la taille. Marque "confirm".
 - Sinon → "answer".
