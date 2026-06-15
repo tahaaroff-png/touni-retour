@@ -123,7 +123,8 @@ module.exports = async (req, res) => {
     // 1) Ignorer les clics sur boutons de template (si eGrow nous passe le flag)
     const isButtonFlag = body.is_button === true || body.is_button === 'true' || body.is_button === 1 || body.is_button === '1' || body.from_button === true || body.from_button === 'true';
     const isButtonText = BUTTON_SET.has(normLabel(text));
-    if ((isButtonFlag || isButtonText) && !bypass) return res.status(200).json({ reply: '', send: false, intent: 'skip', skipped: 'button' });
+    // Un clic bouton n'est JAMAIS traité par l'agent (même en mode test) → laisse le système de base gérer.
+    if (isButtonFlag || isButtonText) return res.status(200).json({ reply: '', send: false, intent: 'skip', skipped: 'button' });
     // 2) Heure du Maroc : ne répondre QUE hors heures opératrice (18h→9h). 'unanswered=1' force la réponse (branche "1h sans réponse").
     const unanswered = body.unanswered === true || body.unanswered === 'true' || q.unanswered === '1';
     let maHour = null;
