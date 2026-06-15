@@ -4,6 +4,16 @@ const SECRET = 'touni-sync-2026';
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY || '';
 const MODEL = 'claude-sonnet-4-6';
 
+// Libellés des boutons de templates eGrow → si le message entrant = un de ces textes (clic bouton), l'agent NE répond PAS.
+const BUTTON_LABELS = [
+  "Problème de taille", "Autre raison", "Reprogrammer la livraison", "Repasser une commande",
+  "Ne rien faire", "Maintenir la commande", "Annuler la commande", "Confirmer l'annulation",
+  "Choisir un autre", "Annuler l'envoi", "Confirmer", "Annuler définitivement", "Modifier",
+  "Annuler", "Rien à modifier", "Confirmer ma commande", "Repasser commande", "Contacter le support",
+];
+const normLabel = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+const BUTTON_SET = new Set(BUTTON_LABELS.map(normLabel));
+
 // ───────── Faits business (source de vérité, éditables ici) ─────────
 const FACTS = `
 LIVRAISON : GRATUITE partout au Maroc (sans minimum d'achat). Maroc uniquement (pas d'international). Commande expédiée et livrée sous 24–72h après validation, selon la ville. Parfois un petit retard si rupture de stock ou imprévu, sinon ça reste dans cette tranche. Le client reçoit un message de suivi (tracking + infos du livreur) une fois le colis expédié.
@@ -111,8 +121,9 @@ module.exports = async (req, res) => {
     const q = req.query || {};
     const bypass = q.test === '1' || q.force === '1' || body.test === true; // pour tester à toute heure
     // 1) Ignorer les clics sur boutons de template (si eGrow nous passe le flag)
-    const isButton = body.is_button === true || body.is_button === 'true' || body.is_button === 1 || body.is_button === '1' || body.from_button === true || body.from_button === 'true';
-    if (isButton && !bypass) return res.status(200).json({ reply: '', send: false, intent: 'skip', skipped: 'button' });
+    const isButtonFlag = body.is_button === true || body.is_button === 'true' || body.is_button === 1 || body.is_button === '1' || body.from_button === true || body.from_button === 'true';
+    const isButtonText = BUTTON_SET.has(normLabel(text));
+    if ((isButtonFlag || isButtonText) && !bypass) return res.status(200).json({ reply: '', send: false, intent: 'skip', skipped: 'button' });
     // 2) Heure du Maroc : ne répondre QUE hors heures opératrice (18h→9h). 'unanswered=1' force la réponse (branche "1h sans réponse").
     const unanswered = body.unanswered === true || body.unanswered === 'true' || q.unanswered === '1';
     let maHour = null;
