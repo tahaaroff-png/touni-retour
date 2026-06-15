@@ -56,12 +56,49 @@ CONTEXTE DE SA COMMANDE (si fourni) : utilise-le pour personnaliser (produit, pr
 FORMAT DE SORTIE : réponds UNIQUEMENT avec un objet JSON valide, rien d'autre :
 {"reply":"<ton message au client>","intent":"answer|confirm|escalate"}`;
 
+// ───────── Lecture robuste du body (JSON, urlencoded, multipart/form-data eGrow) ─────────
+function tryParse(raw, req) {
+  if (!raw) return null;
+  try { return JSON.parse(raw); } catch (e) {}
+  const ct = (req.headers && req.headers['content-type']) || '';
+  if (ct.indexOf('multipart/form-data') !== -1) {
+    const m = ct.match(/boundary=("?)([^";]+)\1/);
+    if (m) {
+      const out = {};
+      raw.split('--' + m[2]).forEach(function (part) {
+        const nm = part.match(/name="([^"]+)"/);
+        if (!nm) return;
+        const i = part.indexOf('\r\n\r\n');
+        if (i === -1) return;
+        out[nm[1]] = part.slice(i + 4).replace(/[\r\n]+--?$/, '').replace(/[\r\n]+$/, '');
+      });
+      if (Object.keys(out).length) return out;
+    }
+  }
+  try { const o = {}; new URLSearchParams(raw).forEach(function (v, k) { o[k] = v; }); if (Object.keys(o).length) return o; } catch (e) {}
+  return null;
+}
+async function getBody(req) {
+  const b = req.body;
+  if (b && typeof b === 'object' && !Buffer.isBuffer(b) && Object.keys(b).length) return b;
+  if (typeof b === 'string' && b.length) { const p = tryParse(b, req); if (p) return p; }
+  if (Buffer.isBuffer(b) && b.length) { const p = tryParse(b.toString('utf8'), req); if (p) return p; }
+  const raw = await new Promise(function (resolve) {
+    let d = '';
+    try { req.setEncoding('utf8'); } catch (e) {}
+    req.on('data', function (c) { d += c; if (d.length > 2e6) { try { req.destroy(); } catch (e) {} } });
+    req.on('end', function () { resolve(d); });
+    req.on('error', function () { resolve(''); });
+  });
+  return tryParse(raw, req) || {};
+}
+
 module.exports = async (req, res) => {
   if ((req.query || {}).secret !== SECRET) return res.status(401).json({ error: 'unauthorized' });
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
   if (!ANTHROPIC_KEY) return res.status(503).json({ error: 'ANTHROPIC_API_KEY missing' });
   try {
-    let body = req.body; if (typeof body === 'string') { try { body = JSON.parse(body); } catch (e) { body = {}; } }
+    let body = await getBody(req);
     body = body || {};
     const text = body.message || body.text || body.body || body.content || body.last_message || '';
     const name = body.customer_name || body.name || body.contact_name || body.first_name || '';
