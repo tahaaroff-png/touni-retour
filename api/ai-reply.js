@@ -68,7 +68,20 @@ module.exports = async (req, res) => {
     const orderItems = body.order_items || body.products || body.items || '';
     const total = body.total || body.order_total || body.amount || '';
     const city = body.city || body.ville || '';
-    if (!text || String(text).trim().length === 0) return res.status(200).json({ reply: '', intent: 'answer', skipped: 'no_text' });
+    if (!text || String(text).trim().length === 0) return res.status(200).json({ reply: '', send: false, intent: 'answer', skipped: 'no_text' });
+
+    // ───────── Portes (l'intelligence est ici, pas dans eGrow) ─────────
+    const q = req.query || {};
+    const bypass = q.test === '1' || q.force === '1' || body.test === true; // pour tester à toute heure
+    // 1) Ignorer les clics sur boutons de template (si eGrow nous passe le flag)
+    const isButton = body.is_button === true || body.is_button === 'true' || body.is_button === 1 || body.is_button === '1' || body.from_button === true || body.from_button === 'true';
+    if (isButton && !bypass) return res.status(200).json({ reply: '', send: false, intent: 'skip', skipped: 'button' });
+    // 2) Heure du Maroc : ne répondre QUE hors heures opératrice (18h→9h). 'unanswered=1' force la réponse (branche "1h sans réponse").
+    const unanswered = body.unanswered === true || body.unanswered === 'true' || q.unanswered === '1';
+    let maHour = null;
+    try { maHour = parseInt(new Intl.DateTimeFormat('en-GB', { timeZone: 'Africa/Casablanca', hour: '2-digit', hour12: false }).format(new Date()), 10); } catch (e) {}
+    const inWorkHours = maHour !== null && maHour >= 9 && maHour < 18;
+    if (!bypass && !unanswered && inWorkHours) return res.status(200).json({ reply: '', send: false, intent: 'skip', skipped: 'work_hours', hour: maHour });
 
     let ctx = '';
     if (orderItems || total || city) {
@@ -86,7 +99,7 @@ module.exports = async (req, res) => {
     let raw = (data.content && data.content[0] && data.content[0].text) || '';
     let parsed = { reply: raw.trim(), intent: 'answer' };
     try { const m = raw.match(/\{[\s\S]*\}/); if (m) { const j = JSON.parse(m[0]); if (j.reply) parsed = { reply: j.reply, intent: j.intent || 'answer' }; } } catch (e) {}
-    return res.status(200).json({ reply: parsed.reply, intent: parsed.intent, usage: data.usage });
+    return res.status(200).json({ reply: parsed.reply, intent: parsed.intent, send: parsed.reply && parsed.reply.trim().length > 0 ? true : false, usage: data.usage });
   } catch (e) {
     return res.status(500).json({ error: String(e) });
   }
