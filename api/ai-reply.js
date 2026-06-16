@@ -104,6 +104,54 @@ async function findMovableDeal(phone) {
   }
   return null; // pas trouvé dans une étape avant-envoi → soit expédiée, soit pas de commande → on ne bouge pas
 }
+// Catégorie d'une étape de pipeline eGrow → pour le suivi de commande.
+const STAGE_CAT = (() => {
+  const m = {};
+  [49152, 49214, 49209, 49210].forEach((id) => (m[id] = 'livree'));                                  // Livrée / Reçu / Payé / Facturé
+  [49150, 49151, 49197, 49199, 49200, 49213, 49154, 49212, 49201, 49202].forEach((id) => (m[id] = 'en_route')); // Traiter→Expédié→Ramassé→distribution→en cours
+  [49147, 62357, 49148, 49396, 53444, 51500, 55207, 49397, 49430, 49431].forEach((id) => (m[id] = 'avant_envoi')); // Pending/En attente/Confirmé/relances
+  [49149, 49153, 49205, 49206, 49155, 49265, 60359, 59765, 49211].forEach((id) => (m[id] = 'annulee_retour'));     // Annulée / Retour
+  return m;
+})();
+// État RÉEL des commandes du client (toutes étapes) → texte injecté à l'agent / renvoyé par l'outil statut_commande.
+async function getOrderStatus(phone) {
+  const digits = String(phone || '').replace(/\D/g, '');
+  if (!digits) return 'Aucun numéro disponible pour retrouver la commande.';
+  let deals = [];
+  try {
+    const r = await egrowPost('/deal/getStageDeals.php', { search: digits, page: 1, limit: 10 });
+    deals = Array.isArray(r) ? r : (r && r.data) || [];
+  } catch (e) {}
+  deals = deals.filter((d) => { const dp = String((d.contact && d.contact.phone) || '').replace(/\D/g, ''); return dp && (dp === digits || dp.endsWith(digits) || digits.endsWith(dp)); });
+  if (!deals.length) return "Aucune commande trouvée pour ce client dans le système (peut-être pas encore commandé, ou via un autre numéro). Ne parle pas d'une commande existante ; aide-le à en passer une.";
+  const lines = deals.slice(0, 4).map((d) => {
+    const st = d.stage || {}; const cat = STAGE_CAT[st.id] || 'autre';
+    const prods = (Array.isArray(d.products) ? d.products : []).map((p) => `${p.quantity || 1}x ${String(p.name || '').trim()}`).join(', ');
+    return `• Commande ${d.deal_number || d.id} — étape « ${String(st.name || '?').trim()} » [${cat}]${prods ? ' — ' + prods : ''}${d.deal_city ? ' — ' + d.deal_city : ''}`;
+  });
+  return `ÉTAT RÉEL DES COMMANDES DU CLIENT (eGrow, en direct) :\n${lines.join('\n')}\n\nSignification des catégories → avant_envoi = pas encore expédiée : le client peut MODIFIER ou ANNULER SANS frais. en_route = déjà expédiée / en distribution : NE PAS modifier, dis-lui qu'elle arrive (24-72h). livree = déjà livrée : échange possible (48h après réception, ~45 dh, photo + étiquette). annulee_retour = annulée ou retournée.`;
+}
+// Outils (function calling) que l'agent Claude peut appeler lui-même pour aller chercher la donnée live.
+const AGENT_TOOLS = [
+  {
+    name: 'chercher_catalogue',
+    description: "Recherche EN DIRECT dans le catalogue Shopify le PRIX EXACT, les TAILLES en stock et la disponibilité d'un produit. À utiliser OBLIGATOIREMENT avant d'annoncer un prix ou une dispo que tu n'as pas déjà, noir sur blanc, dans le bloc CATALOGUE — par ex. un produit reconnu sur une PHOTO, un modèle précis, le prix d'une équipe/édition. Donne une recherche simple : nom d'équipe / type / année (ex: 'Maroc rétro 1998', 'ballon', 'casquette', 'kit Liverpool').",
+    input_schema: { type: 'object', properties: { recherche: { type: 'string', description: "mots-clés du produit (équipe, type, année…)" } }, required: ['recherche'] },
+  },
+  {
+    name: 'statut_commande',
+    description: "Donne l'état RÉEL de la/les commande(s) du client (étape du pipeline : en attente, confirmée, expédiée, en distribution, LIVRÉE, annulée, retournée) avec les produits. À utiliser pour TOUTE question de suivi/livraison, et OBLIGATOIREMENT avant de parler d'échange/retour/annulation/modification (pour savoir si c'est déjà livré ou pas encore parti).",
+    input_schema: { type: 'object', properties: {}, required: [] },
+  },
+];
+async function runAgentTool(name, input, phone) {
+  if (name === 'chercher_catalogue') {
+    const res = await searchCatalog(String((input && input.recherche) || ''));
+    return res || "Aucun produit ACTIF en stock ne correspond à cette recherche dans le catalogue live. Ne dis PAS qu'on ne le vend pas : propose la page équipe/catégorie (NOS PAGES) ou demande une précision.";
+  }
+  if (name === 'statut_commande') return await getOrderStatus(phone);
+  return 'Outil inconnu.';
+}
 // Déplace un deal vers un stage (confirm = 49148, cancel = 49149).
 async function moveDeal(deal, targetStage) {
   return egrowPost('/deal/updateDealOrderinNewStage.php', {
@@ -321,7 +369,7 @@ async function runPoll(q) {
         // Historique de la conversation → réponse en contexte (multi-tours)
         let history = [];
         try {
-          const raw = await egrowGetMessages(c.id, 14);
+          const raw = await egrowGetMessages(c.id, 30); // mémoire élargie : voir tout le fil (ex: 2 maillots ajoutés tôt + 1 plus tard)
           history = raw
             .filter((m) => { const t = (m.type || ''); return t === 'text' || t === 'template'; })
             .map((m) => ({ role: (m.mine === true || m.mine === 'true') ? 'assistant' : 'user', content: (m.body || (m.content && m.content.body) || '').toString() }))
@@ -348,7 +396,8 @@ async function runPoll(q) {
         } catch (e) {}
 
         const decision = await handleIncoming(
-          { text: body, name: c.title || (c.contact && c.contact.name) || '', city: (c.contact && c.contact.city) || '', history, catalog, imageBase64, imageMime },
+          { text: body, name: c.title || (c.contact && c.contact.name) || '', city: (c.contact && c.contact.city) || '', history, catalog, imageBase64, imageMime,
+            tools: AGENT_TOOLS, runTool: (n, i) => runAgentTool(n, i, contactWaId) },
           { bypassTime }
         );
         if (decision && decision.reply) decision.reply = await sanitizeReplyLinks(decision.reply); // anti-lien-cassé
@@ -444,7 +493,9 @@ module.exports = async (req, res) => {
     let catalog = ''; try { const [cb, prod] = await Promise.all([buildCollectionsBlock(), searchCatalog(text)]); catalog = [cb, prod].filter(Boolean).join('\n\n'); } catch (e) {}
     const imageBase64 = body.image_base64 || null;
     const imageMime = body.image_mime || 'image/jpeg';
-    const d = await handleIncoming({ text, name, orderItems, total, city, catalog, imageBase64, imageMime }, opts);
+    const testPhone = String(body.phone || body.contactWaId || q.only || '').replace(/\D/g, '');
+    const d = await handleIncoming({ text, name, orderItems, total, city, catalog, imageBase64, imageMime,
+      tools: AGENT_TOOLS, runTool: (n, i) => runAgentTool(n, i, testPhone) }, opts);
     if (d && d.reply) d.reply = await sanitizeReplyLinks(d.reply); // anti-lien-cassé
     return res.status(200).json({ reply: d.reply || '', intent: d.intent || 'answer', note: d.note || '', order: d.order || null, send: !!d.send, skipped: d.skipped, hour: d.hour, usage: d.usage, catalogText: catalog || '' });
   } catch (e) {

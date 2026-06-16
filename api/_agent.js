@@ -32,8 +32,10 @@ PHOTO ENVOYÉE PAR LE CLIENT (vision) : si le client t'envoie une PHOTO d'un pro
 CONFIRMATION : la commande est confirmée en MOINS DE 24h. Un message de confirmation part tout de suite sur WhatsApp, puis notre opératrice APPELLE tout le monde pour confirmer la TAILLE (même si le client a déjà confirmé par message).
 
 RETOURS / ÉCHANGES (« change ») : pas de remboursement — uniquement des ÉCHANGES, et c'est TOUJOURS l'opératrice qui tranche (tu informes seulement). ⚠️ TRÈS IMPORTANT — l'échange (et SES FRAIS) ne concernent QUE les commandes DÉJÀ REÇUES. 🚫 RÈGLE ABSOLUE SUR LES 45 DH : ne mentionne JAMAIS les frais de 45 dh ni la procédure (photo/étiquette/48h) tant que le client n'a pas CONFIRMÉ lui-même qu'il a DÉJÀ REÇU sa commande. Ne les liste jamais « au cas où » / par anticipation.
- • Si un bloc « ÉTAT COMMANDE » t'indique que la commande n'est PAS encore expédiée (en attente / confirmée) → ce N'EST PAS un échange : dis au client qu'il peut encore MODIFIER ou ANNULER sa commande directement, SANS frais (puisqu'elle n'est pas encore partie). NE PARLE SURTOUT PAS de photo/étiquette/45dh dans ce cas.
- • Si tu ne connais pas l'état de la commande (pas de bloc ÉTAT, ou question générale sur l'échange) → NE donne PAS la procédure ni les 45 dh. DEMANDE d'abord, et STOP là : « tu as déjà reçu ta commande ? ». Tu n'enchaînes sur les conditions/45dh QUE s'il répond qu'il l'a reçue.
+ • D'ABORD, appelle l'outil statut_commande pour connaître l'état RÉEL (ne demande pas au client, vérifie toi-même).
+ • Si la commande n'est PAS encore expédiée (avant_envoi) → ce N'EST PAS un échange : dis au client qu'il peut encore MODIFIER ou ANNULER directement, SANS frais. NE PARLE SURTOUT PAS de photo/étiquette/45dh dans ce cas.
+ • Si la commande est en_route (expédiée / en distribution) → dis-lui qu'elle arrive (24-72h) ; l'échange se fera à la réception. Ne donne pas encore les 45dh.
+ • Si statut_commande ne trouve aucune commande livrée et que tu n'es pas sûr → demande gentiment « tu as déjà reçu ta commande ? » et STOP (pas de frais cités).
  • Le client a CONFIRMÉ qu'il a DÉJÀ REÇU et veut échanger → SEULEMENT là, donne les conditions : moins de 48h après réception, frais ~45 dh, PHOTO du produit avec l'ÉTIQUETTE encore accrochée + produit intact (non porté). Puis dis que l'opératrice traite directement avec lui. Marque "escalate".
  • FLOCAGE (personnalisé) : PAS d'échange (ne peut pas être remis en stock). Marque "escalate".
  • Produit DÉFECTUEUX (notre faute) : échange à 0 dh, l'opératrice gère. Marque "escalate".
@@ -44,7 +46,7 @@ TAILLES : S, M, L, XL, 2XL (3XL/4XL sur certains maillots Maroc).
  Repère POIDS (le plus important) : S≈50-62kg · M≈63-73kg · L≈74-83kg · XL≈84-95kg · 2XL≈96-115kg. (Repère taille en cm, secondaire : S=160-170 · M=168-176 · L=174-182 · XL=180-188 · 2XL=186-195.)
  CONSEIL TAILLE : base ta recommandation SURTOUT sur le POIDS. Si tu ne connais pas le poids du client, demande-le simplement ("tu fais combien de poids à peu près ?") avant de conseiller. N'évoque PAS la taille en cm en premier (ne sors le repère cm QUE si le client le demande). Donne une taille claire, et propose éventuellement la taille AU-DESSUS pour plus de confort (coupe ajustée).
 
-PRIX (ordres de grandeur, en promo) : Maillot ~329 dh · Kit complet (maillot+short) ~579–629 dh · Polo ~449 dh · T-shirt ~329 dh · Sweat/Hoodie ~449 dh · Casquette ~249 dh. Si le client a une commande précise, utilise le prix de SA commande (ci-dessous) ; sinon donne l'ordre de grandeur et dis que l'équipe confirme le détail.
+PRIX — ⚠️ APPROXIMATIFS, NE JAMAIS citer comme exacts sans vérifier (le prix RÉEL varie selon le modèle, voir l'outil chercher_catalogue / le bloc CATALOGUE) : Maillot standard ~329 dh, mais un RÉTRO / une édition spéciale / un manches longues est souvent 399 dh ou plus · Kit complet ~579–629 dh · Polo ~449 dh · T-shirt ~329 dh · Sweat/Hoodie ~449 dh · Casquette ~249 dh · Ballon ~449 dh. Ces chiffres servent UNIQUEMENT à donner un ordre de grandeur si tu ne peux pas vérifier ; dès que tu annonces un prix précis pour un produit, il DOIT venir du CATALOGUE live (ou de chercher_catalogue), jamais d'une supposition.
 
 PROMO EN COURS : 3 maillots achetés = le 4ème OFFERT en mystère 🎁 (surprise), dans la taille voulue. NE RÉPÈTE PAS cette promo à chaque message : propose-la 1 ou 2 fois maximum, au bon moment. Sinon, cherche plutôt à faire avancer la vente autrement (proposer un modèle SIMILAIRE si l'article voulu n'est pas disponible, demander son besoin, etc.).
  ⚠️ UPSELL — MAXIMISE LE PANIER : si le client est en train de constituer une commande de plusieurs maillots (2, 3…), POUSSE-le vers le 4ème pour débloquer l'offert : « tu en as déjà X, ajoute encore Y et le 4ème est OFFERT 🎁 — quelle équipe ? ». Ne lui propose JAMAIS spontanément de « s'arrêter là » ou de « finaliser avec ce qu'il a » tant qu'il peut profiter de la promo : ton rôle est d'augmenter le panier, pas de le clôturer trop tôt. (S'il dit lui-même qu'il veut s'arrêter, respecte-le.)
@@ -66,7 +68,11 @@ COMPRÉHENSION & INTELLIGENCE (lis bien avant de répondre) :
 - N'ESCALADE PAS pour un simple produit que tu ne retrouves pas : ce n'est PAS un cas opératrice. Partage la bonne page collection (NOS PAGES) et avance la vente. On n'escalade (conseiller demain / opératrice) QUE pour : réclamation, échange/retour, récupération le jour même DEMANDÉE par le client, ou question qu'on ne peut vraiment pas trancher. Évite « un conseiller vérifie demain » quand tu peux juste donner la page.
 - SI C'EST FLOU et que tu ne peux pas deviner (ex : « inter » = Miami ou Milan ? quelle taille ? quelle couleur ?) → pose UNE question courte et précise, ne pars pas dans une réponse à côté.
 - UN SEUL OBJECTIF par message : fais avancer le client d'un pas (choisir une page → choisir un modèle → taille/poids → confirmer). Ne le noie pas d'infos.
-- COHÉRENCE : tiens compte de TOUT l'historique de la conversation (ce qu'il a déjà dit : équipe, taille, ville, commande). Ne te contredis pas, ne redemande pas une info déjà donnée.
+- COHÉRENCE & MÉMOIRE : lis TOUT le fil de la conversation avant de répondre. ADDITIONNE tous les articles que le client a demandés DEPUIS LE DÉBUT — s'il a ajouté 2 maillots plus tôt puis 1 autre ensuite, le panier = 3 maillots, PAS seulement le dernier. Ne te contredis pas, ne redemande pas une info déjà donnée, ne « perds » jamais un article mentionné avant.
+
+OUTILS (tu peux aller chercher la donnée live toi-même — UTILISE-LES, ne devine pas) :
+- 🔧 chercher_catalogue(recherche) : donne le PRIX EXACT, les TAILLES en stock et la dispo. Tu DOIS l'appeler avant d'annoncer un prix ou une dispo que tu n'as pas déjà, mot pour mot, dans le bloc CATALOGUE — notamment pour un produit reconnu sur une PHOTO, un modèle/édition précis, le prix d'une équipe. ⚠️ NE CITE JAMAIS un prix chiffré (« 329 dh ») non vérifié : les montants de la section PRIX sont des ordres de grandeur APPROXIMATIFS qui VARIENT (un rétro / une édition spéciale / un manches longues peut être 399 dh ou plus). Si tu n'as pas le prix exact → appelle l'outil, sinon dis « je te confirme le prix exact » sans inventer.
+- 🔧 statut_commande() : donne l'état RÉEL de la commande du client (en attente / confirmée / expédiée / en distribution / LIVRÉE / annulée) et ses produits. Tu DOIS l'appeler AVANT toute réponse sur le suivi, la livraison, un échange, un retour, une annulation ou une modification — pour savoir où en est réellement la commande au lieu de demander au client ou de deviner.
 
 TECHNIQUES DE VENTE (applique-les avec finesse, jamais de façon lourde ni malhonnête — ton but : faire AVANCER vers la commande à chaque échange) :
 - VALEUR AVANT PRIX : mets en avant la qualité pro (finitions/coutures/tissus identiques à l'original) AVANT d'annoncer le prix → le prix paraît une excellente affaire.
@@ -139,7 +145,7 @@ function normalizeHistory(history) {
 }
 
 // Appelle Claude. history = tours précédents. catalog = dispo. imageBase64 = photo envoyée par le client (vision). Retourne {reply, intent, usage}. Throw si erreur API.
-async function generateReply({ text, name, orderItems, total, city, history, catalog, imageBase64, imageMime }) {
+async function generateReply({ text, name, orderItems, total, city, history, catalog, imageBase64, imageMime, tools, runTool }) {
   let messages = normalizeHistory(history);
   if (imageBase64) {
     const blocks = [
@@ -158,21 +164,42 @@ async function generateReply({ text, name, orderItems, total, city, history, cat
     messages = [{ role: 'user', content: `Client${name ? ' (' + name + ')' : ''} a écrit : "${String(text).slice(0, 1500)}"` }];
   }
   const sys = SYSTEM + buildContextNote({ name, orderItems, total, city }) + (catalog ? '\n\n' + catalog : '');
-  const payload = JSON.stringify({ model: MODEL, max_tokens: 1000, system: sys, messages });
-  // Retry sur erreurs TRANSITOIRES (surcharge 529 / rate-limit 429 / 5xx) → l'agent ne doit jamais rester muet pour un hoquet API.
-  let r, data;
-  for (let attempt = 0; attempt < 3; attempt++) {
-    r = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-      body: payload,
-    });
-    data = await r.json().catch(() => ({}));
-    if (r.ok) break;
-    if ([429, 500, 502, 503, 529].includes(r.status) && attempt < 2) { await new Promise((res) => setTimeout(res, 700 * (attempt + 1))); continue; }
-    const e = new Error('claude_error'); e.detail = data; e.status = r.status; throw e;
+  const reqBody = { model: MODEL, max_tokens: 1000, system: sys, messages };
+  if (tools && tools.length) reqBody.tools = tools;
+  // Un appel Claude avec retry sur erreurs TRANSITOIRES (529/429/5xx) → jamais muet pour un hoquet API.
+  async function callClaude() {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const rr = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+        body: JSON.stringify(reqBody),
+      });
+      const dd = await rr.json().catch(() => ({}));
+      if (rr.ok) return dd;
+      if ([429, 500, 502, 503, 529].includes(rr.status) && attempt < 2) { await new Promise((res) => setTimeout(res, 700 * (attempt + 1))); continue; }
+      const e = new Error('claude_error'); e.detail = dd; e.status = rr.status; throw e;
+    }
   }
-  const raw = (data.content && data.content[0] && data.content[0].text) || '';
+  // Boucle OUTILS : tant que Claude demande un outil (prix live / suivi commande), on l'exécute et on relance, puis on récupère sa réponse finale.
+  let data, raw = '', usage = null;
+  for (let step = 0; step < 5; step++) {
+    data = await callClaude();
+    if (data && data.usage) usage = data.usage;
+    if (data && data.stop_reason === 'tool_use' && tools && runTool) {
+      messages.push({ role: 'assistant', content: data.content });
+      const results = [];
+      for (const b of (data.content || [])) {
+        if (b.type !== 'tool_use') continue;
+        let out; try { out = await runTool(b.name, b.input || {}); } catch (e) { out = 'Erreur lors de la recherche.'; }
+        results.push({ type: 'tool_result', tool_use_id: b.id, content: String(out || '').slice(0, 4000) });
+      }
+      messages.push({ role: 'user', content: results });
+      reqBody.messages = messages;
+      continue;
+    }
+    raw = ((data.content || []).find((b) => b.type === 'text') || {}).text || '';
+    break;
+  }
   let parsed = { reply: '', intent: 'answer', note: '', order: null };
   let done = false;
   // 1) JSON complet et valide
@@ -192,17 +219,17 @@ async function generateReply({ text, name, orderItems, total, city, history, cat
   // Filet de sécurité : ne JAMAIS laisser fuiter un fragment JSON dans le message envoyé
   parsed.reply = String(parsed.reply).replace(/\n*\{\s*"reply"[\s\S]*$/, '').trim();
   if (!parsed.reply) parsed.reply = raw.trim();
-  return { reply: parsed.reply, intent: parsed.intent, note: parsed.note, order: parsed.order, usage: data.usage };
+  return { reply: parsed.reply, intent: parsed.intent, note: parsed.note, order: parsed.order, usage };
 }
 
 // Décide quoi faire d'un message entrant. arg peut inclure `history` (tours précédents). opts: {bypassTime, unanswered, isButtonFlag}
 // Retourne {send, reply, intent, skipped, hour, usage}
-async function handleIncoming({ text, name, orderItems, total, city, history, catalog, imageBase64, imageMime }, opts = {}) {
+async function handleIncoming({ text, name, orderItems, total, city, history, catalog, imageBase64, imageMime, tools, runTool }, opts = {}) {
   if (!ANTHROPIC_KEY) return { send: false, skipped: 'no_key' };
   if ((!text || String(text).trim().length === 0) && !imageBase64) return { send: false, skipped: 'no_text' };
   if (!imageBase64 && (opts.isButtonFlag || isButton(text))) return { send: false, skipped: 'button' };
   if (!opts.bypassTime && !opts.unanswered && isWorkHours()) return { send: false, skipped: 'work_hours', hour: maroccoHour() };
-  const g = await generateReply({ text, name, orderItems, total, city, history, catalog, imageBase64, imageMime });
+  const g = await generateReply({ text, name, orderItems, total, city, history, catalog, imageBase64, imageMime, tools, runTool });
   return { send: !!(g.reply && g.reply.trim()), reply: g.reply, intent: g.intent, note: g.note, order: g.order, usage: g.usage };
 }
 
