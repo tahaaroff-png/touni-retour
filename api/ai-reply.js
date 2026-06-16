@@ -203,8 +203,11 @@ async function matchCollections(searchTerms) {
   for (const c of cols) {
     const ct = normTxt(c.title);
     if (!ct) continue;
+    const cw0 = ct.split(' ')[0]; // 1er mot du titre de la collection
     let score = 0;
-    for (const w of searchTerms) { if (w.length >= 4 && (ct.indexOf(w) !== -1 || w.indexOf(ct.split(' ')[0]) !== -1)) score++; }
+    // w doit faire ≥4 lettres ; et si on teste l'inclusion inverse (w contient le 1er mot), ce 1er mot doit AUSSI faire ≥4
+    // (évite que "barcelon" matche "On Running" parce qu'il contient "on", ou "fc"/"ac"…)
+    for (const w of searchTerms) { if (w.length >= 4 && (ct.indexOf(w) !== -1 || (cw0.length >= 4 && w.indexOf(cw0) !== -1))) score++; }
     if (score > 0) scored.push({ c, score });
   }
   scored.sort((a, b) => b.score - a.score);
