@@ -281,7 +281,7 @@ module.exports = async (req, res) => {
     };
     let catalog = ''; try { catalog = await searchCatalog(text); } catch (e) {}
     const d = await handleIncoming({ text, name, orderItems, total, city, catalog }, opts);
-    return res.status(200).json({ reply: d.reply || '', intent: d.intent || 'answer', send: !!d.send, skipped: d.skipped, hour: d.hour, usage: d.usage, catalog: catalog ? catalog.split('\n').length - 1 : 0 });
+    return res.status(200).json({ reply: d.reply || '', intent: d.intent || 'answer', note: d.note || '', send: !!d.send, skipped: d.skipped, hour: d.hour, usage: d.usage, catalog: catalog ? catalog.split('\n').length - 1 : 0 });
   } catch (e) {
     return res.status(500).json({ error: String(e) });
   }
