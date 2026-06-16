@@ -154,7 +154,7 @@ async function markReplied(msgId, convId, phone, preview) {
 }
 
 // Recherche catalogue Shopify (cache Supabase) selon la demande → bloc dispo en direct à injecter.
-const CATALOG_STOPWORDS = new Set('maillot maillots kit kits ensemble survetement survetements casquette taille tailles size prix combien chhal taman bghit bghi bghyt veux voudrais cherche dispo disponible disponibles bonjour salam salut svp stp merci pour avec est une des les dans vous tu je oui non ok cest quoi autre meme original foot football equipe club saison commande commander acheter chri photo photos couleur couleurs livraison aujourd hui'.split(' '));
+const CATALOG_STOPWORDS = new Set('maillot maillots kit kits ensemble survetement survetements casquette casquettes taille tailles size prix combien chhal taman bghit bghi bghyt veux voudrais cherche dispo disponible disponibles bonjour salam salut svp stp merci pour avec est une des les dans vous tu je oui non ok cest quoi autre meme original foot football equipe club saison commande commander acheter chri photo photos couleur couleurs livraison aujourd hui parfait prends prend piece pieces standard mon complet nom adresse ville rue confirme maintenant article articles nombre quantite svp stp bien donc alors voila pour moi prendre prenez prendrai numero tel'.split(' '));
 async function searchCatalog(text) {
   try {
     const norm = String(text || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
@@ -174,7 +174,13 @@ async function searchCatalog(text) {
       if (!m.img && row.product_image) m.img = row.product_image;
       if (row.inventory_quantity > 0) { m.anyStock = true; if (row.size) m.sizesIn.add(row.size); }
     }
-    const prods = [...map.entries()].sort((a, b) => (b[1].anyStock ? 1 : 0) - (a[1].anyStock ? 1 : 0)).slice(0, 6);
+    // classer par nb de mots-clés correspondants dans le titre, puis par stock
+    const scored = [...map.entries()].map(([t, m]) => {
+      const nt = String(t).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+      return { t, m, score: toks.filter((w) => nt.indexOf(w) !== -1).length };
+    });
+    scored.sort((a, b) => (b.score - a.score) || ((b.m.anyStock ? 1 : 0) - (a.m.anyStock ? 1 : 0)));
+    const prods = scored.slice(0, 6).map((s) => [s.t, s.m]);
     const lines = prods.map(([t, m]) => {
       const cols = [...m.colors].slice(0, 6).join(',');
       const inS = [...m.sizesIn].join(',');
