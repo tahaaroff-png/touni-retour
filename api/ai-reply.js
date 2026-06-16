@@ -115,8 +115,14 @@ async function moveDeal(deal, targetStage) {
 // ───────── #3 — création de commande ─────────
 function normTxt(s) { return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim(); }
 async function egrowSearchProduct(name) {
-  const r = await egrowPost('/product/getUserProduct.php', { search: String(name || '').slice(0, 60) });
-  return Array.isArray(r) ? r : (r && r.data) || [];
+  const tryOne = async (q) => { const r = await egrowPost('/product/getUserProduct.php', { search: String(q || '').slice(0, 80) }); return Array.isArray(r) ? r : (r && r.data) || []; };
+  let arr = await tryOne(name);
+  if (arr.length) return arr;
+  const words = String(name || '').split(/\s+/).filter((w) => w.length > 1);
+  if (words.length > 3) { arr = await tryOne(words.slice(-3).join(' ')); if (arr.length) return arr; }
+  const longest = words.slice().sort((a, b) => b.length - a.length)[0];
+  if (longest) arr = await tryOne(longest);
+  return arr;
 }
 async function createOrderDeal(order, contactId) {
   const prods = await egrowSearchProduct(order.product);
@@ -127,15 +133,20 @@ async function createOrderDeal(order, contactId) {
   const price = parseFloat(p.price) || 0;
   const productObj = Object.assign({}, p, { quantity: qty });
   const body = {
-    id: 0, contact_id: contactId, deal_city: order.city || '', deal_address: order.address || '',
-    deal_payment_method: 'cash', payment_status: '', deal_value: price * qty, deal_currency: 'MAD',
-    products: JSON.stringify([productObj]), pipeline_stage: STAGE_CONFIRM,
-    title: `${order.customer_name || ''} - ${p.name}`.slice(0, 120), type: 'whatsapp',
-    deal_custom_fields: '[]', users: '[]', do_not_update_assigned: false,
+    id: 0, label: '', source: 'agent-ia-whatsapp',
+    deal_city: order.city || '', country: 'MA', deal_address: order.address || '',
+    deal_apartment: '', deal_province: '', deal_zip: '', deal_area: '', deal_street_name: '', deal_house_number: '', deal_nearest_place: '', deal_location: '', deal_district: '',
+    deal_payment_method: 'Cash on Delivery (COD)', payment_status: 'pending',
+    deal_shipping_price: 0, deal_shipping: null,
+    contact_id: contactId, type: 'deal', title: `${order.customer_name || ''} - ${p.name}`.slice(0, 120),
+    deal_value: price * qty, deal_currency: { id: 153, name: 'Dirham', code: 'MAD', symbol: 'MAD' },
+    deal_custom_fields: JSON.stringify({ note: '' }), products: JSON.stringify([productObj]),
+    pipeline_stage: STAGE_CONFIRM, close_date: 0, deal_number: '', deal_tracking_number: '',
+    users: '[]', do_not_update_assigned: false, shipping_user_connection: 0,
   };
   const res = await egrowPost('/deal/add_or_update_deal.php', body);
-  const dealId = (res && (res.id || (res.data && res.data.id))) || null;
-  return { ok: !!(res && (res.status === 'success' || dealId)), dealId, product: p.name, price, qty, value: price * qty, res };
+  const dealId = (res && res.deal && res.deal.id) || null;
+  return { ok: !!(res && res.status === 'success'), dealId, product: p.name, price, qty, value: price * qty };
 }
 async function addDealNote(dealId, content) {
   try { return await egrowPost('/notes/add_or_update_note.php', { id: 0, content: String(content).slice(0, 500), type: 'deal', context: dealId, color: '' }); } catch (e) { return null; }
