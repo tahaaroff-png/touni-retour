@@ -13,9 +13,10 @@ const INTEGRATIONS = (process.env.EGROW_INTEGRATIONS || '5425').split(',').map((
 const FRESH_WINDOW_SEC = parseInt(process.env.EGROW_FRESH_SEC || '600', 10); // ne répond qu'aux messages des 10 dernières min
 const MAX_PER_RUN = parseInt(process.env.EGROW_MAX_PER_RUN || '8', 10);      // garde-fou anti-blast
 // #4 — stages pipeline : commande en attente → Confirmer Wtsp (confirm) / Annuler Wtsp (cancel)
-const STAGE_PENDING = parseInt(process.env.EGROW_STAGE_PENDING || '62357', 10);
 const STAGE_CONFIRM = parseInt(process.env.EGROW_STAGE_CONFIRM || '49148', 10);
 const STAGE_CANCEL = parseInt(process.env.EGROW_STAGE_CANCEL || '49149', 10);
+// On ne déplace QUE si la commande est encore dans une étape AVANT envoi (sinon expédiée → on ne touche pas).
+const MOVABLE_STAGES = (process.env.EGROW_MOVABLE_STAGES || '62357,49148,49149').split(',').map((s) => parseInt(s.trim(), 10)).filter(Boolean);
 
 // ───────── Lecture robuste du body (mode POST : JSON, urlencoded, multipart eGrow) ─────────
 function tryParse(raw, req) {
@@ -86,17 +87,19 @@ async function egrowPost(path, params) {
   const r = await fetch(`${EGROW_BASE}${path}`, { method: 'POST', headers: { 'account-key': EGROW_AK, 'content-type': `multipart/form-data; boundary=${boundary}` }, body: raw });
   try { return await r.json(); } catch (e) { return null; }
 }
-// Cherche la commande EN ATTENTE du client (par téléphone). Retourne le deal ou null.
-async function findPendingDeal(phone) {
+// Cherche la commande du client (par téléphone) DANS les étapes déplaçables (avant envoi). Retourne le deal ou null.
+async function findMovableDeal(phone) {
   const digits = String(phone || '').replace(/\D/g, '');
   if (!digits) return null;
-  const r = await egrowPost('/deal/getStageDeals.php', { stage: STAGE_PENDING, search: digits, page: 1, limit: 5 });
-  const arr = Array.isArray(r) ? r : (r && r.data) || [];
-  for (const d of arr) {
-    const dp = String((d.contact && d.contact.phone) || '').replace(/\D/g, '');
-    if (dp && (dp === digits || dp.endsWith(digits) || digits.endsWith(dp))) return d;
+  for (const sid of MOVABLE_STAGES) {
+    const r = await egrowPost('/deal/getStageDeals.php', { stage: sid, search: digits, page: 1, limit: 5 });
+    const arr = Array.isArray(r) ? r : (r && r.data) || [];
+    for (const d of arr) {
+      const dp = String((d.contact && d.contact.phone) || '').replace(/\D/g, '');
+      if (dp && (dp === digits || dp.endsWith(digits) || digits.endsWith(dp))) return d;
+    }
   }
-  return null;
+  return null; // pas trouvé dans une étape avant-envoi → soit expédiée, soit pas de commande → on ne bouge pas
 }
 // Déplace un deal vers un stage (confirm = 49148, cancel = 49149).
 async function moveDeal(deal, targetStage) {
@@ -169,24 +172,25 @@ async function runPoll(q) {
           entry.intent = decision.intent;
           // #4 : confirmation/annulation d'une commande EN ATTENTE → déplacer le deal
           const isAction = decision.intent === 'confirm' || decision.intent === 'cancel';
+          const target = decision.intent === 'confirm' ? STAGE_CONFIRM : STAGE_CANCEL;
           let deal = null;
-          if (isAction) { try { deal = await findPendingDeal(contactWaId); } catch (e) {} }
+          if (isAction) { try { deal = await findMovableDeal(contactWaId); } catch (e) {} }
+          const curStage = deal && deal.stage && deal.stage.id;
 
           if (dry) {
             entry.reply_preview = decision.reply.slice(0, 140);
-            if (isAction) entry.dealMove = deal ? { wouldMove: deal.id, to: decision.intent === 'confirm' ? STAGE_CONFIRM : STAGE_CANCEL } : 'no_pending_deal';
+            if (isAction) entry.dealMove = !deal ? 'no_movable_deal' : (curStage === target ? 'already_there' : { wouldMove: deal.id, from: curStage, to: target });
           } else {
             const sendRes = await egrowSend(integrationId, contactWaId, decision.reply);
             entry.sent = sendRes && sendRes.status;
             await markReplied(msgId, c.id, contactWaId, body);
-            if (isAction && deal) {
+            if (isAction && deal && curStage !== target) {
               try {
-                const target = decision.intent === 'confirm' ? STAGE_CONFIRM : STAGE_CANCEL;
                 const mv = await moveDeal(deal, target);
-                entry.dealMove = { deal: deal.id, to: target, ok: mv && mv.status };
+                entry.dealMove = { deal: deal.id, from: curStage, to: target, ok: mv && mv.status };
               } catch (e) { entry.dealMove = 'err'; }
             } else if (isAction) {
-              entry.dealMove = 'no_pending_deal';
+              entry.dealMove = deal ? 'already_there' : 'no_movable_deal';
             }
           }
           processed++;
