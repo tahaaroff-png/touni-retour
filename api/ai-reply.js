@@ -208,10 +208,20 @@ async function buildCollectionsBlock() {
   _colBlockAt = Date.now();
   return _colBlock;
 }
+// GARDE-FOU déterministe : aucun lien /collections/ inexistant ne doit JAMAIS partir, peu importe ce que Claude écrit.
+// On valide chaque lien collection contre la liste RÉELLE des handles publiés ; un handle inventé → remplacé par l'accueil.
+async function sanitizeReplyLinks(reply) {
+  if (!reply || reply.indexOf('/collections/') === -1) return reply;
+  let handles = new Set();
+  try { (await getCollections()).forEach((c) => handles.add(String(c.handle).toLowerCase())); } catch (e) {}
+  if (!handles.size) return reply; // si on n'a pas pu charger la liste, on ne casse rien
+  return reply.replace(/https?:\/\/touni\.ma\/collections\/([a-z0-9\-]+)/gi, (m, h) =>
+    handles.has(h.toLowerCase()) ? m : 'https://touni.ma');
+}
 async function searchCatalog(text) {
   try {
     const norm = String(text || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
-    const allToks = [...new Set(norm.split(/[^a-z0-9]+/).filter((w) => w.length >= 3 && !CATALOG_STOPWORDS.has(w)))].slice(0, 8);
+    const allToks = [...new Set(norm.split(/[^a-z0-9]+/).filter((w) => (w.length >= 3 || /^\d{2,}$/.test(w)) && !CATALOG_STOPWORDS.has(w)))].slice(0, 8);
     if (!allToks.length) return '';
     // privilégie un mot spécifique (équipe/modèle) ; n'utilise les mots de catégorie (maillot, casquette, ballon…) que s'il n'y a rien de plus précis
     const specific = allToks.filter((t) => !CATEGORY_WORDS.has(t));
@@ -318,11 +328,12 @@ async function runPoll(q) {
             .reverse(); // ancien -> récent
         } catch (e) {}
 
-        // Contexte produit : NOS PAGES (toutes les collections, pour que Claude choisisse le bon lien) + dispo EN DIRECT
+        // Contexte produit : NOS PAGES (toutes les collections, pour que Claude choisisse le bon lien) + dispo EN DIRECT.
+        // ⚠️ La recherche produit se base sur le MESSAGE ACTUEL uniquement (pas l'historique) : sinon les mots des
+        // messages précédents (« maillot »…) noient la demande en cours (« kora » → on croyait ne pas avoir de ballons).
         let catalog = '';
         try {
-          const histText = history.filter((h) => h.role === 'user').slice(-3).map((h) => h.content).join(' ');
-          const [cb, prod] = await Promise.all([buildCollectionsBlock(), searchCatalog(body + ' ' + histText)]);
+          const [cb, prod] = await Promise.all([buildCollectionsBlock(), searchCatalog(body)]);
           catalog = [cb, prod].filter(Boolean).join('\n\n');
         } catch (e) {}
         // Message lié à un échange/retour → injecter l'état réel de la commande
@@ -340,6 +351,7 @@ async function runPoll(q) {
           { text: body, name: c.title || (c.contact && c.contact.name) || '', city: (c.contact && c.contact.city) || '', history, catalog, imageBase64, imageMime },
           { bypassTime }
         );
+        if (decision && decision.reply) decision.reply = await sanitizeReplyLinks(decision.reply); // anti-lien-cassé
         const entry = { conv: c.id, phone: contactWaId, name: c.title, msgId, body: body.slice(0, 60), decision: decision.skipped || (decision.send ? 'reply' : 'no_send') };
         if (!(decision.send && decision.reply) && !dry) await releaseClaim(msgId); // on ne répond pas (heures ouvrées/bouton) → libère le claim
         if (decision.send && decision.reply) {
@@ -433,6 +445,7 @@ module.exports = async (req, res) => {
     const imageBase64 = body.image_base64 || null;
     const imageMime = body.image_mime || 'image/jpeg';
     const d = await handleIncoming({ text, name, orderItems, total, city, catalog, imageBase64, imageMime }, opts);
+    if (d && d.reply) d.reply = await sanitizeReplyLinks(d.reply); // anti-lien-cassé
     return res.status(200).json({ reply: d.reply || '', intent: d.intent || 'answer', note: d.note || '', order: d.order || null, send: !!d.send, skipped: d.skipped, hour: d.hour, usage: d.usage, catalogText: catalog || '' });
   } catch (e) {
     return res.status(500).json({ error: String(e), detail: (e && e.detail) || null });
