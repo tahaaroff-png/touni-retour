@@ -167,7 +167,7 @@ async function markReplied(msgId, convId, phone, preview) {
 // Recherche catalogue Shopify (cache Supabase) selon la demande → bloc dispo en direct à injecter.
 const CATALOG_STOPWORDS = new Set('maillot maillots kit kits ensemble survetement survetements casquette casquettes taille tailles size prix combien chhal taman bghit bghi bghyt veux voudrais cherche dispo disponible disponibles bonjour salam salut svp stp merci pour avec est une des les dans vous tu je oui non ok cest quoi autre meme original foot football equipe club saison commande commander acheter chri photo photos couleur couleurs livraison aujourd hui parfait prends prend piece pieces standard mon complet nom adresse ville rue confirme maintenant article articles nombre quantite svp stp bien donc alors voila pour moi prendre prenez prendrai numero tel'.split(' '));
 // Synonymes / surnoms → terme présent dans les titres Shopify
-const CATALOG_SYNONYMS = { barca: 'barcelon', barsa: 'barcelon', barcaa: 'barcelon', psg: 'paris', real: 'madrid', juve: 'juventus', mancity: 'manchester', manu: 'manchester', citizens: 'manchester', bayern: 'bayern', intermilan: 'inter', wac: 'wydad', wydadi: 'wydad', rajaoui: 'raja' };
+const CATALOG_SYNONYMS = { barca: 'barcelon', barsa: 'barcelon', barcaa: 'barcelon', psg: 'paris', real: 'madrid', juve: 'juventus', mancity: 'manchester', manu: 'manchester', citizens: 'manchester', bayern: 'bayern', intermilan: 'inter', wac: 'wydad', wydadi: 'wydad', rajaoui: 'raja', kora: 'ballon', koura: 'ballon', balon: 'ballon', kaskita: 'casquette', training: 'entrainement', survet: 'survetement', short: 'short', chaussette: 'chaussette' };
 
 // Collections Shopify (page équipe/catégorie) — mises en cache mémoire (chaud) ~1h
 let _cols = null, _colsAt = 0;
@@ -204,9 +204,14 @@ async function searchCatalog(text) {
     if (!toks.length) return '';
     // Synonymes + RECHERCHE LIVE Shopify (GraphQL) → TOUJOURS à jour : prix, stock, statut, nouveaux produits
     const termSet = new Set();
-    for (const t of toks) { termSet.add(t); if (CATALOG_SYNONYMS[t]) termSet.add(CATALOG_SYNONYMS[t]); }
+    for (const t of toks) {
+      termSet.add(t);
+      if (t.length > 4 && /[sx]$/.test(t)) termSet.add(t.slice(0, -1)); // pluriel → singulier (ballons→ballon, casquettes→casquette)
+      if (CATALOG_SYNONYMS[t]) termSet.add(CATALOG_SYNONYMS[t]);
+    }
     const searchTerms = [...termSet];
-    const qstr = searchTerms.map((t) => `title:*${t}*`).join(' OR ');
+    // titre (wildcard) + recherche plein-texte (couvre type produit / tags) pour ne RIEN rater
+    const qstr = searchTerms.map((t) => `title:*${t}*`).join(' OR ') + ' OR ' + searchTerms.filter((t) => t.length >= 4).join(' OR ');
     const gql = 'query($q:String!){ products(first:40, query:$q){ edges{ node{ title status variants(first:25){ edges{ node{ title price inventoryQuantity } } } } } } }';
     let products = [];
     try {
