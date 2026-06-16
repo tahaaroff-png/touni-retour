@@ -380,7 +380,7 @@ module.exports = async (req, res) => {
     const imageBase64 = body.image_base64 || null;
     const imageMime = body.image_mime || 'image/jpeg';
     const d = await handleIncoming({ text, name, orderItems, total, city, catalog, imageBase64, imageMime }, opts);
-    return res.status(200).json({ reply: d.reply || '', intent: d.intent || 'answer', note: d.note || '', order: d.order || null, send: !!d.send, skipped: d.skipped, hour: d.hour, usage: d.usage, catalog: catalog ? catalog.split('\n').length - 1 : 0 });
+    return res.status(200).json({ reply: d.reply || '', intent: d.intent || 'answer', note: d.note || '', order: d.order || null, send: !!d.send, skipped: d.skipped, hour: d.hour, usage: d.usage, catalogText: catalog || '' });
   } catch (e) {
     return res.status(500).json({ error: String(e) });
   }
