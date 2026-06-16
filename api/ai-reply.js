@@ -168,6 +168,35 @@ async function markReplied(msgId, convId, phone, preview) {
 const CATALOG_STOPWORDS = new Set('maillot maillots kit kits ensemble survetement survetements casquette casquettes taille tailles size prix combien chhal taman bghit bghi bghyt veux voudrais cherche dispo disponible disponibles bonjour salam salut svp stp merci pour avec est une des les dans vous tu je oui non ok cest quoi autre meme original foot football equipe club saison commande commander acheter chri photo photos couleur couleurs livraison aujourd hui parfait prends prend piece pieces standard mon complet nom adresse ville rue confirme maintenant article articles nombre quantite svp stp bien donc alors voila pour moi prendre prenez prendrai numero tel'.split(' '));
 // Synonymes / surnoms → terme présent dans les titres Shopify
 const CATALOG_SYNONYMS = { barca: 'barcelon', barsa: 'barcelon', barcaa: 'barcelon', psg: 'paris', real: 'madrid', juve: 'juventus', mancity: 'manchester', manu: 'manchester', citizens: 'manchester', bayern: 'bayern', intermilan: 'inter', wac: 'wydad', wydadi: 'wydad', rajaoui: 'raja' };
+
+// Collections Shopify (page équipe/catégorie) — mises en cache mémoire (chaud) ~1h
+let _cols = null, _colsAt = 0;
+async function getCollections() {
+  if (_cols && (Date.now() - _colsAt) < 3600000) return _cols;
+  const out = [];
+  try {
+    for (const ep of ['custom_collections', 'smart_collections']) {
+      const cr = await fetch(`https://${SHOPIFY_DOMAIN}/admin/api/${SHOPIFY_API_VERSION}/${ep}.json?limit=250&fields=id,title,handle`, { headers: await shopifyAdminHeaders() });
+      const cj = await cr.json().catch(() => ({}));
+      (cj[ep] || []).forEach((c) => { if (c.handle) out.push({ title: c.title || '', handle: c.handle }); });
+    }
+  } catch (e) {}
+  if (out.length) { _cols = out; _colsAt = Date.now(); }
+  return _cols || [];
+}
+// Trouve la collection (équipe/catégorie) qui correspond le mieux aux mots-clés
+async function matchCollection(searchTerms) {
+  const cols = await getCollections();
+  let best = null, bestScore = 0;
+  for (const c of cols) {
+    const ct = normTxt(c.title);
+    if (!ct) continue;
+    let score = 0;
+    for (const w of searchTerms) { if (w.length >= 4 && (ct.indexOf(w) !== -1 || w.indexOf(ct.split(' ')[0]) !== -1)) score++; }
+    if (score > bestScore) { bestScore = score; best = c; }
+  }
+  return bestScore >= 1 ? best : null;
+}
 async function searchCatalog(text) {
   try {
     const norm = String(text || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
@@ -214,8 +243,10 @@ async function searchCatalog(text) {
       const q = encodeURIComponent(String(p.title).replace(/[–—|]/g, ' ').replace(/\s+/g, ' ').trim());
       lines.push(`- ${p.title} : ~${price} dh — EN STOCK${sizes.length ? ' [tailles ' + sizes.join(',') + ']' : ''} | lien: https://touni.ma/search?q=${q}`);
     }
-    if (!lines.length) return '';
-    return 'CATALOGUE (stock & prix EN DIRECT Shopify — UNIQUEMENT produits ACTIFS et EN STOCK ; ne propose QUE ceux-ci) :\n' + lines.join('\n');
+    const col = await matchCollection(searchTerms);
+    const colLine = col ? `COLLECTION ÉQUIPE (page du site avec TOUS les modèles — partage CE lien en PRIORITÉ, au lieu de lister les produits un par un) : ${col.title} → https://touni.ma/collections/${col.handle}\n\n` : '';
+    if (!lines.length) return colLine ? colLine.trim() : '';
+    return colLine + 'CATALOGUE (stock & prix EN DIRECT Shopify — UNIQUEMENT produits ACTIFS et EN STOCK ; ne propose QUE ceux-ci) :\n' + lines.join('\n');
   } catch (e) { return ''; }
 }
 
