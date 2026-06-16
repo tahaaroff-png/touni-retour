@@ -561,7 +561,9 @@ module.exports = async (req, res) => {
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only (ou ?poll=1)' });
   try {
     let body = await getBody(req); body = body || {};
-    const text = body.message || body.text || body.body || body.content || body.last_message || '';
+    // Test transcription : POST {audio_url:"..."} → transcrit (Groq) et traite comme un vocal réel.
+    let text = body.message || body.text || body.body || body.content || body.last_message || '';
+    if (body.audio_url) { const t = await transcribeAudio(body.audio_url); if (t) text = '🎤 (message vocal du client, transcrit) ' + t; else return res.status(200).json({ error: 'transcription_vide', hint: 'GROQ_API_KEY manquante ou audio illisible' }); }
     const name = body.customer_name || body.name || body.contact_name || body.first_name || '';
     const orderItems = body.order_items || body.products || body.items || '';
     const total = body.total || body.order_total || body.amount || '';
