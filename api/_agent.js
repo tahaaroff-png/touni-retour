@@ -156,13 +156,20 @@ async function generateReply({ text, name, orderItems, total, city, history, cat
     messages = [{ role: 'user', content: `Client${name ? ' (' + name + ')' : ''} a écrit : "${String(text).slice(0, 1500)}"` }];
   }
   const sys = SYSTEM + buildContextNote({ name, orderItems, total, city }) + (catalog ? '\n\n' + catalog : '');
-  const r = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: { 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-    body: JSON.stringify({ model: MODEL, max_tokens: 1000, system: sys, messages }),
-  });
-  const data = await r.json();
-  if (!r.ok) { const e = new Error('claude_error'); e.detail = data; throw e; }
+  const payload = JSON.stringify({ model: MODEL, max_tokens: 1000, system: sys, messages });
+  // Retry sur erreurs TRANSITOIRES (surcharge 529 / rate-limit 429 / 5xx) → l'agent ne doit jamais rester muet pour un hoquet API.
+  let r, data;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    r = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+      body: payload,
+    });
+    data = await r.json().catch(() => ({}));
+    if (r.ok) break;
+    if ([429, 500, 502, 503, 529].includes(r.status) && attempt < 2) { await new Promise((res) => setTimeout(res, 700 * (attempt + 1))); continue; }
+    const e = new Error('claude_error'); e.detail = data; e.status = r.status; throw e;
+  }
   const raw = (data.content && data.content[0] && data.content[0].text) || '';
   let parsed = { reply: '', intent: 'answer', note: '', order: null };
   let done = false;

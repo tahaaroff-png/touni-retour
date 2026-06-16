@@ -275,6 +275,7 @@ async function runPoll(q) {
     const convs = await egrowGetConversations(integrationId, 1);
     for (const c of convs) {
       if (processed >= MAX_PER_RUN) break;
+      let claimedMsgId = null; // pour libérer le claim si une erreur survient APRÈS l'avoir pris (sinon le client ne serait jamais répondu)
       try {
         const lm = c.lastMessage || {};
         const contactWaId = String(c.contactWaId || '');
@@ -293,6 +294,7 @@ async function runPoll(q) {
         if (!isImage && type && type !== 'text') continue;                        // pas template/audio/sticker/bouton
         if (!isImage && !body.trim()) continue;
         if (!dry && !(await claimMessage(msgId, c.id, contactWaId, body))) continue; // anti-doublon ATOMIQUE : un seul run traite ce message (pas de claim en dry-run)
+        if (!dry) claimedMsgId = msgId;
         // Photo entrante → télécharger + base64 pour Claude Vision
         let imageBase64 = null, imageMime = null;
         if (isImage) {
@@ -356,7 +358,8 @@ async function runPoll(q) {
           } else {
             const sendRes = await egrowSend(integrationId, contactWaId, decision.reply);
             entry.sent = sendRes && sendRes.status;
-            if (!(sendRes && sendRes.status === 'success')) await releaseClaim(msgId); // envoi raté → libère pour réessayer au prochain run
+            if (sendRes && sendRes.status === 'success') claimedMsgId = null;     // envoi OK → ne PAS libérer (une erreur post-envoi ne doit pas provoquer de re-réponse)
+            else await releaseClaim(msgId);                                       // envoi raté → libère pour réessayer au prochain run
             if (isAction && deal && curStage !== target) {
               try {
                 const mv = await moveDeal(deal, target);
@@ -392,6 +395,7 @@ async function runPoll(q) {
         }
         results.push(entry);
       } catch (e) {
+        if (claimedMsgId) await releaseClaim(claimedMsgId); // erreur (ex: Claude) après le claim → libère → le client sera répondu au prochain run
         results.push({ conv: c && c.id, error: String(e) });
       }
     }
