@@ -108,8 +108,37 @@ async function findMovableDeal(phone) {
 async function moveDeal(deal, targetStage) {
   return egrowPost('/deal/updateDealOrderinNewStage.php', {
     new_order: 1, old_order: deal.order || 1, stage_id: targetStage, deal_id: deal.id,
-    old_stage: (deal.stage && deal.stage.id) || STAGE_PENDING, update_stage_source: 'update order stage',
+    old_stage: (deal.stage && deal.stage.id) || (MOVABLE_STAGES[0] || 62357), update_stage_source: 'update order stage',
   });
+}
+
+// ───────── #3 — création de commande ─────────
+function normTxt(s) { return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim(); }
+async function egrowSearchProduct(name) {
+  const r = await egrowPost('/product/getUserProduct.php', { search: String(name || '').slice(0, 60) });
+  return Array.isArray(r) ? r : (r && r.data) || [];
+}
+async function createOrderDeal(order, contactId) {
+  const prods = await egrowSearchProduct(order.product);
+  if (!prods.length) return { ok: false, reason: 'product_not_found' };
+  const want = normTxt(order.product);
+  const p = prods.find((x) => normTxt(x.name) === want) || prods.find((x) => normTxt(x.name).includes(want) || want.includes(normTxt(x.name))) || prods[0];
+  const qty = Math.max(1, parseInt(order.quantity || 1, 10) || 1);
+  const price = parseFloat(p.price) || 0;
+  const productObj = Object.assign({}, p, { quantity: qty });
+  const body = {
+    id: 0, contact_id: contactId, deal_city: order.city || '', deal_address: order.address || '',
+    deal_payment_method: 'cash', payment_status: '', deal_value: price * qty, deal_currency: 'MAD',
+    products: JSON.stringify([productObj]), pipeline_stage: STAGE_CONFIRM,
+    title: `${order.customer_name || ''} - ${p.name}`.slice(0, 120), type: 'whatsapp',
+    deal_custom_fields: '[]', users: '[]', do_not_update_assigned: false,
+  };
+  const res = await egrowPost('/deal/add_or_update_deal.php', body);
+  const dealId = (res && (res.id || (res.data && res.data.id))) || null;
+  return { ok: !!(res && (res.status === 'success' || dealId)), dealId, product: p.name, price, qty, value: price * qty, res };
+}
+async function addDealNote(dealId, content) {
+  try { return await egrowPost('/notes/add_or_update_note.php', { id: 0, content: String(content).slice(0, 500), type: 'deal', context: dealId, color: '' }); } catch (e) { return null; }
 }
 async function alreadyReplied(msgId) {
   const r = await fetch(`${SB_URL}/rest/v1/wa_agent_replied?msg_id=eq.${encodeURIComponent(msgId)}&select=msg_id`, { headers: supabaseHeaders(true) });
@@ -221,6 +250,7 @@ async function runPoll(q) {
           if (dry) {
             entry.reply_preview = decision.reply.slice(0, 140);
             if (isAction) entry.dealMove = !deal ? 'no_movable_deal' : (curStage === target ? 'already_there' : { wouldMove: deal.id, from: curStage, to: target });
+            if (decision.order) entry.orderWould = decision.order;
           } else {
             const sendRes = await egrowSend(integrationId, contactWaId, decision.reply);
             entry.sent = sendRes && sendRes.status;
@@ -240,6 +270,20 @@ async function runPoll(q) {
                 await egrowSend(integrationId, OPERATOR_PHONE, summary);
                 entry.operatorNotified = true;
               } catch (e) { entry.operatorNotified = 'err'; }
+            }
+            // #3 : prise de commande (nouveau client → crée le deal)
+            if (decision.order && decision.order.product && decision.order.customer_name && decision.order.city) {
+              try {
+                const contactId = c.contactId || (c.contact && c.contact.id);
+                const r = await createOrderDeal(decision.order, contactId);
+                entry.orderCreated = r.ok ? { deal: r.dealId, product: r.product, value: r.value } : ('fail:' + (r.reason || 'unknown'));
+                if (r.ok) {
+                  const o = decision.order;
+                  if (r.dealId) await addDealNote(r.dealId, `Commande prise par l'agent IA (WhatsApp). ${r.qty}x ${r.product}${o.size ? ' taille ' + o.size : ''}${o.color ? ' ' + o.color : ''}. Client: ${o.customer_name}. Adresse: ${o.address}, ${o.city}. Confirmer la taille par appel.`);
+                  const saleMsg = `💰 *Nouvelle commande (agent IA)*\n👤 ${o.customer_name} (${contactWaId})\n📦 ${r.qty}x ${r.product}${o.size ? ' (' + o.size + ')' : ''}\n💵 ${r.value} dh · 📍 ${o.city}\n→ créée dans « Confirmer Wtsp »`;
+                  try { if (MERCHANT_PHONE) await egrowSend(integrationId, MERCHANT_PHONE, saleMsg); } catch (e) {}
+                }
+              } catch (e) { entry.orderCreated = 'err'; }
             }
           }
           processed++;
@@ -281,7 +325,7 @@ module.exports = async (req, res) => {
     };
     let catalog = ''; try { catalog = await searchCatalog(text); } catch (e) {}
     const d = await handleIncoming({ text, name, orderItems, total, city, catalog }, opts);
-    return res.status(200).json({ reply: d.reply || '', intent: d.intent || 'answer', note: d.note || '', send: !!d.send, skipped: d.skipped, hour: d.hour, usage: d.usage, catalog: catalog ? catalog.split('\n').length - 1 : 0 });
+    return res.status(200).json({ reply: d.reply || '', intent: d.intent || 'answer', note: d.note || '', order: d.order || null, send: !!d.send, skipped: d.skipped, hour: d.hour, usage: d.usage, catalog: catalog ? catalog.split('\n').length - 1 : 0 });
   } catch (e) {
     return res.status(500).json({ error: String(e) });
   }

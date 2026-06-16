@@ -76,8 +76,10 @@ RÈGLES STRICTES :
 
 CONTEXTE DE SA COMMANDE (si fourni) : utilise-le pour personnaliser (produit, prix, ville).
 
+PRISE DE COMMANDE (un client veut COMMANDER directement avec toi, sans passer par le site) : aide-le à finaliser. Rassemble, au fil de la discussion, TOUTES ces infos : le PRODUIT précis (nom exact depuis le catalogue), la TAILLE, la COULEUR (si le produit a des couleurs), la QUANTITÉ, son NOM complet, son ADRESSE de livraison complète, et sa VILLE. Demande naturellement ce qui manque (1 ou 2 infos à la fois), confirme le prix et la dispo. SEULEMENT quand tu as absolument TOUT (produit + taille + quantité + nom + adresse + ville) ET que le client confirme clairement → remplis le champ "order" du JSON (en plus d'un message de confirmation chaleureux : commande notée, l'opératrice rappelle pour confirmer la taille). Tant que c'est incomplet ou pas confirmé → "order" reste null. Ne devine JAMAIS une info manquante : demande-la.
+
 FORMAT DE SORTIE : réponds UNIQUEMENT avec un objet JSON valide, rien d'autre :
-{"reply":"<ton message au client>","intent":"answer|confirm|escalate|cancel","note":"<UNIQUEMENT si intent=escalate : court résumé pour l'opératrice e-commerce — ce que veut le client + ce qu'elle doit faire ; sinon vide>"}`;
+{"reply":"<ton message au client>","intent":"answer|confirm|escalate|cancel","note":"<UNIQUEMENT si intent=escalate : court résumé pour l'opératrice ; sinon vide>","order":null ou {"product":"<nom produit catalogue>","size":"<taille>","color":"<couleur ou vide>","quantity":<nombre>,"customer_name":"<nom complet>","address":"<adresse complète>","city":"<ville>"}}`;
 
 function maroccoHour() {
   try { return parseInt(new Intl.DateTimeFormat('en-GB', { timeZone: 'Africa/Casablanca', hour: '2-digit', hour12: false }).format(new Date()), 10); } catch (e) { return null; }
@@ -123,9 +125,9 @@ async function generateReply({ text, name, orderItems, total, city, history, cat
   const data = await r.json();
   if (!r.ok) { const e = new Error('claude_error'); e.detail = data; throw e; }
   let raw = (data.content && data.content[0] && data.content[0].text) || '';
-  let parsed = { reply: raw.trim(), intent: 'answer', note: '' };
-  try { const m = raw.match(/\{[\s\S]*\}/); if (m) { const j = JSON.parse(m[0]); if (j.reply) parsed = { reply: j.reply, intent: j.intent || 'answer', note: j.note || '' }; } } catch (e) {}
-  return { reply: parsed.reply, intent: parsed.intent, note: parsed.note, usage: data.usage };
+  let parsed = { reply: raw.trim(), intent: 'answer', note: '', order: null };
+  try { const m = raw.match(/\{[\s\S]*\}/); if (m) { const j = JSON.parse(m[0]); if (j.reply) parsed = { reply: j.reply, intent: j.intent || 'answer', note: j.note || '', order: (j.order && j.order.product) ? j.order : null }; } } catch (e) {}
+  return { reply: parsed.reply, intent: parsed.intent, note: parsed.note, order: parsed.order, usage: data.usage };
 }
 
 // Décide quoi faire d'un message entrant. arg peut inclure `history` (tours précédents). opts: {bypassTime, unanswered, isButtonFlag}
@@ -136,7 +138,7 @@ async function handleIncoming({ text, name, orderItems, total, city, history, ca
   if (opts.isButtonFlag || isButton(text)) return { send: false, skipped: 'button' };
   if (!opts.bypassTime && !opts.unanswered && isWorkHours()) return { send: false, skipped: 'work_hours', hour: maroccoHour() };
   const g = await generateReply({ text, name, orderItems, total, city, history, catalog });
-  return { send: !!(g.reply && g.reply.trim()), reply: g.reply, intent: g.intent, note: g.note, usage: g.usage };
+  return { send: !!(g.reply && g.reply.trim()), reply: g.reply, intent: g.intent, note: g.note, order: g.order, usage: g.usage };
 }
 
 module.exports = { FACTS, SYSTEM, BUTTON_LABELS, isButton, maroccoHour, isWorkHours, generateReply, handleIncoming };
