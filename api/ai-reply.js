@@ -215,8 +215,8 @@ async function searchCatalog(text) {
       if (CATALOG_SYNONYMS[t]) termSet.add(CATALOG_SYNONYMS[t]);
     }
     const searchTerms = [...termSet];
-    // titre (wildcard) + recherche plein-texte (couvre type produit / tags) pour ne RIEN rater
-    const qstr = searchTerms.map((t) => `title:*${t}*`).join(' OR ') + ' OR ' + searchTerms.filter((t) => t.length >= 4).join(' OR ');
+    // recherche par titre (wildcard) — gère le pluriel via les stems ajoutés ci-dessus
+    const qstr = searchTerms.map((t) => `title:*${t}*`).join(' OR ');
     const gql = 'query($q:String!){ products(first:40, query:$q){ edges{ node{ title status variants(first:25){ edges{ node{ title price inventoryQuantity } } } } } } }';
     let products = [];
     try {
