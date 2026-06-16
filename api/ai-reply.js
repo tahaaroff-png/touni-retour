@@ -171,49 +171,45 @@ async function searchCatalog(text) {
     const norm = String(text || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
     const toks = [...new Set(norm.split(/[^a-z0-9]+/).filter((w) => w.length >= 3 && !CATALOG_STOPWORDS.has(w)))].slice(0, 6);
     if (!toks.length) return '';
+    // 1) DÉCOUVERTE : product_ids candidats via le cache (titres), classés par mots-clés
     const orExpr = toks.map((w) => `product_title.ilike.*${encodeURIComponent(w)}*`).join(',');
-    const url = `${SB_URL}/rest/v1/shopify_variants_cache?status=eq.active&or=(${orExpr})&select=product_title,product_id,size,color,inventory_quantity,product_image&limit=300`;
+    const url = `${SB_URL}/rest/v1/shopify_variants_cache?or=(${orExpr})&select=product_title,product_id&limit=400`;
     const r = await fetch(url, { headers: supabaseHeaders(true) });
     const rows = await r.json().catch(() => []);
     if (!Array.isArray(rows) || !rows.length) return '';
-    const map = new Map();
+    const byPid = new Map();
     for (const row of rows) {
-      const t = row.product_title; if (!t) continue;
-      if (!map.has(t)) map.set(t, { sizesIn: new Set(), colors: new Set(), anyStock: false, img: '', pid: row.product_id });
-      const m = map.get(t);
-      if (!m.pid && row.product_id) m.pid = row.product_id;
-      if (row.color) m.colors.add(row.color);
-      if (!m.img && row.product_image) m.img = row.product_image;
-      if (row.inventory_quantity > 0) { m.anyStock = true; if (row.size) m.sizesIn.add(row.size); }
+      const pid = row.product_id; if (!pid || byPid.has(pid)) continue;
+      const nt = String(row.product_title || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+      byPid.set(pid, { title: row.product_title, score: toks.filter((w) => nt.indexOf(w) !== -1).length });
     }
-    // classer par nb de mots-clés correspondants dans le titre, puis par stock
-    const scored = [...map.entries()].map(([t, m]) => {
-      const nt = String(t).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
-      return { t, m, score: toks.filter((w) => nt.indexOf(w) !== -1).length };
-    });
-    scored.sort((a, b) => (b.score - a.score) || ((b.m.anyStock ? 1 : 0) - (a.m.anyStock ? 1 : 0)));
-    const prods = scored.slice(0, 6).map((s) => [s.t, s.m]);
-    // enrichir avec lien page produit (store_product_link) + prix exact via l'API produit eGrow
-    const np = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '');
-    const egMap = {};
+    const candidates = [...byPid.entries()].sort((a, b) => b[1].score - a[1].score).slice(0, 15);
+    if (!candidates.length) return '';
+    // 2) LIVE Shopify : stock + prix + statut RÉELS (le cache peut être périmé)
+    const ids = candidates.map(([pid]) => pid).join(',');
+    let products = [];
     try {
-      for (const tok of toks.slice(0, 2)) {
-        const eg = await egrowPost('/product/getUserProduct.php', { search: tok });
-        const earr = Array.isArray(eg) ? eg : (eg && eg.data) || [];
-        for (const ep of earr) { const k = np(ep.name); if (!egMap[k] && ep.price) egMap[k] = { price: ep.price }; }
-      }
+      const sr = await fetch(`https://${SHOPIFY_DOMAIN}/admin/api/${SHOPIFY_API_VERSION}/products.json?ids=${ids}&fields=id,title,status,variants&limit=50`, { headers: await shopifyAdminHeaders() });
+      const sj = await sr.json().catch(() => ({}));
+      products = sj.products || [];
     } catch (e) {}
-    const lines = prods.map(([t, m]) => {
-      const cols = [...m.colors].slice(0, 6).join(',');
-      const inS = [...m.sizesIn].join(',');
-      const eg = egMap[np(t)];
-      const price = eg && eg.price ? ' ~' + eg.price + ' dh' : '';
-      // lien fiable : recherche site (les pages produit par handle font 404 sur touni.ma)
-      const q = encodeURIComponent(String(t).replace(/[–—|]/g, ' ').replace(/\s+/g, ' ').trim());
-      const link = ' | lien: https://touni.ma/search?q=' + q + (m.img ? ' | photo: ' + m.img : '');
-      return `- ${t}${cols ? ' (' + cols + ')' : ''} :${price} ${m.anyStock ? ('EN STOCK' + (inS ? ' [tailles ' + inS + ']' : '')) : 'RUPTURE'}${link}`;
-    });
-    return 'CATALOGUE (dispo en direct, produits liés à la demande ; partage le « lien: » = page produit du site) :\n' + lines.join('\n');
+    if (!products.length) return '';
+    // 3) Ne garder QUE les produits ACTIFS avec AU MOINS une taille en stock (live)
+    const scoreById = {}; candidates.forEach(([pid, v]) => { scoreById[pid] = v.score; });
+    products.sort((a, b) => (scoreById[b.id] || 0) - (scoreById[a.id] || 0));
+    const lines = [];
+    for (const p of products) {
+      if (lines.length >= 6) break;
+      if (p.status !== 'active') continue; // pas de brouillon/archivé
+      const avail = (p.variants || []).filter((v) => Number(v.inventory_quantity) > 0);
+      if (!avail.length) continue; // rien en stock
+      const sizes = [...new Set(avail.map((v) => v.title).filter((s) => s && s !== 'Default Title'))];
+      const price = avail[0].price;
+      const q = encodeURIComponent(String(p.title).replace(/[–—|]/g, ' ').replace(/\s+/g, ' ').trim());
+      lines.push(`- ${p.title} : ~${price} dh — EN STOCK${sizes.length ? ' [tailles ' + sizes.join(',') + ']' : ''} | lien: https://touni.ma/search?q=${q}`);
+    }
+    if (!lines.length) return '';
+    return 'CATALOGUE (stock & prix EN DIRECT Shopify — UNIQUEMENT produits ACTIFS et EN STOCK ; ne propose QUE ceux-ci) :\n' + lines.join('\n');
   } catch (e) { return ''; }
 }
 
