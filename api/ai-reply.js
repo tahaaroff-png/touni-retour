@@ -57,6 +57,12 @@ async function egrowGetConversations(integrationId, page) {
   const j = await r.json();
   return (j && j.data) || [];
 }
+async function egrowGetMessages(convId, limit) {
+  const url = `${EGROW_BASE}/inbox/get_conversation_messages.php?me=${EGROW_ME}&dev=0&conversationId=${convId}&page=1&limit=${limit || 14}`;
+  const r = await fetch(url, { headers: { 'account-key': EGROW_AK } });
+  const j = await r.json().catch(() => ({}));
+  return (j && j.data) || [];
+}
 async function egrowSend(integrationId, toWaId, text) {
   const boundary = '----TouniAgent' + Math.random().toString(36).slice(2);
   const payload = JSON.stringify({ integrationId: Number(integrationId), to: String(toWaId), type: 'text', body: text, me: EGROW_ME, dev: 0 });
@@ -113,8 +119,18 @@ async function runPoll(q) {
         if (!msgId || !body.trim()) continue;
         if (await alreadyReplied(msgId)) continue;
 
+        // Historique de la conversation → réponse en contexte (multi-tours)
+        let history = [];
+        try {
+          const raw = await egrowGetMessages(c.id, 14);
+          history = raw
+            .filter((m) => { const t = (m.type || ''); return t === 'text' || t === 'template'; })
+            .map((m) => ({ role: (m.mine === true || m.mine === 'true') ? 'assistant' : 'user', content: (m.body || (m.content && m.content.body) || '').toString() }))
+            .reverse(); // ancien -> récent
+        } catch (e) {}
+
         const decision = await handleIncoming(
-          { text: body, name: c.title || (c.contact && c.contact.name) || '', city: (c.contact && c.contact.city) || '' },
+          { text: body, name: c.title || (c.contact && c.contact.name) || '', city: (c.contact && c.contact.city) || '', history },
           { bypassTime }
         );
         const entry = { conv: c.id, phone: contactWaId, name: c.title, msgId, body: body.slice(0, 60), decision: decision.skipped || (decision.send ? 'reply' : 'no_send') };

@@ -71,17 +71,40 @@ function maroccoHour() {
 }
 function isWorkHours() { const h = maroccoHour(); return h !== null && h >= 9 && h < 18; }
 
-// Appelle Claude. Retourne {reply, intent, usage}. Throw en cas d'erreur API.
-async function generateReply({ text, name, orderItems, total, city }) {
-  let ctx = '';
-  if (orderItems || total || city) {
-    ctx = `\n[Commande du client : ${orderItems ? 'produits=' + JSON.stringify(orderItems) + ' ' : ''}${total ? 'total=' + total + ' dh ' : ''}${city ? 'ville=' + city : ''}]`;
+function buildContextNote({ name, orderItems, total, city }) {
+  const parts = [];
+  if (name) parts.push('nom=' + name);
+  if (orderItems) parts.push('produits=' + (typeof orderItems === 'string' ? orderItems : JSON.stringify(orderItems)));
+  if (total) parts.push('total=' + total + ' dh');
+  if (city) parts.push('ville=' + city);
+  return parts.length ? `\n\nCONTEXTE CLIENT (pour personnaliser) : ${parts.join(', ')}.` : '';
+}
+
+// Normalise un historique [{role,content}] chronologique → messages valides Claude
+// (fusionne les tours consécutifs de même rôle, commence par 'user').
+function normalizeHistory(history) {
+  const msgs = [];
+  for (const h of history || []) {
+    const role = h.role === 'assistant' ? 'assistant' : 'user';
+    const content = String(h.content || '').trim().slice(0, 600);
+    if (!content || content === 'None') continue;
+    if (msgs.length && msgs[msgs.length - 1].role === role) msgs[msgs.length - 1].content += '\n' + content;
+    else msgs.push({ role, content });
   }
-  const userMsg = `Client${name ? ' (' + name + ')' : ''} a écrit : "${String(text).slice(0, 1500)}"${ctx}`;
+  while (msgs.length && msgs[0].role !== 'user') msgs.shift();
+  return msgs;
+}
+
+// Appelle Claude. history = tours précédents (ancien→récent). Retourne {reply, intent, usage}. Throw si erreur API.
+async function generateReply({ text, name, orderItems, total, city, history }) {
+  let messages = normalizeHistory(history);
+  if (!messages.length) {
+    messages = [{ role: 'user', content: `Client${name ? ' (' + name + ')' : ''} a écrit : "${String(text).slice(0, 1500)}"` }];
+  }
   const r = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-    body: JSON.stringify({ model: MODEL, max_tokens: 500, system: SYSTEM, messages: [{ role: 'user', content: userMsg }] }),
+    body: JSON.stringify({ model: MODEL, max_tokens: 500, system: SYSTEM + buildContextNote({ name, orderItems, total, city }), messages }),
   });
   const data = await r.json();
   if (!r.ok) { const e = new Error('claude_error'); e.detail = data; throw e; }
@@ -91,14 +114,14 @@ async function generateReply({ text, name, orderItems, total, city }) {
   return { reply: parsed.reply, intent: parsed.intent, usage: data.usage };
 }
 
-// Décide quoi faire d'un message entrant. opts: {bypassTime, unanswered, isButtonFlag}
+// Décide quoi faire d'un message entrant. arg peut inclure `history` (tours précédents). opts: {bypassTime, unanswered, isButtonFlag}
 // Retourne {send, reply, intent, skipped, hour, usage}
-async function handleIncoming({ text, name, orderItems, total, city }, opts = {}) {
+async function handleIncoming({ text, name, orderItems, total, city, history }, opts = {}) {
   if (!ANTHROPIC_KEY) return { send: false, skipped: 'no_key' };
   if (!text || String(text).trim().length === 0) return { send: false, skipped: 'no_text' };
   if (opts.isButtonFlag || isButton(text)) return { send: false, skipped: 'button' };
   if (!opts.bypassTime && !opts.unanswered && isWorkHours()) return { send: false, skipped: 'work_hours', hour: maroccoHour() };
-  const g = await generateReply({ text, name, orderItems, total, city });
+  const g = await generateReply({ text, name, orderItems, total, city, history });
   return { send: !!(g.reply && g.reply.trim()), reply: g.reply, intent: g.intent, usage: g.usage };
 }
 
