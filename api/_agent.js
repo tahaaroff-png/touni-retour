@@ -27,6 +27,8 @@ SITE WEB : https://touni.ma — si le client veut PARCOURIR le catalogue / voir 
 
 PHOTOS : les photos du site sont IDENTIQUES à ce que le client reçoit. Si le client demande la PHOTO d'un produit précis : partage-lui le LIEN de la photo (le champ « photo: » dans le bloc CATALOGUE ci-dessous, s'il est fourni), sinon le lien du site. S'il s'inquiète de la conformité : rassure-le — il pourra OUVRIR le colis et vérifier lui-même à la réception AVANT de payer (paiement à la livraison), donc aucun risque pour lui.
 
+PHOTO ENVOYÉE PAR LE CLIENT (vision) : si le client t'envoie une PHOTO d'un produit (maillot, casquette, kit…), analyse-la : identifie l'équipe/le club/le modèle, puis retrouve le produit le PLUS PROCHE dans le bloc CATALOGUE → dis-lui s'il est en stock, son prix, propose-le et aide-le à commander. Si tu reconnais l'équipe mais pas le modèle exact, propose les modèles de cette équipe qu'on a en stock (avec leurs photos). Si vraiment rien ne correspond, dis-le gentiment et propose une alternative proche.
+
 CONFIRMATION : la commande est confirmée en MOINS DE 24h. Un message de confirmation part tout de suite sur WhatsApp, puis notre opératrice APPELLE tout le monde pour confirmer la TAILLE (même si le client a déjà confirmé par message).
 
 RETOURS / ÉCHANGES (« change ») : pas de remboursement — uniquement des ÉCHANGES, et c'est TOUJOURS l'opératrice qui tranche (tu informes seulement). ⚠️ TRÈS IMPORTANT — l'échange ne concerne QUE les commandes DÉJÀ REÇUES. Avant de parler de la PROCÉDURE d'échange, tu dois connaître l'état de la commande :
@@ -112,9 +114,22 @@ function normalizeHistory(history) {
   return msgs;
 }
 
-// Appelle Claude. history = tours précédents (ancien→récent). catalog = dispo produits en direct. Retourne {reply, intent, usage}. Throw si erreur API.
-async function generateReply({ text, name, orderItems, total, city, history, catalog }) {
+// Appelle Claude. history = tours précédents. catalog = dispo. imageBase64 = photo envoyée par le client (vision). Retourne {reply, intent, usage}. Throw si erreur API.
+async function generateReply({ text, name, orderItems, total, city, history, catalog, imageBase64, imageMime }) {
   let messages = normalizeHistory(history);
+  if (imageBase64) {
+    const blocks = [
+      { type: 'text', text: (text && text.trim()) ? text : "Le client vient d'envoyer cette photo. Identifie le produit Touni le plus proche du catalogue et aide-le (prix, dispo, ou prise de commande)." },
+      { type: 'image', source: { type: 'base64', media_type: imageMime || 'image/jpeg', data: imageBase64 } },
+    ];
+    if (messages.length && messages[messages.length - 1].role === 'user') {
+      const last = messages[messages.length - 1];
+      const prev = typeof last.content === 'string' ? [{ type: 'text', text: last.content }] : (Array.isArray(last.content) ? last.content : []);
+      last.content = prev.concat(blocks);
+    } else {
+      messages.push({ role: 'user', content: blocks });
+    }
+  }
   if (!messages.length) {
     messages = [{ role: 'user', content: `Client${name ? ' (' + name + ')' : ''} a écrit : "${String(text).slice(0, 1500)}"` }];
   }
@@ -134,12 +149,12 @@ async function generateReply({ text, name, orderItems, total, city, history, cat
 
 // Décide quoi faire d'un message entrant. arg peut inclure `history` (tours précédents). opts: {bypassTime, unanswered, isButtonFlag}
 // Retourne {send, reply, intent, skipped, hour, usage}
-async function handleIncoming({ text, name, orderItems, total, city, history, catalog }, opts = {}) {
+async function handleIncoming({ text, name, orderItems, total, city, history, catalog, imageBase64, imageMime }, opts = {}) {
   if (!ANTHROPIC_KEY) return { send: false, skipped: 'no_key' };
-  if (!text || String(text).trim().length === 0) return { send: false, skipped: 'no_text' };
-  if (opts.isButtonFlag || isButton(text)) return { send: false, skipped: 'button' };
+  if ((!text || String(text).trim().length === 0) && !imageBase64) return { send: false, skipped: 'no_text' };
+  if (!imageBase64 && (opts.isButtonFlag || isButton(text))) return { send: false, skipped: 'button' };
   if (!opts.bypassTime && !opts.unanswered && isWorkHours()) return { send: false, skipped: 'work_hours', hour: maroccoHour() };
-  const g = await generateReply({ text, name, orderItems, total, city, history, catalog });
+  const g = await generateReply({ text, name, orderItems, total, city, history, catalog, imageBase64, imageMime });
   return { send: !!(g.reply && g.reply.trim()), reply: g.reply, intent: g.intent, note: g.note, order: g.order, usage: g.usage };
 }
 

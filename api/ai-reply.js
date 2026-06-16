@@ -229,9 +229,23 @@ async function runPoll(q) {
         const incoming = senderWaId && contactWaId && senderWaId === contactWaId; // dernier msg = du client (sans réponse)
         if (!incoming) continue;
         if (!lastTime || (nowSec - lastTime) > FRESH_WINDOW_SEC) continue;        // frais uniquement (jamais le backlog)
-        if (type && type !== 'text') continue;                                    // texte uniquement (pas template/image)
-        if (!msgId || !body.trim()) continue;
+        if (!msgId) continue;
+        const isImage = type === 'image';
+        if (!isImage && type && type !== 'text') continue;                        // pas template/audio/sticker/bouton
+        if (!isImage && !body.trim()) continue;
         if (await alreadyReplied(msgId)) continue;
+        // Photo entrante → télécharger + base64 pour Claude Vision
+        let imageBase64 = null, imageMime = null;
+        if (isImage) {
+          const iurl = (lm.content && lm.content.url) || '';
+          if (!iurl) continue;
+          try {
+            const ir = await fetch(iurl);
+            const buf = Buffer.from(await ir.arrayBuffer());
+            if (buf.length && buf.length < 4000000) { imageBase64 = buf.toString('base64'); imageMime = (lm.content && lm.content.mime_type) || 'image/jpeg'; }
+          } catch (e) {}
+          if (!imageBase64) continue;
+        }
 
         // Historique de la conversation → réponse en contexte (multi-tours)
         let history = [];
@@ -261,7 +275,7 @@ async function runPoll(q) {
         } catch (e) {}
 
         const decision = await handleIncoming(
-          { text: body, name: c.title || (c.contact && c.contact.name) || '', city: (c.contact && c.contact.city) || '', history, catalog },
+          { text: body, name: c.title || (c.contact && c.contact.name) || '', city: (c.contact && c.contact.city) || '', history, catalog, imageBase64, imageMime },
           { bypassTime }
         );
         const entry = { conv: c.id, phone: contactWaId, name: c.title, msgId, body: body.slice(0, 60), decision: decision.skipped || (decision.send ? 'reply' : 'no_send') };
@@ -351,7 +365,9 @@ module.exports = async (req, res) => {
       isButtonFlag: body.is_button === true || body.is_button === 'true' || body.is_button === 1 || body.is_button === '1' || body.from_button === true || body.from_button === 'true',
     };
     let catalog = ''; try { catalog = await searchCatalog(text); } catch (e) {}
-    const d = await handleIncoming({ text, name, orderItems, total, city, catalog }, opts);
+    const imageBase64 = body.image_base64 || null;
+    const imageMime = body.image_mime || 'image/jpeg';
+    const d = await handleIncoming({ text, name, orderItems, total, city, catalog, imageBase64, imageMime }, opts);
     return res.status(200).json({ reply: d.reply || '', intent: d.intent || 'answer', note: d.note || '', order: d.order || null, send: !!d.send, skipped: d.skipped, hour: d.hour, usage: d.usage, catalog: catalog ? catalog.split('\n').length - 1 : 0 });
   } catch (e) {
     return res.status(500).json({ error: String(e) });
