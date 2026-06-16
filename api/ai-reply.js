@@ -166,13 +166,18 @@ async function markReplied(msgId, convId, phone, preview) {
 
 // Recherche catalogue Shopify (cache Supabase) selon la demande → bloc dispo en direct à injecter.
 const CATALOG_STOPWORDS = new Set('maillot maillots kit kits ensemble survetement survetements casquette casquettes taille tailles size prix combien chhal taman bghit bghi bghyt veux voudrais cherche dispo disponible disponibles bonjour salam salut svp stp merci pour avec est une des les dans vous tu je oui non ok cest quoi autre meme original foot football equipe club saison commande commander acheter chri photo photos couleur couleurs livraison aujourd hui parfait prends prend piece pieces standard mon complet nom adresse ville rue confirme maintenant article articles nombre quantite svp stp bien donc alors voila pour moi prendre prenez prendrai numero tel'.split(' '));
+// Synonymes / surnoms → terme présent dans les titres Shopify
+const CATALOG_SYNONYMS = { barca: 'barcelon', barsa: 'barcelon', barcaa: 'barcelon', psg: 'paris', real: 'madrid', juve: 'juventus', mancity: 'manchester', manu: 'manchester', citizens: 'manchester', bayern: 'bayern', intermilan: 'inter', wac: 'wydad', wydadi: 'wydad', rajaoui: 'raja' };
 async function searchCatalog(text) {
   try {
     const norm = String(text || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
     const toks = [...new Set(norm.split(/[^a-z0-9]+/).filter((w) => w.length >= 3 && !CATALOG_STOPWORDS.has(w)))].slice(0, 6);
     if (!toks.length) return '';
-    // 1) DÉCOUVERTE : product_ids candidats via le cache (titres), classés par mots-clés
-    const orExpr = toks.map((w) => `product_title.ilike.*${encodeURIComponent(w)}*`).join(',');
+    // 1) DÉCOUVERTE : product_ids candidats via le cache (titres) + synonymes, classés par mots-clés
+    const termSet = new Set();
+    for (const t of toks) { termSet.add(t); if (CATALOG_SYNONYMS[t]) termSet.add(CATALOG_SYNONYMS[t]); }
+    const searchTerms = [...termSet];
+    const orExpr = searchTerms.map((w) => `product_title.ilike.*${encodeURIComponent(w)}*`).join(',');
     const url = `${SB_URL}/rest/v1/shopify_variants_cache?or=(${orExpr})&select=product_title,product_id&limit=1000`;
     const r = await fetch(url, { headers: supabaseHeaders(true) });
     const rows = await r.json().catch(() => []);
@@ -181,7 +186,7 @@ async function searchCatalog(text) {
     for (const row of rows) {
       const pid = row.product_id; if (!pid || byPid.has(pid)) continue;
       const nt = String(row.product_title || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
-      byPid.set(pid, { title: row.product_title, score: toks.filter((w) => nt.indexOf(w) !== -1).length });
+      byPid.set(pid, { title: row.product_title, score: searchTerms.filter((w) => nt.indexOf(w) !== -1).length });
     }
     const candidates = [...byPid.entries()].sort((a, b) => b[1].score - a[1].score).slice(0, 50);
     if (!candidates.length) return '';
