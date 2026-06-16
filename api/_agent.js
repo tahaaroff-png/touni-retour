@@ -60,6 +60,7 @@ ${FACTS}
 RÈGLES STRICTES :
 - VARIE TOUJOURS TES FORMULATIONS : ne récite jamais mot pour mot la même phrase toute faite (surtout sur la qualité, le prix, la promo, la livraison). Reformule à chaque fois avec tes propres mots, naturellement — tu es un agent IA, pas un script copier-coller. Garde le même SENS, change la forme.
 - N'invente RIEN (pas de prix exact que tu ignores, pas de délai garanti, pas de promo inexistante). En cas de doute → donne l'info générale et dis que l'équipe confirme le détail.
+- DISPONIBILITÉ : si un bloc « CATALOGUE (dispo en direct) » t'est fourni ci-dessous, base-toi DESSUS pour dire si un produit est en stock et quelles tailles sont dispo. Si le produit voulu est en RUPTURE, propose gentiment un modèle SIMILAIRE en stock (depuis ce bloc). Ne promets jamais un produit en rupture. Si aucun bloc catalogue n'est fourni, reste général.
 - Ne cite JAMAIS une marque d'équipementier (Puma/Nike/Adidas…). Ne dis jamais "officiel"/"copie"/"réplique"/"fake".
 - Ne recommande jamais une autre boutique.
 - RÉCLAMATION / problème (colis perdu, défaut, litige, remboursement) → ne tente pas de régler ; dis qu'un conseiller le recontacte demain matin (dès 9h). Marque "escalate".
@@ -104,16 +105,17 @@ function normalizeHistory(history) {
   return msgs;
 }
 
-// Appelle Claude. history = tours précédents (ancien→récent). Retourne {reply, intent, usage}. Throw si erreur API.
-async function generateReply({ text, name, orderItems, total, city, history }) {
+// Appelle Claude. history = tours précédents (ancien→récent). catalog = dispo produits en direct. Retourne {reply, intent, usage}. Throw si erreur API.
+async function generateReply({ text, name, orderItems, total, city, history, catalog }) {
   let messages = normalizeHistory(history);
   if (!messages.length) {
     messages = [{ role: 'user', content: `Client${name ? ' (' + name + ')' : ''} a écrit : "${String(text).slice(0, 1500)}"` }];
   }
+  const sys = SYSTEM + buildContextNote({ name, orderItems, total, city }) + (catalog ? '\n\n' + catalog : '');
   const r = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-    body: JSON.stringify({ model: MODEL, max_tokens: 500, system: SYSTEM + buildContextNote({ name, orderItems, total, city }), messages }),
+    body: JSON.stringify({ model: MODEL, max_tokens: 500, system: sys, messages }),
   });
   const data = await r.json();
   if (!r.ok) { const e = new Error('claude_error'); e.detail = data; throw e; }
@@ -125,12 +127,12 @@ async function generateReply({ text, name, orderItems, total, city, history }) {
 
 // Décide quoi faire d'un message entrant. arg peut inclure `history` (tours précédents). opts: {bypassTime, unanswered, isButtonFlag}
 // Retourne {send, reply, intent, skipped, hour, usage}
-async function handleIncoming({ text, name, orderItems, total, city, history }, opts = {}) {
+async function handleIncoming({ text, name, orderItems, total, city, history, catalog }, opts = {}) {
   if (!ANTHROPIC_KEY) return { send: false, skipped: 'no_key' };
   if (!text || String(text).trim().length === 0) return { send: false, skipped: 'no_text' };
   if (opts.isButtonFlag || isButton(text)) return { send: false, skipped: 'button' };
   if (!opts.bypassTime && !opts.unanswered && isWorkHours()) return { send: false, skipped: 'work_hours', hour: maroccoHour() };
-  const g = await generateReply({ text, name, orderItems, total, city, history });
+  const g = await generateReply({ text, name, orderItems, total, city, history, catalog });
   return { send: !!(g.reply && g.reply.trim()), reply: g.reply, intent: g.intent, usage: g.usage };
 }
 

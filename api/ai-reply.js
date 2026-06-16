@@ -121,6 +121,36 @@ async function markReplied(msgId, convId, phone, preview) {
   }).catch(() => {});
 }
 
+// Recherche catalogue Shopify (cache Supabase) selon la demande → bloc dispo en direct à injecter.
+const CATALOG_STOPWORDS = new Set('maillot maillots kit kits ensemble survetement survetements casquette taille tailles size prix combien chhal taman bghit bghi bghyt veux voudrais cherche dispo disponible disponibles bonjour salam salut svp stp merci pour avec est une des les dans vous tu je oui non ok cest quoi autre meme original foot football equipe club saison commande commander acheter chri photo photos couleur couleurs livraison aujourd hui'.split(' '));
+async function searchCatalog(text) {
+  try {
+    const norm = String(text || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+    const toks = [...new Set(norm.split(/[^a-z0-9]+/).filter((w) => w.length >= 3 && !CATALOG_STOPWORDS.has(w)))].slice(0, 6);
+    if (!toks.length) return '';
+    const orExpr = toks.map((w) => `product_title.ilike.*${encodeURIComponent(w)}*`).join(',');
+    const url = `${SB_URL}/rest/v1/shopify_variants_cache?status=eq.active&or=(${orExpr})&select=product_title,size,color,inventory_quantity&limit=300`;
+    const r = await fetch(url, { headers: supabaseHeaders(true) });
+    const rows = await r.json().catch(() => []);
+    if (!Array.isArray(rows) || !rows.length) return '';
+    const map = new Map();
+    for (const row of rows) {
+      const t = row.product_title; if (!t) continue;
+      if (!map.has(t)) map.set(t, { sizesIn: new Set(), colors: new Set(), anyStock: false });
+      const m = map.get(t);
+      if (row.color) m.colors.add(row.color);
+      if (row.inventory_quantity > 0) { m.anyStock = true; if (row.size) m.sizesIn.add(row.size); }
+    }
+    const prods = [...map.entries()].sort((a, b) => (b[1].anyStock ? 1 : 0) - (a[1].anyStock ? 1 : 0)).slice(0, 6);
+    const lines = prods.map(([t, m]) => {
+      const cols = [...m.colors].slice(0, 6).join(',');
+      const inS = [...m.sizesIn].join(',');
+      return `- ${t}${cols ? ' (' + cols + ')' : ''} : ${m.anyStock ? ('EN STOCK' + (inS ? ' [tailles ' + inS + ']' : '')) : 'RUPTURE'}`;
+    });
+    return 'CATALOGUE (dispo en direct, produits liés à la demande) :\n' + lines.join('\n');
+  } catch (e) { return ''; }
+}
+
 async function runPoll(q) {
   // EGROW_ONLY (env) = mode TEST : l'agent ne répond QU'à ce numéro, et ignore la porte horaire.
   // (Vide en prod → tous les clients, porte horaire active.)
@@ -163,8 +193,15 @@ async function runPoll(q) {
             .reverse(); // ancien -> récent
         } catch (e) {}
 
+        // Catalogue Shopify en direct (selon la demande + contexte récent)
+        let catalog = '';
+        try {
+          const histText = history.filter((h) => h.role === 'user').slice(-3).map((h) => h.content).join(' ');
+          catalog = await searchCatalog(body + ' ' + histText);
+        } catch (e) {}
+
         const decision = await handleIncoming(
-          { text: body, name: c.title || (c.contact && c.contact.name) || '', city: (c.contact && c.contact.city) || '', history },
+          { text: body, name: c.title || (c.contact && c.contact.name) || '', city: (c.contact && c.contact.city) || '', history, catalog },
           { bypassTime }
         );
         const entry = { conv: c.id, phone: contactWaId, name: c.title, msgId, body: body.slice(0, 60), decision: decision.skipped || (decision.send ? 'reply' : 'no_send') };
@@ -230,8 +267,9 @@ module.exports = async (req, res) => {
       unanswered: body.unanswered === true || body.unanswered === 'true' || q.unanswered === '1',
       isButtonFlag: body.is_button === true || body.is_button === 'true' || body.is_button === 1 || body.is_button === '1' || body.from_button === true || body.from_button === 'true',
     };
-    const d = await handleIncoming({ text, name, orderItems, total, city }, opts);
-    return res.status(200).json({ reply: d.reply || '', intent: d.intent || 'answer', send: !!d.send, skipped: d.skipped, hour: d.hour, usage: d.usage });
+    let catalog = ''; try { catalog = await searchCatalog(text); } catch (e) {}
+    const d = await handleIncoming({ text, name, orderItems, total, city, catalog }, opts);
+    return res.status(200).json({ reply: d.reply || '', intent: d.intent || 'answer', send: !!d.send, skipped: d.skipped, hour: d.hour, usage: d.usage, catalog: catalog ? catalog.split('\n').length - 1 : 0 });
   } catch (e) {
     return res.status(500).json({ error: String(e) });
   }
