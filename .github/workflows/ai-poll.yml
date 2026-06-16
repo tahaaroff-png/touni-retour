@@ -1,0 +1,15 @@
+name: touni-ai-poll
+# Déclenche le poller de l'agent IA WhatsApp toutes les ~5 min (limite GitHub Actions).
+# En phase TEST, l'endpoint est restreint au numéro du marchand (env EGROW_ONLY) → inoffensif.
+# AVANT la prod (tous les clients) : déplacer le secret dans un GitHub Secret.
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+jobs:
+  poll:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger agent poll
+        run: |
+          curl -s "https://touni-retour.vercel.app/api/ai-reply?secret=touni-sync-2026&poll=1" -o /dev/null -w "poll HTTP %{http_code}\n"
