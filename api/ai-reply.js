@@ -302,6 +302,25 @@ async function sanitizeReplyLinks(reply) {
   return reply.replace(/https?:\/\/touni\.ma\/collections\/([a-z0-9\-]+)/gi, (m, h) =>
     handles.has(h.toLowerCase()) ? m : 'https://touni.ma');
 }
+// Transcription d'un message VOCAL (Groq Whisper large-v3, OpenAI-compatible) → texte, pour que Claude réponde.
+async function transcribeAudio(url) {
+  const key = process.env.GROQ_API_KEY;
+  if (!key || !url) return '';
+  try {
+    const ar = await fetch(url);
+    const buf = Buffer.from(await ar.arrayBuffer());
+    if (!buf.length || buf.length > 24000000) return ''; // limite Groq 25 Mo
+    const fd = new FormData();
+    fd.append('file', new Blob([buf], { type: 'audio/mpeg' }), 'audio.mp3');
+    fd.append('model', 'whisper-large-v3');
+    fd.append('response_format', 'json');
+    const tr = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+      method: 'POST', headers: { Authorization: `Bearer ${key}` }, body: fd,
+    });
+    const tj = await tr.json().catch(() => ({}));
+    return tj && tj.text ? String(tj.text).trim() : '';
+  } catch (e) { return ''; }
+}
 async function searchCatalog(text) {
   try {
     const norm = String(text || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
@@ -377,7 +396,7 @@ async function runPoll(q) {
         const contactWaId = String(c.contactWaId || '');
         const senderWaId = String(lm.senderWaId || '');
         const lastTime = parseInt(c.lastMessageTime || lm.sentAt || '0', 10);
-        const body = (lm.body || (lm.content && lm.content.body) || '').toString();
+        let body = (lm.body || (lm.content && lm.content.body) || '').toString();
         const type = (lm.type || '').toString();
         const msgId = String(lm.id || '');
 
@@ -387,9 +406,11 @@ async function runPoll(q) {
         if (!lastTime || (nowSec - lastTime) > FRESH_WINDOW_SEC) continue;        // frais uniquement (jamais le backlog)
         if (!msgId) continue;
         const isImage = type === 'image';
-        if (!isImage && type && type !== 'text') continue;                        // pas template/audio/sticker/bouton
-        if (!isImage && !body.trim()) continue;
-        if (!dry && !(await claimMessage(msgId, c.id, contactWaId, body))) continue; // anti-doublon ATOMIQUE : un seul run traite ce message (pas de claim en dry-run)
+        const isAudio = type === 'audio' || type === 'voice' || type === 'ptt';     // message vocal
+        const isCall = /call/i.test(type);                                          // appel (manqué) — détection best-effort
+        if (!isImage && !isAudio && !isCall && type && type !== 'text') continue;    // pas template/sticker/bouton/reaction
+        if (type === 'text' && !body.trim()) continue;
+        if (!dry && !(await claimMessage(msgId, c.id, contactWaId, body || type))) continue; // anti-doublon ATOMIQUE
         if (!dry) claimedMsgId = msgId;
         // Photo entrante → télécharger + base64 pour Claude Vision
         let imageBase64 = null, imageMime = null;
@@ -402,6 +423,17 @@ async function runPoll(q) {
             if (buf.length && buf.length < 4000000) { imageBase64 = buf.toString('base64'); imageMime = (lm.content && lm.content.mime_type) || 'image/jpeg'; }
           } catch (e) {}
           if (!imageBase64) { await releaseClaim(msgId); continue; }
+        }
+        // Message VOCAL → transcrire (Groq Whisper) puis traiter comme du texte normal
+        if (isAudio) {
+          const aurl = (lm.content && lm.content.url) || '';
+          const txt = aurl ? await transcribeAudio(aurl) : '';
+          if (!txt) { await releaseClaim(msgId); continue; } // transcription impossible → on libère (réessai au prochain run)
+          body = '🎤 (message vocal du client, transcrit) ' + txt;
+        }
+        // APPEL (manqué) → message d'aide automatique (la porte horaire s'applique : surtout hors 9h-18h)
+        if (isCall) {
+          body = "[Le client vient d'essayer de nous APPELER. Réponds par un message chaleureux : explique gentiment que la ligne téléphonique est ouverte de 9h à 18h, mais que tu es là tout de suite par message pour l'aider (commande, taille, produit, livraison, suivi…). Invite-le à écrire ce dont il a besoin. S'il veut absolument un appel, dis qu'un conseiller le rappellera demain dès 9h.]";
         }
 
         // Historique de la conversation → réponse en contexte (multi-tours)
