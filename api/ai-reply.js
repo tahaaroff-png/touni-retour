@@ -208,7 +208,8 @@ async function searchCatalog(text) {
       if (p.status !== 'active') continue; // pas de brouillon/archivé
       const avail = (p.variants || []).filter((v) => Number(v.inventory_quantity) > 0);
       if (!avail.length) continue; // rien en stock
-      const sizes = [...new Set(avail.map((v) => v.title).filter((s) => s && s !== 'Default Title'))];
+      const SIZE_RE = /\b(XS|S|M|L|XL|XXL|2XL|3XL|4XL)\b/i;
+      const sizes = [...new Set(avail.map((v) => { const mm = String(v.title || '').match(SIZE_RE); return mm ? mm[1].toUpperCase() : ''; }).filter(Boolean))];
       const price = avail[0].price;
       const q = encodeURIComponent(String(p.title).replace(/[–—|]/g, ' ').replace(/\s+/g, ' ').trim());
       lines.push(`- ${p.title} : ~${price} dh — EN STOCK${sizes.length ? ' [tailles ' + sizes.join(',') + ']' : ''} | lien: https://touni.ma/search?q=${q}`);
