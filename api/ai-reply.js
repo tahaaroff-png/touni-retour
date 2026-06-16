@@ -82,9 +82,12 @@ async function markReplied(msgId, convId, phone, preview) {
 }
 
 async function runPoll(q) {
-  const dry = q.dry === '1';          // dry-run : ne pas envoyer, juste lister
-  const bypassTime = q.test === '1';  // ignorer la porte horaire (test en journée)
-  const onlyPhone = (q.only || '').toString().replace(/\D/g, ''); // limiter à un numéro (test ciblé)
+  // EGROW_ONLY (env) = mode TEST : l'agent ne répond QU'à ce numéro, et ignore la porte horaire.
+  // (Vide en prod → tous les clients, porte horaire active.)
+  const envOnly = (process.env.EGROW_ONLY || '').replace(/\D/g, '');
+  const dry = q.dry === '1';                          // dry-run : ne pas envoyer, juste lister
+  const bypassTime = q.test === '1' || !!envOnly;     // scope env = test → ignore l'heure
+  const onlyPhone = envOnly || (q.only || '').toString().replace(/\D/g, ''); // numéro ciblé
   const nowSec = Math.floor(Date.now() / 1000);
   const results = [];
   let processed = 0;
