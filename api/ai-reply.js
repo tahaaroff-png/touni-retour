@@ -3,7 +3,7 @@
 //   - GET  /api/ai-reply?poll=1     → POLLER : lit l'inbox eGrow, répond via Claude, envoie via l'API eGrow.
 // Sécurisé par ?secret=. Clé Claude + tokens eGrow en env. Anti-doublon Supabase (table wa_agent_replied).
 const { handleIncoming } = require('./_agent.js');
-const { SB_URL, supabaseHeaders } = require('./_shopify-helpers.js');
+const { SB_URL, supabaseHeaders, shopifyAdminHeaders, SHOPIFY_DOMAIN, SHOPIFY_API_VERSION } = require('./_shopify-helpers.js');
 
 const SECRET = 'touni-sync-2026';
 const EGROW_ME = process.env.EGROW_ME || '';
@@ -172,15 +172,16 @@ async function searchCatalog(text) {
     const toks = [...new Set(norm.split(/[^a-z0-9]+/).filter((w) => w.length >= 3 && !CATALOG_STOPWORDS.has(w)))].slice(0, 6);
     if (!toks.length) return '';
     const orExpr = toks.map((w) => `product_title.ilike.*${encodeURIComponent(w)}*`).join(',');
-    const url = `${SB_URL}/rest/v1/shopify_variants_cache?status=eq.active&or=(${orExpr})&select=product_title,size,color,inventory_quantity,product_image&limit=300`;
+    const url = `${SB_URL}/rest/v1/shopify_variants_cache?status=eq.active&or=(${orExpr})&select=product_title,product_id,size,color,inventory_quantity,product_image&limit=300`;
     const r = await fetch(url, { headers: supabaseHeaders(true) });
     const rows = await r.json().catch(() => []);
     if (!Array.isArray(rows) || !rows.length) return '';
     const map = new Map();
     for (const row of rows) {
       const t = row.product_title; if (!t) continue;
-      if (!map.has(t)) map.set(t, { sizesIn: new Set(), colors: new Set(), anyStock: false, img: '' });
+      if (!map.has(t)) map.set(t, { sizesIn: new Set(), colors: new Set(), anyStock: false, img: '', pid: row.product_id });
       const m = map.get(t);
+      if (!m.pid && row.product_id) m.pid = row.product_id;
       if (row.color) m.colors.add(row.color);
       if (!m.img && row.product_image) m.img = row.product_image;
       if (row.inventory_quantity > 0) { m.anyStock = true; if (row.size) m.sizesIn.add(row.size); }
@@ -199,7 +200,17 @@ async function searchCatalog(text) {
       for (const tok of toks.slice(0, 2)) {
         const eg = await egrowPost('/product/getUserProduct.php', { search: tok });
         const earr = Array.isArray(eg) ? eg : (eg && eg.data) || [];
-        for (const ep of earr) { const k = np(ep.name); if (!egMap[k] && (ep.store_product_link || ep.price)) egMap[k] = { link: ep.store_product_link || '', price: ep.price }; }
+        for (const ep of earr) { const k = np(ep.name); if (!egMap[k] && ep.price) egMap[k] = { price: ep.price }; }
+      }
+    } catch (e) {}
+    // handles Shopify (lien page produit) pour les produits affichés — 1 appel
+    const handleMap = {};
+    try {
+      const ids = [...new Set(prods.map(([, m]) => m.pid).filter(Boolean))];
+      if (ids.length) {
+        const hr = await fetch(`https://${SHOPIFY_DOMAIN}/admin/api/${SHOPIFY_API_VERSION}/products.json?ids=${ids.join(',')}&fields=id,handle`, { headers: await shopifyAdminHeaders() });
+        const hj = await hr.json().catch(() => ({}));
+        for (const p of (hj.products || [])) handleMap[String(p.id)] = p.handle;
       }
     } catch (e) {}
     const lines = prods.map(([t, m]) => {
@@ -207,7 +218,8 @@ async function searchCatalog(text) {
       const inS = [...m.sizesIn].join(',');
       const eg = egMap[np(t)];
       const price = eg && eg.price ? ' ~' + eg.price + ' dh' : '';
-      const link = eg && eg.link ? ' | lien: ' + eg.link : (m.img ? ' | photo: ' + m.img : '');
+      const h = handleMap[String(m.pid)];
+      const link = h ? ' | lien: https://touni.ma/products/' + h : (m.img ? ' | photo: ' + m.img : '');
       return `- ${t}${cols ? ' (' + cols + ')' : ''} :${price} ${m.anyStock ? ('EN STOCK' + (inS ? ' [tailles ' + inS + ']' : '')) : 'RUPTURE'}${link}`;
     });
     return 'CATALOGUE (dispo en direct, produits liés à la demande ; partage le « lien: » = page produit du site) :\n' + lines.join('\n');
