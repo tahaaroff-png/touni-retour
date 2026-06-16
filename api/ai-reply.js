@@ -151,17 +151,24 @@ async function createOrderDeal(order, contactId) {
 async function addDealNote(dealId, content) {
   try { return await egrowPost('/notes/add_or_update_note.php', { id: 0, content: String(content).slice(0, 500), type: 'deal', context: dealId, color: '' }); } catch (e) { return null; }
 }
-async function alreadyReplied(msgId) {
-  const r = await fetch(`${SB_URL}/rest/v1/wa_agent_replied?msg_id=eq.${encodeURIComponent(msgId)}&select=msg_id`, { headers: supabaseHeaders(true) });
-  const j = await r.json().catch(() => []);
-  return Array.isArray(j) && j.length > 0;
+// Claim ATOMIQUE (anti-doublon) : insère msg_id et renvoie true UNIQUEMENT si c'est NOUS qui venons de l'insérer.
+// Deux runs simultanés (2 crons, ou un run qui chevauche le suivant) → un seul gagne le claim, l'autre reçoit false et skip
+// → JAMAIS de double réponse. (msg_id = clé primaire ; resolution=ignore-duplicates + return=representation → la ligne
+// n'est renvoyée que si l'insertion a réellement eu lieu.)
+async function claimMessage(msgId, convId, phone, preview) {
+  try {
+    const r = await fetch(`${SB_URL}/rest/v1/wa_agent_replied`, {
+      method: 'POST',
+      headers: Object.assign({}, supabaseHeaders(true), { 'Content-Type': 'application/json', 'Prefer': 'resolution=ignore-duplicates,return=representation' }),
+      body: JSON.stringify({ msg_id: String(msgId), conv_id: String(convId), contact_phone: String(phone || ''), body_preview: String(preview || '').slice(0, 200) }),
+    });
+    const j = await r.json().catch(() => []);
+    return Array.isArray(j) && j.length > 0; // ≥1 ligne renvoyée = insertion réussie = on détient le claim
+  } catch (e) { return false; } // erreur DB → on s'abstient (mieux vaut rater que doubler ; le prochain run réessaiera)
 }
-async function markReplied(msgId, convId, phone, preview) {
-  await fetch(`${SB_URL}/rest/v1/wa_agent_replied`, {
-    method: 'POST',
-    headers: Object.assign({}, supabaseHeaders(true), { 'Content-Type': 'application/json', 'Prefer': 'resolution=ignore-duplicates' }),
-    body: JSON.stringify({ msg_id: String(msgId), conv_id: String(convId), contact_phone: String(phone || ''), body_preview: String(preview || '').slice(0, 200) }),
-  }).catch(() => {});
+// Libère le claim (si l'envoi échoue ou si finalement on ne répond pas) → le prochain run pourra reprendre ce message.
+async function releaseClaim(msgId) {
+  try { await fetch(`${SB_URL}/rest/v1/wa_agent_replied?msg_id=eq.${encodeURIComponent(msgId)}`, { method: 'DELETE', headers: supabaseHeaders(true) }); } catch (e) {}
 }
 
 // Recherche catalogue Shopify (cache Supabase) selon la demande → bloc dispo en direct à injecter.
@@ -169,7 +176,9 @@ const CATALOG_STOPWORDS = new Set('taille tailles size prix combien chhal taman 
 // Mots de CATÉGORIE : gardés (le client peut chercher une catégorie), mais on privilégie un mot spécifique (équipe) s'il y en a un.
 const CATEGORY_WORDS = new Set('maillot maillots kit kits ensemble ensembles survetement survetements casquette casquettes ballon ballons short shorts chaussette chaussettes accessoire accessoires gourde'.split(' '));
 // Synonymes / surnoms → terme présent dans les titres Shopify
-const CATALOG_SYNONYMS = { barca: 'barcelon', barsa: 'barcelon', barcaa: 'barcelon', psg: 'paris', real: 'madrid', juve: 'juventus', mancity: 'manchester', manu: 'manchester', citizens: 'manchester', bayern: 'bayern', intermilan: 'inter', wac: 'wydad', wydadi: 'wydad', rajaoui: 'raja', kora: 'ballon', koura: 'ballon', balon: 'ballon', kaskita: 'casquette', training: 'entrainement', survet: 'survetement', short: 'short', chaussette: 'chaussette' };
+const CATALOG_SYNONYMS = { barca: 'barcelon', barsa: 'barcelon', barcaa: 'barcelon', psg: 'paris', real: 'madrid', juve: 'juventus', mancity: 'manchester', manu: 'manchester', citizens: 'manchester', bayern: 'bayern', intermilan: 'milan', wac: 'wydad', wydadi: 'wydad', rajaoui: 'raja', kora: 'ballon', koura: 'ballon', balon: 'ballon', kaskita: 'casquette', training: 'entrainement', survet: 'survetement', short: 'short', chaussette: 'chaussette',
+  // pays / surnoms fréquents (darija incluse) → terme présent dans les titres Shopify
+  brazil: 'bresil', brasil: 'bresil', lbrazil: 'bresil', lbresil: 'bresil', bresil: 'bresil', selecao: 'bresil', argentine: 'argentin', lmaghrib: 'maroc', maghrib: 'maroc', morocco: 'maroc', allemagne: 'allemagne', mancunian: 'manchester', reds: 'liverpool', citoyens: 'manchester' };
 
 // Collections Shopify (page équipe/catégorie) — mises en cache mémoire (chaud) ~1h
 let _cols = null, _colsAt = 0;
@@ -186,18 +195,20 @@ async function getCollections() {
   if (out.length) { _cols = out; _colsAt = Date.now(); }
   return _cols || [];
 }
-// Trouve la collection (équipe/catégorie) qui correspond le mieux aux mots-clés
-async function matchCollection(searchTerms) {
+// Trouve les collections (équipe/catégorie) qui correspondent aux mots-clés, triées par pertinence.
+// Renvoie un tableau [{c, score}] (score>0), pour pouvoir détecter une AMBIGUÏTÉ (ex: "inter" → Inter Miami ET Inter Milan).
+async function matchCollections(searchTerms) {
   const cols = await getCollections();
-  let best = null, bestScore = 0;
+  const scored = [];
   for (const c of cols) {
     const ct = normTxt(c.title);
     if (!ct) continue;
     let score = 0;
     for (const w of searchTerms) { if (w.length >= 4 && (ct.indexOf(w) !== -1 || w.indexOf(ct.split(' ')[0]) !== -1)) score++; }
-    if (score > bestScore) { bestScore = score; best = c; }
+    if (score > 0) scored.push({ c, score });
   }
-  return bestScore >= 1 ? best : null;
+  scored.sort((a, b) => b.score - a.score);
+  return scored;
 }
 async function searchCatalog(text) {
   try {
@@ -242,8 +253,19 @@ async function searchCatalog(text) {
       const q = encodeURIComponent(String(p.title).replace(/[–—|]/g, ' ').replace(/\s+/g, ' ').trim());
       lines.push(`- ${p.title} : ~${price} dh — EN STOCK${sizes.length ? ' [tailles ' + sizes.join(',') + ']' : ''} | lien: https://touni.ma/search?q=${q}`);
     }
-    const col = await matchCollection(searchTerms);
-    const colLine = col ? `COLLECTION ÉQUIPE (page du site avec TOUS les modèles — partage CE lien en PRIORITÉ, au lieu de lister les produits un par un) : ${col.title} → https://touni.ma/collections/${col.handle}\n\n` : '';
+    const cms = await matchCollections(searchTerms);
+    let colLine = '';
+    if (cms.length) {
+      const top = cms[0].score;
+      const tied = cms.filter((m) => m.score === top).map((m) => m.c);
+      if (tied.length >= 2) {
+        // Ambigu (ex: "inter" → Inter Miami ET Inter Milan ; "maroc" → Classic/CDM/Rétro) → l'agent DOIT demander laquelle AVANT d'envoyer un lien
+        colLine = `⚠️ AMBIGU — PLUSIEURS COLLECTIONS correspondent à la demande : ${tied.map((c) => c.title).join(' / ')}. NE partage AUCUN lien tout de suite : DEMANDE d'abord au client de LAQUELLE il parle, puis envoie le lien de la bonne. Liens (à n'utiliser qu'APRÈS clarification, jamais avant) :\n${tied.map((c) => `  • ${c.title} → https://touni.ma/collections/${c.handle}`).join('\n')}\n\n`;
+      } else {
+        const col = cms[0].c;
+        colLine = `COLLECTION ÉQUIPE (page du site avec TOUS les modèles — partage CE lien en PRIORITÉ, au lieu de lister les produits un par un) : ${col.title} → https://touni.ma/collections/${col.handle}\n\n`;
+      }
+    }
     if (!lines.length) return colLine ? colLine.trim() : '';
     return colLine + 'CATALOGUE (stock & prix EN DIRECT Shopify — UNIQUEMENT produits ACTIFS et EN STOCK ; ne propose QUE ceux-ci) :\n' + lines.join('\n');
   } catch (e) { return ''; }
@@ -281,18 +303,18 @@ async function runPoll(q) {
         const isImage = type === 'image';
         if (!isImage && type && type !== 'text') continue;                        // pas template/audio/sticker/bouton
         if (!isImage && !body.trim()) continue;
-        if (await alreadyReplied(msgId)) continue;
+        if (!dry && !(await claimMessage(msgId, c.id, contactWaId, body))) continue; // anti-doublon ATOMIQUE : un seul run traite ce message (pas de claim en dry-run)
         // Photo entrante → télécharger + base64 pour Claude Vision
         let imageBase64 = null, imageMime = null;
         if (isImage) {
           const iurl = (lm.content && lm.content.url) || '';
-          if (!iurl) continue;
+          if (!iurl) { await releaseClaim(msgId); continue; }
           try {
             const ir = await fetch(iurl);
             const buf = Buffer.from(await ir.arrayBuffer());
             if (buf.length && buf.length < 4000000) { imageBase64 = buf.toString('base64'); imageMime = (lm.content && lm.content.mime_type) || 'image/jpeg'; }
           } catch (e) {}
-          if (!imageBase64) continue;
+          if (!imageBase64) { await releaseClaim(msgId); continue; }
         }
 
         // Historique de la conversation → réponse en contexte (multi-tours)
@@ -327,6 +349,7 @@ async function runPoll(q) {
           { bypassTime }
         );
         const entry = { conv: c.id, phone: contactWaId, name: c.title, msgId, body: body.slice(0, 60), decision: decision.skipped || (decision.send ? 'reply' : 'no_send') };
+        if (!(decision.send && decision.reply) && !dry) await releaseClaim(msgId); // on ne répond pas (heures ouvrées/bouton) → libère le claim
         if (decision.send && decision.reply) {
           entry.intent = decision.intent;
           // #4 : confirmation/annulation d'une commande EN ATTENTE → déplacer le deal
@@ -343,7 +366,7 @@ async function runPoll(q) {
           } else {
             const sendRes = await egrowSend(integrationId, contactWaId, decision.reply);
             entry.sent = sendRes && sendRes.status;
-            await markReplied(msgId, c.id, contactWaId, body);
+            if (!(sendRes && sendRes.status === 'success')) await releaseClaim(msgId); // envoi raté → libère pour réessayer au prochain run
             if (isAction && deal && curStage !== target) {
               try {
                 const mv = await moveDeal(deal, target);
