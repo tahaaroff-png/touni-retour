@@ -223,6 +223,9 @@ async function releaseClaim(msgId) {
 const CATALOG_STOPWORDS = new Set('taille tailles size prix combien chhal taman bghit bghi bghyt veux voudrais cherche dispo disponible disponibles bonjour salam salut svp stp merci pour avec est une des les dans vous tu je oui non ok cest quoi autre meme original foot football equipe club saison commande commander acheter chri photo photos couleur couleurs livraison aujourd hui parfait prends prend piece pieces standard mon complet nom adresse ville rue confirme maintenant article articles nombre quantite bien donc alors voila moi prendre prenez prendrai numero tel chi 3ndkom 3ndkoum dial wach ash kayn avez avoir avez-vous propose proposez proposes vend vends vendez vendre fait faites donne donnez montre montrez envoie envoyez trouve trouvez regarde vois voir sur ce cette ces ton tes mes son ses mais que qui comme plus tres beaucoup aussi encore deja juste vraiment chez peux peut pouvez avait gout touni tola wrini werri werrini wri chof chouf nchouf chno chnou chnu chenou achno ach kayna kaynin tswira tswera tsawer tsewira liya lia ndir nbghi kanbghi rani rani bghyti bghiti baghi smiti smiti 3afak afak 3afak khoya sahbi wakha wakhaa walakin walayni'.split(' '));
 // Mots de CATÉGORIE : gardés (le client peut chercher une catégorie), mais on privilégie un mot spécifique (équipe) s'il y en a un.
 const CATEGORY_WORDS = new Set('maillot maillots kit kits ensemble ensembles survetement survetements casquette casquettes ballon ballons short shorts chaussette chaussettes accessoire accessoires gourde'.split(' '));
+// Modificateurs génériques : souvent PAS dans le titre exact du produit → on les retire de la REQUÊTE (sinon la recherche
+// AND de Shopify renvoie 0), mais on les garde pour le SCORE (départager les modèles, ex: la version "blanc").
+const GENERIC_MODIFIERS = new Set('retro retros vintage classic classique version versions edition editions speciale special collector authentique modele modeles tenue tenues saison nouvelle nouveau neuf neuve domicile exterieur exterieure third'.split(' '));
 // Synonymes / surnoms → terme présent dans les titres Shopify
 const CATALOG_SYNONYMS = { barca: 'barcelon', barsa: 'barcelon', barcaa: 'barcelon', psg: 'paris', real: 'madrid', juve: 'juventus', mancity: 'manchester', manu: 'manchester', citizens: 'manchester', bayern: 'bayern', intermilan: 'milan', wac: 'wydad', wydadi: 'wydad', rajaoui: 'raja', kora: 'ballon', koura: 'ballon', balon: 'ballon', kaskita: 'casquette', training: 'entrainement', survet: 'survetement', short: 'short', chaussette: 'chaussette',
   // pays / surnoms fréquents (darija incluse) → terme présent dans les titres Shopify
@@ -282,10 +285,11 @@ async function searchCatalog(text) {
       if (CATALOG_SYNONYMS[t]) termSet.add(CATALOG_SYNONYMS[t]);
     }
     const searchTerms = [...termSet];
-    // Recherche FULL-TEXT Shopify, termes séparés par ESPACE (et NON " OR ") → Shopify classe par PERTINENCE :
-    // le produit qui matche le PLUS de termes remonte 1er (ex: "maroc 98 blanc" → "Maillot du Maroc 98' Blanc").
-    // Insensible aux accents ("bresil" trouve "Brésil"). Le " OR " explicite, lui, ramenait du bruit (Tottenham/Inter sur "blanc").
-    const qstr = searchTerms.join(' ');
+    // Recherche FULL-TEXT Shopify, termes séparés par ESPACE (≈ AND, insensible aux accents : "bresil" trouve "Brésil").
+    // On retire les modificateurs génériques (retro, version…) de la requête (sinon "maroc retro 98 blanc" = 0 résultat,
+    // car aucun titre ne contient "retro"). On les garde dans searchTerms pour le SCORE (départager les modèles).
+    const queryTerms = searchTerms.filter((t) => !GENERIC_MODIFIERS.has(t));
+    const qstr = (queryTerms.length ? queryTerms : searchTerms).join(' ');
     const gql = 'query($q:String!){ products(first:40, query:$q){ edges{ node{ title status variants(first:25){ edges{ node{ title price inventoryQuantity } } } } } } }';
     let products = [];
     try {
