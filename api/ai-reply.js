@@ -282,9 +282,10 @@ async function searchCatalog(text) {
       if (CATALOG_SYNONYMS[t]) termSet.add(CATALOG_SYNONYMS[t]);
     }
     const searchTerms = [...termSet];
-    // Recherche FULL-TEXT Shopify (INSENSIBLE AUX ACCENTS : "bresil" trouve "Brésil", que le wildcard title:* raterait).
-    // On filtre ensuite sur le TITRE (score ≥ 1) pour la précision → évite le bruit des descriptions.
-    const qstr = searchTerms.join(' OR ');
+    // Recherche FULL-TEXT Shopify, termes séparés par ESPACE (et NON " OR ") → Shopify classe par PERTINENCE :
+    // le produit qui matche le PLUS de termes remonte 1er (ex: "maroc 98 blanc" → "Maillot du Maroc 98' Blanc").
+    // Insensible aux accents ("bresil" trouve "Brésil"). Le " OR " explicite, lui, ramenait du bruit (Tottenham/Inter sur "blanc").
+    const qstr = searchTerms.join(' ');
     const gql = 'query($q:String!){ products(first:40, query:$q){ edges{ node{ title status variants(first:25){ edges{ node{ title price inventoryQuantity } } } } } } }';
     let products = [];
     try {
