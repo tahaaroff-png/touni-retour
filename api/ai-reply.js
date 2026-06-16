@@ -195,23 +195,18 @@ async function getCollections() {
   if (out.length) { _cols = out; _colsAt = Date.now(); }
   return _cols || [];
 }
-// Trouve les collections (équipe/catégorie) qui correspondent aux mots-clés, triées par pertinence.
-// Renvoie un tableau [{c, score}] (score>0), pour pouvoir détecter une AMBIGUÏTÉ (ex: "inter" → Inter Miami ET Inter Milan).
-async function matchCollections(searchTerms) {
+// Bloc « NOS PAGES » : liste COMPLÈTE et officielle de toutes les collections (équipes/ligues/catégories) + lien vérifié.
+// Injecté dans CHAQUE prompt → c'est CLAUDE (pas une heuristique JS fragile) qui choisit la bonne page selon la demande,
+// avec toute son intelligence (darija, abréviations, fautes, ambiguïté). Mis en cache ~1h.
+let _colBlock = null, _colBlockAt = 0;
+async function buildCollectionsBlock() {
+  if (_colBlock && (Date.now() - _colBlockAt) < 3600000) return _colBlock;
   const cols = await getCollections();
-  const scored = [];
-  for (const c of cols) {
-    const ct = normTxt(c.title);
-    if (!ct) continue;
-    const cw0 = ct.split(' ')[0]; // 1er mot du titre de la collection
-    let score = 0;
-    // w doit faire ≥4 lettres ; et si on teste l'inclusion inverse (w contient le 1er mot), ce 1er mot doit AUSSI faire ≥4
-    // (évite que "barcelon" matche "On Running" parce qu'il contient "on", ou "fc"/"ac"…)
-    for (const w of searchTerms) { if (w.length >= 4 && (ct.indexOf(w) !== -1 || (cw0.length >= 4 && w.indexOf(cw0) !== -1))) score++; }
-    if (score > 0) scored.push({ c, score });
-  }
-  scored.sort((a, b) => b.score - a.score);
-  return scored;
+  if (!cols.length) return _colBlock || '';
+  const list = cols.map((c) => `- ${c.title} → https://touni.ma/collections/${c.handle}`).join('\n');
+  _colBlock = `NOS PAGES (collections) — liste COMPLÈTE et OFFICIELLE, avec le lien EXACT et VÉRIFIÉ de chaque page. C'est ta SEULE source de liens de collection : copie le lien TEL QUEL, n'invente JAMAIS un lien ni un handle, ne devine pas.\n${list}\n→ Quand le client veut voir une équipe / une ligue / une catégorie (même écrit en darija, en abrégé, en surnom ou avec une faute — ex: "lbrazil"=Brésil, "barça"=FC Barcelone, "kaskita"=casquettes), trouve la BONNE page ci-dessus et partage SON lien (page = TOUS les modèles de l'équipe). ⚠️ Si PLUSIEURS pages peuvent correspondre (ex: "Inter" → Inter Miami ET Inter Milan ; "Maroc" → Classic / Rétro / Coupe du monde 2026), ne choisis PAS au hasard : DEMANDE d'abord au client de laquelle il parle, puis envoie le bon lien. Si AUCUNE page ne correspond vraiment, partage seulement https://touni.ma.`;
+  _colBlockAt = Date.now();
+  return _colBlock;
 }
 async function searchCatalog(text) {
   try {
@@ -258,21 +253,10 @@ async function searchCatalog(text) {
       const q = encodeURIComponent(String(p.title).replace(/[–—|]/g, ' ').replace(/\s+/g, ' ').trim());
       lines.push(`- ${p.title} : ~${price} dh — EN STOCK${sizes.length ? ' [tailles ' + sizes.join(',') + ']' : ''} | lien: https://touni.ma/search?q=${q}`);
     }
-    const cms = await matchCollections(searchTerms);
-    let colLine = '';
-    if (cms.length) {
-      const top = cms[0].score;
-      const tied = cms.filter((m) => m.score === top).map((m) => m.c);
-      if (tied.length >= 2) {
-        // Ambigu (ex: "inter" → Inter Miami ET Inter Milan ; "maroc" → Classic/CDM/Rétro) → l'agent DOIT demander laquelle AVANT d'envoyer un lien
-        colLine = `⚠️ AMBIGU — PLUSIEURS COLLECTIONS correspondent à la demande : ${tied.map((c) => c.title).join(' / ')}. NE partage AUCUN lien tout de suite : DEMANDE d'abord au client de LAQUELLE il parle, puis envoie le lien de la bonne. Liens (à n'utiliser qu'APRÈS clarification, jamais avant) :\n${tied.map((c) => `  • ${c.title} → https://touni.ma/collections/${c.handle}`).join('\n')}\n\n`;
-      } else {
-        const col = cms[0].c;
-        colLine = `COLLECTION ÉQUIPE (page du site avec TOUS les modèles — partage CE lien en PRIORITÉ, au lieu de lister les produits un par un) : ${col.title} → https://touni.ma/collections/${col.handle}\n\n`;
-      }
-    }
-    if (!lines.length) return colLine ? colLine.trim() : '';
-    return colLine + 'CATALOGUE (stock & prix EN DIRECT Shopify — UNIQUEMENT produits ACTIFS et EN STOCK ; ne propose QUE ceux-ci) :\n' + lines.join('\n');
+    // Le choix du LIEN de collection est délégué à Claude via le bloc « NOS PAGES » (injecté à part). Ici on ne renvoie
+    // que la dispo produit EN DIRECT (stock/tailles/prix) pour les questions précises.
+    if (!lines.length) return '';
+    return 'CATALOGUE (stock, tailles & prix EN DIRECT Shopify — UNIQUEMENT produits ACTIFS et EN STOCK ; ne te sers QUE de ceux-ci pour confirmer une dispo / une taille / un prix précis) :\n' + lines.join('\n');
   } catch (e) { return ''; }
 }
 
@@ -332,11 +316,12 @@ async function runPoll(q) {
             .reverse(); // ancien -> récent
         } catch (e) {}
 
-        // Catalogue Shopify en direct (selon la demande + contexte récent)
+        // Contexte produit : NOS PAGES (toutes les collections, pour que Claude choisisse le bon lien) + dispo EN DIRECT
         let catalog = '';
         try {
           const histText = history.filter((h) => h.role === 'user').slice(-3).map((h) => h.content).join(' ');
-          catalog = await searchCatalog(body + ' ' + histText);
+          const [cb, prod] = await Promise.all([buildCollectionsBlock(), searchCatalog(body + ' ' + histText)]);
+          catalog = [cb, prod].filter(Boolean).join('\n\n');
         } catch (e) {}
         // Message lié à un échange/retour → injecter l'état réel de la commande
         try {
@@ -440,7 +425,7 @@ module.exports = async (req, res) => {
       unanswered: body.unanswered === true || body.unanswered === 'true' || q.unanswered === '1',
       isButtonFlag: body.is_button === true || body.is_button === 'true' || body.is_button === 1 || body.is_button === '1' || body.from_button === true || body.from_button === 'true',
     };
-    let catalog = ''; try { catalog = await searchCatalog(text); } catch (e) {}
+    let catalog = ''; try { const [cb, prod] = await Promise.all([buildCollectionsBlock(), searchCatalog(text)]); catalog = [cb, prod].filter(Boolean).join('\n\n'); } catch (e) {}
     const imageBase64 = body.image_base64 || null;
     const imageMime = body.image_mime || 'image/jpeg';
     const d = await handleIncoming({ text, name, orderItems, total, city, catalog, imageBase64, imageMime }, opts);
