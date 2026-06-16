@@ -162,24 +162,57 @@ async function moveDeal(deal, targetStage) {
 
 // ───────── #3 — création de commande ─────────
 function normTxt(s) { return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim(); }
+// Catégories produit (pour cibler la recherche eGrow et vérifier qu'on commande le bon TYPE).
+const PROD_CATEGORY = new Set('maillot maillots kit kits ensemble ensembles survetement survetements casquette casquettes ballon ballons short shorts chaussette chaussettes polo polos tshirt sweat hoodie gourde pantalon pantalons'.split(' '));
+// Mots NON distinctifs (catégorie + modificateurs + articles) : à ne PAS utiliser seuls (sinon « Maillot » matche tout).
+const PROD_GENERIC = new Set([...PROD_CATEGORY, ...'accessoire accessoires pro version versions edition editions speciale special collector retro retros vintage classic classique authentique domicile exterieur exterieure third home away de du da la le les des un une et nom numero foot football club saison nouvelle nouveau'.split(' ')]);
 async function egrowSearchProduct(name) {
   const tryOne = async (q) => { const r = await egrowPost('/product/getUserProduct.php', { search: String(q || '').slice(0, 80) }); return Array.isArray(r) ? r : (r && r.data) || []; };
   let arr = await tryOne(name);
   if (arr.length) return arr;
   const words = String(name || '').split(/\s+/).filter((w) => w.length > 1);
-  if (words.length > 3) { arr = await tryOne(words.slice(-3).join(' ')); if (arr.length) return arr; }
-  const longest = words.slice().sort((a, b) => b.length - a.length)[0];
-  if (longest) arr = await tryOne(longest);
-  return arr;
+  const cat = words.find((w) => PROD_CATEGORY.has(normTxt(w)));             // ex: "Maillot"
+  const distinct = words.filter((w) => !PROD_GENERIC.has(normTxt(w)));      // ex: ["Maroc","1998","Blanc"]
+  if (cat && distinct.length) { arr = await tryOne(`${cat} ${distinct[0]}`); if (arr.length) return arr; } // "Maillot Maroc" → vrais maillots
+  if (distinct.length) {
+    arr = await tryOne(distinct.slice(0, 3).join(' ')); if (arr.length) return arr; // "Maroc 1998 Blanc"
+    const longestD = distinct.slice().sort((a, b) => b.length - a.length)[0];
+    if (longestD) { arr = await tryOne(longestD); if (arr.length) return arr; }      // "Maroc"
+  }
+  return arr; // peut être vide → createOrderDeal le gère (échec → marchand prévenu)
 }
 async function createOrderDeal(order, contactId) {
   const prods = await egrowSearchProduct(order.product);
   if (!prods.length) return { ok: false, reason: 'product_not_found' };
   const want = normTxt(order.product);
-  const p = prods.find((x) => normTxt(x.name) === want) || prods.find((x) => normTxt(x.name).includes(want) || want.includes(normTxt(x.name))) || prods[0];
+  // GARDE-FOU MATCH : le produit choisi doit (a) être de la même CATÉGORIE (un maillot ≠ un hoodie) et
+  // (b) partager ≥1 mot DISTINCTIF (équipe/année/couleur). Sinon on n'invente pas un deal → échec → marchand prévenu.
+  const wantDistinct = want.split(' ').filter((w) => w.length > 2 && !PROD_GENERIC.has(w));
+  const wantCat = [...PROD_CATEGORY].find((ch) => want.split(' ').includes(ch));
+  let p = prods.find((x) => normTxt(x.name) === want);
+  if (!p) {
+    const cand = prods
+      .map((x) => { const nx = normTxt(x.name); return { x, dist: wantDistinct.filter((w) => nx.includes(w)).length, catOk: !wantCat || nx.split(' ').includes(wantCat) }; })
+      .filter((c) => c.dist >= 1 && c.catOk)
+      .sort((a, b) => b.dist - a.dist);
+    if (!cand.length) return { ok: false, reason: 'no_product_match' }; // rien de fiable → ne crée pas un mauvais deal
+    p = cand[0].x;
+  }
   const qty = Math.max(1, parseInt(order.quantity || 1, 10) || 1);
   const price = parseFloat(p.price) || 0;
-  const productObj = Object.assign({}, p, { quantity: qty });
+  const productList = [Object.assign({}, p, { quantity: qty })];
+  let value = price * qty;
+  // FLOCAGE : si le client veut un flocage (nom/numéro), on ajoute le produit eGrow "Flocage Personnalisé PRO" (99 dh) au deal.
+  let flocageNote = '';
+  const fl = order.flocage;
+  if (fl && (fl.name || fl.number)) {
+    try {
+      const fres = await egrowSearchProduct('Flocage');
+      const fp = (fres || []).find((x) => /flocage/i.test(x.name || ''));
+      if (fp) { productList.push(Object.assign({}, fp, { quantity: qty })); value += (parseFloat(fp.price) || 99) * qty; }
+    } catch (e) {}
+    flocageNote = ` | FLOCAGE: ${[fl.name, fl.number].filter(Boolean).join(' ')}`;
+  }
   const body = {
     id: 0, label: '', source: 'agent-ia-whatsapp',
     deal_city: order.city || '', country: 'MA', deal_address: order.address || '',
@@ -187,14 +220,14 @@ async function createOrderDeal(order, contactId) {
     deal_payment_method: 'Cash on Delivery (COD)', payment_status: 'pending',
     deal_shipping_price: 0, deal_shipping: null,
     contact_id: contactId, type: 'deal', title: `${order.customer_name || ''} - ${p.name}`.slice(0, 120),
-    deal_value: price * qty, deal_currency: { id: 153, name: 'Dirham', code: 'MAD', symbol: 'MAD' },
-    deal_custom_fields: JSON.stringify({ note: '' }), products: JSON.stringify([productObj]),
+    deal_value: value, deal_currency: { id: 153, name: 'Dirham', code: 'MAD', symbol: 'MAD' },
+    deal_custom_fields: JSON.stringify({ note: '' }), products: JSON.stringify(productList),
     pipeline_stage: STAGE_CONFIRM, close_date: 0, deal_number: '', deal_tracking_number: '',
     users: '[]', do_not_update_assigned: false, shipping_user_connection: 0,
   };
   const res = await egrowPost('/deal/add_or_update_deal.php', body);
   const dealId = (res && res.deal && res.deal.id) || null;
-  return { ok: !!(res && res.status === 'success'), dealId, product: p.name, price, qty, value: price * qty };
+  return { ok: !!(res && res.status === 'success'), dealId, product: p.name, price, qty, value, flocageNote, hasFlocage: !!flocageNote };
 }
 async function addDealNote(dealId, content) {
   try { return await egrowPost('/notes/add_or_update_note.php', { id: 0, content: String(content).slice(0, 500), type: 'deal', context: dealId, color: '' }); } catch (e) { return null; }
@@ -447,14 +480,26 @@ async function runPoll(q) {
               try {
                 const contactId = c.contactId || (c.contact && c.contact.id);
                 const r = await createOrderDeal(decision.order, contactId);
-                entry.orderCreated = r.ok ? { deal: r.dealId, product: r.product, value: r.value } : ('fail:' + (r.reason || 'unknown'));
+                entry.orderCreated = r.ok ? { deal: r.dealId, product: r.product, value: r.value, flocage: r.hasFlocage } : ('fail:' + (r.reason || 'unknown'));
+                const o = decision.order;
                 if (r.ok) {
-                  const o = decision.order;
-                  if (r.dealId) await addDealNote(r.dealId, `Commande prise par l'agent IA (WhatsApp). ${r.qty}x ${r.product}${o.size ? ' taille ' + o.size : ''}${o.color ? ' ' + o.color : ''}. Client: ${o.customer_name}. Adresse: ${o.address}, ${o.city}. Confirmer la taille par appel.`);
-                  const saleMsg = `💰 *Nouvelle commande (agent IA)*\n👤 ${o.customer_name} (${contactWaId})\n📦 ${r.qty}x ${r.product}${o.size ? ' (' + o.size + ')' : ''}\n💵 ${r.value} dh · 📍 ${o.city}\n→ créée dans « Confirmer Wtsp »`;
+                  if (r.dealId) await addDealNote(r.dealId, `Commande prise par l'agent IA (WhatsApp). ${r.qty}x ${r.product}${o.size ? ' taille ' + o.size : ''}${o.color ? ' ' + o.color : ''}.${r.flocageNote || ''} Client: ${o.customer_name}. Adresse: ${o.address}, ${o.city}. Confirmer la taille par appel.`);
+                  const saleMsg = `💰 *Nouvelle commande (agent IA)*\n👤 ${o.customer_name} (${contactWaId})\n📦 ${r.qty}x ${r.product}${o.size ? ' (' + o.size + ')' : ''}${r.flocageNote || ''}\n💵 ${r.value} dh · 📍 ${o.city}\n→ créée dans « Confirmer Wtsp »`;
                   try { if (MERCHANT_PHONE) await egrowSend(integrationId, MERCHANT_PHONE, saleMsg); } catch (e) {}
+                } else {
+                  // ÉCHEC de création → on prévient le marchand pour qu'il crée la commande à la main (jamais de commande perdue)
+                  const fl = o.flocage && (o.flocage.name || o.flocage.number) ? `\n🖊️ Flocage: ${[o.flocage.name, o.flocage.number].filter(Boolean).join(' ')} (+99dh)` : '';
+                  const failMsg = `⚠️ *Commande à CRÉER À LA MAIN (échec auto: ${r.reason || 'inconnu'})*\n👤 ${o.customer_name} (${contactWaId})\n📦 ${o.quantity || 1}x ${o.product}${o.size ? ' (' + o.size + ')' : ''}${o.color ? ' ' + o.color : ''}${fl}\n📍 ${o.address || ''}, ${o.city}\n→ Le client a confirmé, mais l'agent n'a pas pu créer le deal automatiquement.`;
+                  try { if (MERCHANT_PHONE) await egrowSend(integrationId, MERCHANT_PHONE, failMsg); } catch (e) {}
                 }
-              } catch (e) { entry.orderCreated = 'err'; }
+              } catch (e) {
+                entry.orderCreated = 'err:' + String(e).slice(0, 80);
+                // exception → on prévient quand même le marchand avec ce qu'on a
+                try {
+                  const o = decision.order; const fl = o.flocage && (o.flocage.name || o.flocage.number) ? `\n🖊️ Flocage: ${[o.flocage.name, o.flocage.number].filter(Boolean).join(' ')}` : '';
+                  if (MERCHANT_PHONE) await egrowSend(integrationId, MERCHANT_PHONE, `⚠️ *Commande à créer à la main (erreur)*\n👤 ${o.customer_name} (${contactWaId})\n📦 ${o.quantity || 1}x ${o.product}${o.size ? ' (' + o.size + ')' : ''}${fl}\n📍 ${o.address || ''}, ${o.city}`);
+                } catch (e2) {}
+              }
             }
           }
           processed++;
