@@ -129,23 +129,24 @@ async function searchCatalog(text) {
     const toks = [...new Set(norm.split(/[^a-z0-9]+/).filter((w) => w.length >= 3 && !CATALOG_STOPWORDS.has(w)))].slice(0, 6);
     if (!toks.length) return '';
     const orExpr = toks.map((w) => `product_title.ilike.*${encodeURIComponent(w)}*`).join(',');
-    const url = `${SB_URL}/rest/v1/shopify_variants_cache?status=eq.active&or=(${orExpr})&select=product_title,size,color,inventory_quantity&limit=300`;
+    const url = `${SB_URL}/rest/v1/shopify_variants_cache?status=eq.active&or=(${orExpr})&select=product_title,size,color,inventory_quantity,product_image&limit=300`;
     const r = await fetch(url, { headers: supabaseHeaders(true) });
     const rows = await r.json().catch(() => []);
     if (!Array.isArray(rows) || !rows.length) return '';
     const map = new Map();
     for (const row of rows) {
       const t = row.product_title; if (!t) continue;
-      if (!map.has(t)) map.set(t, { sizesIn: new Set(), colors: new Set(), anyStock: false });
+      if (!map.has(t)) map.set(t, { sizesIn: new Set(), colors: new Set(), anyStock: false, img: '' });
       const m = map.get(t);
       if (row.color) m.colors.add(row.color);
+      if (!m.img && row.product_image) m.img = row.product_image;
       if (row.inventory_quantity > 0) { m.anyStock = true; if (row.size) m.sizesIn.add(row.size); }
     }
     const prods = [...map.entries()].sort((a, b) => (b[1].anyStock ? 1 : 0) - (a[1].anyStock ? 1 : 0)).slice(0, 6);
     const lines = prods.map(([t, m]) => {
       const cols = [...m.colors].slice(0, 6).join(',');
       const inS = [...m.sizesIn].join(',');
-      return `- ${t}${cols ? ' (' + cols + ')' : ''} : ${m.anyStock ? ('EN STOCK' + (inS ? ' [tailles ' + inS + ']' : '')) : 'RUPTURE'}`;
+      return `- ${t}${cols ? ' (' + cols + ')' : ''} : ${m.anyStock ? ('EN STOCK' + (inS ? ' [tailles ' + inS + ']' : '')) : 'RUPTURE'}${m.img ? ' | photo: ' + m.img : ''}`;
     });
     return 'CATALOGUE (dispo en direct, produits liés à la demande) :\n' + lines.join('\n');
   } catch (e) { return ''; }
