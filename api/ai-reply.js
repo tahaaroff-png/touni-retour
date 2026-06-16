@@ -203,23 +203,14 @@ async function searchCatalog(text) {
         for (const ep of earr) { const k = np(ep.name); if (!egMap[k] && ep.price) egMap[k] = { price: ep.price }; }
       }
     } catch (e) {}
-    // handles Shopify (lien page produit) pour les produits affichés — 1 appel
-    const handleMap = {};
-    try {
-      const ids = [...new Set(prods.map(([, m]) => m.pid).filter(Boolean))];
-      if (ids.length) {
-        const hr = await fetch(`https://${SHOPIFY_DOMAIN}/admin/api/${SHOPIFY_API_VERSION}/products.json?ids=${ids.join(',')}&fields=id,handle`, { headers: await shopifyAdminHeaders() });
-        const hj = await hr.json().catch(() => ({}));
-        for (const p of (hj.products || [])) handleMap[String(p.id)] = p.handle;
-      }
-    } catch (e) {}
     const lines = prods.map(([t, m]) => {
       const cols = [...m.colors].slice(0, 6).join(',');
       const inS = [...m.sizesIn].join(',');
       const eg = egMap[np(t)];
       const price = eg && eg.price ? ' ~' + eg.price + ' dh' : '';
-      const h = handleMap[String(m.pid)];
-      const link = h ? ' | lien: https://touni.ma/products/' + h : (m.img ? ' | photo: ' + m.img : '');
+      // lien fiable : recherche site (les pages produit par handle font 404 sur touni.ma)
+      const q = encodeURIComponent(String(t).replace(/[–—|]/g, ' ').replace(/\s+/g, ' ').trim());
+      const link = ' | lien: https://touni.ma/search?q=' + q + (m.img ? ' | photo: ' + m.img : '');
       return `- ${t}${cols ? ' (' + cols + ')' : ''} :${price} ${m.anyStock ? ('EN STOCK' + (inS ? ' [tailles ' + inS + ']' : '')) : 'RUPTURE'}${link}`;
     });
     return 'CATALOGUE (dispo en direct, produits liés à la demande ; partage le « lien: » = page produit du site) :\n' + lines.join('\n');
