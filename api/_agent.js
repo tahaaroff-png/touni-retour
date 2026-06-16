@@ -149,13 +149,30 @@ async function generateReply({ text, name, orderItems, total, city, history, cat
   const r = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-    body: JSON.stringify({ model: MODEL, max_tokens: 500, system: sys, messages }),
+    body: JSON.stringify({ model: MODEL, max_tokens: 1000, system: sys, messages }),
   });
   const data = await r.json();
   if (!r.ok) { const e = new Error('claude_error'); e.detail = data; throw e; }
-  let raw = (data.content && data.content[0] && data.content[0].text) || '';
-  let parsed = { reply: raw.trim(), intent: 'answer', note: '', order: null };
-  try { const m = raw.match(/\{[\s\S]*\}/); if (m) { const j = JSON.parse(m[0]); if (j.reply) parsed = { reply: j.reply, intent: j.intent || 'answer', note: j.note || '', order: (j.order && j.order.product) ? j.order : null }; } } catch (e) {}
+  const raw = (data.content && data.content[0] && data.content[0].text) || '';
+  let parsed = { reply: '', intent: 'answer', note: '', order: null };
+  let done = false;
+  // 1) JSON complet et valide
+  const m = raw.match(/\{[\s\S]*\}/);
+  if (m) { try { const j = JSON.parse(m[0]); if (j.reply) { parsed = { reply: String(j.reply), intent: j.intent || 'answer', note: j.note || '', order: (j.order && j.order.product) ? j.order : null }; done = true; } } catch (e) {} }
+  // 2) JSON tronqué (réponse longue) → extraire le champ "reply" au regex (tolérant à la troncature)
+  if (!done) {
+    const rm = raw.match(/"reply"\s*:\s*"((?:[^"\\]|\\.)*)/);
+    if (rm) {
+      parsed.reply = rm[1].replace(/\\n/g, '\n').replace(/\\t/g, ' ').replace(/\\"/g, '"').replace(/\\\\/g, '\\').trim();
+      const im = raw.match(/"intent"\s*:\s*"(\w+)"/); if (im) parsed.intent = im[1];
+      done = true;
+    }
+  }
+  // 3) pas de JSON exploitable → texte brut
+  if (!done) parsed.reply = raw.trim();
+  // Filet de sécurité : ne JAMAIS laisser fuiter un fragment JSON dans le message envoyé
+  parsed.reply = String(parsed.reply).replace(/\n*\{\s*"reply"[\s\S]*$/, '').trim();
+  if (!parsed.reply) parsed.reply = raw.trim();
   return { reply: parsed.reply, intent: parsed.intent, note: parsed.note, order: parsed.order, usage: data.usage };
 }
 
