@@ -17,6 +17,9 @@ const STAGE_CONFIRM = parseInt(process.env.EGROW_STAGE_CONFIRM || '49148', 10);
 const STAGE_CANCEL = parseInt(process.env.EGROW_STAGE_CANCEL || '49149', 10);
 // On ne déplace QUE si la commande est encore dans une étape AVANT envoi (sinon expédiée → on ne touche pas).
 const MOVABLE_STAGES = (process.env.EGROW_MOVABLE_STAGES || '62357,49148,49149').split(',').map((s) => parseInt(s.trim(), 10)).filter(Boolean);
+// Notifications : opératrice e-commerce (Soumaya) sur escalade ; marchand sur upsell/vente.
+const OPERATOR_PHONE = (process.env.EGROW_OPERATOR_PHONE || '212672193297').replace(/\D/g, '');
+const MERCHANT_PHONE = (process.env.EGROW_MERCHANT_PHONE || '212612717593').replace(/\D/g, '');
 
 // ───────── Lecture robuste du body (mode POST : JSON, urlencoded, multipart eGrow) ─────────
 function tryParse(raw, req) {
@@ -229,6 +232,14 @@ async function runPoll(q) {
               } catch (e) { entry.dealMove = 'err'; }
             } else if (isAction) {
               entry.dealMove = deal ? 'already_there' : 'no_movable_deal';
+            }
+            // Escalade → prévenir l'opératrice avec un résumé
+            if (decision.intent === 'escalate' && OPERATOR_PHONE) {
+              try {
+                const summary = `🔔 *Client à gérer (agent IA Touni)*\n👤 ${c.title || contactWaId}\n📱 ${contactWaId}\n📝 ${(decision.note || '').slice(0, 400) || 'voir la conversation'}\n💬 « ${body.slice(0, 220)} »`;
+                await egrowSend(integrationId, OPERATOR_PHONE, summary);
+                entry.operatorNotified = true;
+              } catch (e) { entry.operatorNotified = 'err'; }
             }
           }
           processed++;

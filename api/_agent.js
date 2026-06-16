@@ -76,7 +76,7 @@ RÈGLES STRICTES :
 CONTEXTE DE SA COMMANDE (si fourni) : utilise-le pour personnaliser (produit, prix, ville).
 
 FORMAT DE SORTIE : réponds UNIQUEMENT avec un objet JSON valide, rien d'autre :
-{"reply":"<ton message au client>","intent":"answer|confirm|escalate|cancel"}`;
+{"reply":"<ton message au client>","intent":"answer|confirm|escalate|cancel","note":"<UNIQUEMENT si intent=escalate : court résumé pour l'opératrice e-commerce — ce que veut le client + ce qu'elle doit faire ; sinon vide>"}`;
 
 function maroccoHour() {
   try { return parseInt(new Intl.DateTimeFormat('en-GB', { timeZone: 'Africa/Casablanca', hour: '2-digit', hour12: false }).format(new Date()), 10); } catch (e) { return null; }
@@ -122,9 +122,9 @@ async function generateReply({ text, name, orderItems, total, city, history, cat
   const data = await r.json();
   if (!r.ok) { const e = new Error('claude_error'); e.detail = data; throw e; }
   let raw = (data.content && data.content[0] && data.content[0].text) || '';
-  let parsed = { reply: raw.trim(), intent: 'answer' };
-  try { const m = raw.match(/\{[\s\S]*\}/); if (m) { const j = JSON.parse(m[0]); if (j.reply) parsed = { reply: j.reply, intent: j.intent || 'answer' }; } } catch (e) {}
-  return { reply: parsed.reply, intent: parsed.intent, usage: data.usage };
+  let parsed = { reply: raw.trim(), intent: 'answer', note: '' };
+  try { const m = raw.match(/\{[\s\S]*\}/); if (m) { const j = JSON.parse(m[0]); if (j.reply) parsed = { reply: j.reply, intent: j.intent || 'answer', note: j.note || '' }; } } catch (e) {}
+  return { reply: parsed.reply, intent: parsed.intent, note: parsed.note, usage: data.usage };
 }
 
 // Décide quoi faire d'un message entrant. arg peut inclure `history` (tours précédents). opts: {bypassTime, unanswered, isButtonFlag}
@@ -135,7 +135,7 @@ async function handleIncoming({ text, name, orderItems, total, city, history, ca
   if (opts.isButtonFlag || isButton(text)) return { send: false, skipped: 'button' };
   if (!opts.bypassTime && !opts.unanswered && isWorkHours()) return { send: false, skipped: 'work_hours', hour: maroccoHour() };
   const g = await generateReply({ text, name, orderItems, total, city, history, catalog });
-  return { send: !!(g.reply && g.reply.trim()), reply: g.reply, intent: g.intent, usage: g.usage };
+  return { send: !!(g.reply && g.reply.trim()), reply: g.reply, intent: g.intent, note: g.note, usage: g.usage };
 }
 
 module.exports = { FACTS, SYSTEM, BUTTON_LABELS, isButton, maroccoHour, isWorkHours, generateReply, handleIncoming };
