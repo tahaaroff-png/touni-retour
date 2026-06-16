@@ -202,42 +202,31 @@ async function searchCatalog(text) {
     const norm = String(text || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
     const toks = [...new Set(norm.split(/[^a-z0-9]+/).filter((w) => w.length >= 3 && !CATALOG_STOPWORDS.has(w)))].slice(0, 6);
     if (!toks.length) return '';
-    // 1) DÉCOUVERTE : product_ids candidats via le cache (titres) + synonymes, classés par mots-clés
+    // Synonymes + RECHERCHE LIVE Shopify (GraphQL) → TOUJOURS à jour : prix, stock, statut, nouveaux produits
     const termSet = new Set();
     for (const t of toks) { termSet.add(t); if (CATALOG_SYNONYMS[t]) termSet.add(CATALOG_SYNONYMS[t]); }
     const searchTerms = [...termSet];
-    const orExpr = searchTerms.map((w) => `product_title.ilike.*${encodeURIComponent(w)}*`).join(',');
-    const url = `${SB_URL}/rest/v1/shopify_variants_cache?or=(${orExpr})&select=product_title,product_id&limit=1000`;
-    const r = await fetch(url, { headers: supabaseHeaders(true) });
-    const rows = await r.json().catch(() => []);
-    if (!Array.isArray(rows) || !rows.length) return '';
-    const byPid = new Map();
-    for (const row of rows) {
-      const pid = row.product_id; if (!pid || byPid.has(pid)) continue;
-      const nt = String(row.product_title || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
-      byPid.set(pid, { title: row.product_title, score: searchTerms.filter((w) => nt.indexOf(w) !== -1).length });
-    }
-    const candidates = [...byPid.entries()].sort((a, b) => b[1].score - a[1].score).slice(0, 50);
-    if (!candidates.length) return '';
-    // 2) LIVE Shopify : stock + prix + statut RÉELS (le cache peut être périmé)
-    const ids = candidates.map(([pid]) => pid).join(',');
+    const qstr = searchTerms.map((t) => `title:*${t}*`).join(' OR ');
+    const gql = 'query($q:String!){ products(first:40, query:$q){ edges{ node{ title status variants(first:25){ edges{ node{ title price inventoryQuantity } } } } } } }';
     let products = [];
     try {
-      const sr = await fetch(`https://${SHOPIFY_DOMAIN}/admin/api/${SHOPIFY_API_VERSION}/products.json?ids=${ids}&fields=id,title,status,variants&limit=50`, { headers: await shopifyAdminHeaders() });
-      const sj = await sr.json().catch(() => ({}));
-      products = sj.products || [];
+      const gr = await fetch(`https://${SHOPIFY_DOMAIN}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`, {
+        method: 'POST',
+        headers: Object.assign({}, await shopifyAdminHeaders(), { 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ query: gql, variables: { q: qstr } }),
+      });
+      const gj = await gr.json().catch(() => ({}));
+      products = ((gj.data && gj.data.products && gj.data.products.edges) || []).map((e) => e.node);
     } catch (e) {}
-    if (!products.length) return '';
-    // 3) Ne garder QUE les produits ACTIFS avec AU MOINS une taille en stock (live)
-    const scoreById = {}; candidates.forEach(([pid, v]) => { scoreById[pid] = v.score; });
-    products.sort((a, b) => (scoreById[b.id] || 0) - (scoreById[a.id] || 0));
+    // garder UNIQUEMENT les produits ACTIFS avec au moins une taille en stock (live), classés par pertinence
+    const SIZE_RE = /\b(XS|S|M|L|XL|XXL|2XL|3XL|4XL)\b/i;
+    const scored = products.map((p) => { const nt = normTxt(p.title); return { p, score: searchTerms.filter((w) => nt.indexOf(w) !== -1).length }; }).sort((a, b) => b.score - a.score);
     const lines = [];
-    for (const p of products) {
+    for (const { p } of scored) {
       if (lines.length >= 6) break;
-      if (p.status !== 'active') continue; // pas de brouillon/archivé
-      const avail = (p.variants || []).filter((v) => Number(v.inventory_quantity) > 0);
+      if (p.status !== 'ACTIVE') continue; // pas de brouillon/archivé
+      const avail = ((p.variants && p.variants.edges) || []).map((e) => e.node).filter((v) => Number(v.inventoryQuantity) > 0);
       if (!avail.length) continue; // rien en stock
-      const SIZE_RE = /\b(XS|S|M|L|XL|XXL|2XL|3XL|4XL)\b/i;
       const sizes = [...new Set(avail.map((v) => { const mm = String(v.title || '').match(SIZE_RE); return mm ? mm[1].toUpperCase() : ''; }).filter(Boolean))];
       const price = avail[0].price;
       const q = encodeURIComponent(String(p.title).replace(/[–—|]/g, ' ').replace(/\s+/g, ' ').trim());
