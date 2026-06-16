@@ -192,12 +192,25 @@ async function searchCatalog(text) {
     });
     scored.sort((a, b) => (b.score - a.score) || ((b.m.anyStock ? 1 : 0) - (a.m.anyStock ? 1 : 0)));
     const prods = scored.slice(0, 6).map((s) => [s.t, s.m]);
+    // enrichir avec lien page produit (store_product_link) + prix exact via l'API produit eGrow
+    const np = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '');
+    const egMap = {};
+    try {
+      for (const tok of toks.slice(0, 2)) {
+        const eg = await egrowPost('/product/getUserProduct.php', { search: tok });
+        const earr = Array.isArray(eg) ? eg : (eg && eg.data) || [];
+        for (const ep of earr) { const k = np(ep.name); if (!egMap[k] && (ep.store_product_link || ep.price)) egMap[k] = { link: ep.store_product_link || '', price: ep.price }; }
+      }
+    } catch (e) {}
     const lines = prods.map(([t, m]) => {
       const cols = [...m.colors].slice(0, 6).join(',');
       const inS = [...m.sizesIn].join(',');
-      return `- ${t}${cols ? ' (' + cols + ')' : ''} : ${m.anyStock ? ('EN STOCK' + (inS ? ' [tailles ' + inS + ']' : '')) : 'RUPTURE'}${m.img ? ' | photo: ' + m.img : ''}`;
+      const eg = egMap[np(t)];
+      const price = eg && eg.price ? ' ~' + eg.price + ' dh' : '';
+      const link = eg && eg.link ? ' | lien: ' + eg.link : (m.img ? ' | photo: ' + m.img : '');
+      return `- ${t}${cols ? ' (' + cols + ')' : ''} :${price} ${m.anyStock ? ('EN STOCK' + (inS ? ' [tailles ' + inS + ']' : '')) : 'RUPTURE'}${link}`;
     });
-    return 'CATALOGUE (dispo en direct, produits liés à la demande) :\n' + lines.join('\n');
+    return 'CATALOGUE (dispo en direct, produits liés à la demande ; partage le « lien: » = page produit du site) :\n' + lines.join('\n');
   } catch (e) { return ''; }
 }
 
