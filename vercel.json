@@ -11,7 +11,8 @@
     "api/oauth-callback.js": { "maxDuration": 15 },
     "api/setup-webhooks.js": { "maxDuration": 15 },
     "api/snapshot-inventory.js": { "maxDuration": 60 },
-    "api/ai-reply.js": { "maxDuration": 30 }
+    "api/ai-reply.js": { "maxDuration": 30 },
+    "api/ai-poll.js": { "maxDuration": 60 }
   },
   "rewrites": [
     { "source": "/dashboard", "destination": "/dashboard.html" },
