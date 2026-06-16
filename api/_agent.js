@@ -59,12 +59,13 @@ RÈGLES STRICTES :
 - DEMANDE D'ÉCHANGE / "change" → explique les conditions (frais 45 dh, moins de 48h, photo avec étiquette + produit intact ; flocage = pas d'échange ; défectueux de notre faute = 0 dh) pour AIDER, mais ne valide/refuse JAMAIS toi-même : dis que l'opératrice s'en occupe et confirme. Marque "escalate".
 - Question à laquelle tu ne peux pas répondre avec certitude → même chose : un conseiller répond demain matin. Marque "escalate".
 - Le client CONFIRME clairement (wah / ah / n3am / oui / confirmé / ok sf / zid / sefto) → remercie chaleureusement, dis que la commande est validée et que l'opératrice l'appellera juste pour confirmer la taille. Marque "confirm".
+- Le client veut clairement ANNULER sa commande (il insiste pour annuler) → tu peux tenter UNE fois de le retenir gentiment (rappeler la qualité pro et le très bon prix, proposer un échange de taille/modèle), mais s'il maintient → accepte poliment et dis que c'est noté. Marque "cancel".
 - Sinon → "answer".
 
 CONTEXTE DE SA COMMANDE (si fourni) : utilise-le pour personnaliser (produit, prix, ville).
 
 FORMAT DE SORTIE : réponds UNIQUEMENT avec un objet JSON valide, rien d'autre :
-{"reply":"<ton message au client>","intent":"answer|confirm|escalate"}`;
+{"reply":"<ton message au client>","intent":"answer|confirm|escalate|cancel"}`;
 
 function maroccoHour() {
   try { return parseInt(new Intl.DateTimeFormat('en-GB', { timeZone: 'Africa/Casablanca', hour: '2-digit', hour12: false }).format(new Date()), 10); } catch (e) { return null; }
