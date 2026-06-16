@@ -226,8 +226,9 @@ async function searchCatalog(text) {
       if (CATALOG_SYNONYMS[t]) termSet.add(CATALOG_SYNONYMS[t]);
     }
     const searchTerms = [...termSet];
-    // recherche par titre (wildcard) — gère le pluriel via les stems ajoutés ci-dessus
-    const qstr = searchTerms.map((t) => `title:*${t}*`).join(' OR ');
+    // Recherche FULL-TEXT Shopify (INSENSIBLE AUX ACCENTS : "bresil" trouve "Brésil", que le wildcard title:* raterait).
+    // On filtre ensuite sur le TITRE (score ≥ 1) pour la précision → évite le bruit des descriptions.
+    const qstr = searchTerms.join(' OR ');
     const gql = 'query($q:String!){ products(first:40, query:$q){ edges{ node{ title status variants(first:25){ edges{ node{ title price inventoryQuantity } } } } } } }';
     let products = [];
     try {
@@ -243,8 +244,9 @@ async function searchCatalog(text) {
     const SIZE_RE = /\b(XS|S|M|L|XL|XXL|2XL|3XL|4XL)\b/i;
     const scored = products.map((p) => { const nt = normTxt(p.title); return { p, score: searchTerms.filter((w) => nt.indexOf(w) !== -1).length }; }).sort((a, b) => b.score - a.score);
     const lines = [];
-    for (const { p } of scored) {
+    for (const { p, score } of scored) {
       if (lines.length >= 6) break;
+      if (score < 1) continue;           // le terme doit être dans le TITRE (full-text peut ramener des produits où le mot n'est que dans la description)
       if (p.status !== 'ACTIVE') continue; // pas de brouillon/archivé
       const avail = ((p.variants && p.variants.edges) || []).map((e) => e.node).filter((v) => Number(v.inventoryQuantity) > 0);
       if (!avail.length) continue; // rien en stock
