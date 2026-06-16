@@ -238,6 +238,16 @@ async function runPoll(q) {
           const histText = history.filter((h) => h.role === 'user').slice(-3).map((h) => h.content).join(' ');
           catalog = await searchCatalog(body + ' ' + histText);
         } catch (e) {}
+        // Message lié à un échange/retour → injecter l'état réel de la commande
+        try {
+          if (/(change|echange|échange|retour|retourn|changer|rembours)/i.test(body)) {
+            const d = await findMovableDeal(contactWaId);
+            const hint = d
+              ? `ÉTAT COMMANDE CLIENT : commande PAS encore expédiée (étape "${(d.stage && d.stage.name) || 'pré-expédition'}"). Donc PAS d'échange — le client peut encore MODIFIER ou ANNULER directement, sans frais.`
+              : `ÉTAT COMMANDE CLIENT : aucune commande en pré-expédition trouvée (peut-être déjà reçue/expédiée, ou pas de commande). DEMANDE au client s'il a DÉJÀ REÇU sa commande avant de donner la procédure d'échange.`;
+            catalog = hint + (catalog ? '\n\n' + catalog : '');
+          }
+        } catch (e) {}
 
         const decision = await handleIncoming(
           { text: body, name: c.title || (c.contact && c.contact.name) || '', city: (c.contact && c.contact.city) || '', history, catalog },
