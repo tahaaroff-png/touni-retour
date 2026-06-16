@@ -173,7 +173,7 @@ async function searchCatalog(text) {
     if (!toks.length) return '';
     // 1) DÉCOUVERTE : product_ids candidats via le cache (titres), classés par mots-clés
     const orExpr = toks.map((w) => `product_title.ilike.*${encodeURIComponent(w)}*`).join(',');
-    const url = `${SB_URL}/rest/v1/shopify_variants_cache?or=(${orExpr})&select=product_title,product_id&limit=400`;
+    const url = `${SB_URL}/rest/v1/shopify_variants_cache?or=(${orExpr})&select=product_title,product_id&limit=1000`;
     const r = await fetch(url, { headers: supabaseHeaders(true) });
     const rows = await r.json().catch(() => []);
     if (!Array.isArray(rows) || !rows.length) return '';
@@ -183,7 +183,7 @@ async function searchCatalog(text) {
       const nt = String(row.product_title || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
       byPid.set(pid, { title: row.product_title, score: toks.filter((w) => nt.indexOf(w) !== -1).length });
     }
-    const candidates = [...byPid.entries()].sort((a, b) => b[1].score - a[1].score).slice(0, 15);
+    const candidates = [...byPid.entries()].sort((a, b) => b[1].score - a[1].score).slice(0, 50);
     if (!candidates.length) return '';
     // 2) LIVE Shopify : stock + prix + statut RÉELS (le cache peut être périmé)
     const ids = candidates.map(([pid]) => pid).join(',');
