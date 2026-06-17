@@ -343,7 +343,7 @@ async function searchCatalog(text) {
     // car aucun titre ne contient "retro"). On les garde dans searchTerms pour le SCORE (départager les modèles).
     const queryTerms = searchTerms.filter((t) => !GENERIC_MODIFIERS.has(t));
     const qstr = (queryTerms.length ? queryTerms : searchTerms).join(' ');
-    const gql = 'query($q:String!){ products(first:40, query:$q){ edges{ node{ title status variants(first:25){ edges{ node{ title price inventoryQuantity } } } } } } }';
+    const gql = 'query($q:String!){ products(first:40, query:$q){ edges{ node{ title handle status variants(first:25){ edges{ node{ title price inventoryQuantity } } } } } } }';
     let products = [];
     try {
       const gr = await fetch(`https://${SHOPIFY_DOMAIN}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`, {
@@ -366,8 +366,9 @@ async function searchCatalog(text) {
       if (!avail.length) continue; // rien en stock
       const sizes = [...new Set(avail.map((v) => { const mm = String(v.title || '').match(SIZE_RE); return mm ? mm[1].toUpperCase() : ''; }).filter(Boolean))];
       const price = avail[0].price;
-      const q = encodeURIComponent(String(p.title).replace(/[–—|]/g, ' ').replace(/\s+/g, ' ').trim());
-      lines.push(`- ${p.title} : ~${price} dh — EN STOCK${sizes.length ? ' [tailles ' + sizes.join(',') + ']' : ''} | lien: https://touni.ma/search?q=${q}`);
+      // Lien DIRECT de la fiche produit (/products/<handle>) — vérifié 200. Fallback recherche si pas de handle.
+      const link = p.handle ? `https://touni.ma/products/${p.handle}` : `https://touni.ma/search?q=${encodeURIComponent(String(p.title).replace(/[–—|]/g, ' ').replace(/\s+/g, ' ').trim())}`;
+      lines.push(`- ${p.title} : ~${price} dh — EN STOCK${sizes.length ? ' [tailles ' + sizes.join(',') + ']' : ''} | lien: ${link}`);
     }
     // Le choix du LIEN de collection est délégué à Claude via le bloc « NOS PAGES » (injecté à part). Ici on ne renvoie
     // que la dispo produit EN DIRECT (stock/tailles/prix) pour les questions précises.
