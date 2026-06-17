@@ -164,12 +164,12 @@ async function generateReply({ text, name, orderItems, total, city, history, cat
   if (!messages.length) {
     messages = [{ role: 'user', content: `Client${name ? ' (' + name + ')' : ''} a écrit : "${String(text).slice(0, 1500)}"` }];
   }
-  // PROMPT CACHING (économie) : SEUL le prompt SYSTEM (gros + 100% statique) est mis en cache 1h (refacturé ~0,1×,
-  // reste chaud entre les messages). NOS PAGES n'est PAS caché (Shopify ne le renvoie pas byte-stable → le cacher
-  // coûterait 2× pour rien) : il part dans le bloc dynamique, facturé 1×. Le bloc dynamique change à chaque message.
+  // PROMPT CACHING (économie) : bloc STATIQUE = prompt SYSTEM + NOS PAGES (collections triées, stables) mis en cache 1h
+  // (refacturé ~0,1× et reste chaud entre les messages en flux régulier). Bloc DYNAMIQUE (non caché) = contexte client
+  // + dispo produit live. 2 points de cache : SYSTEM (toujours stable) puis NOS PAGES → ce qui est stable se cache.
   const systemBlocks = [{ type: 'text', text: SYSTEM, cache_control: { type: 'ephemeral', ttl: '1h' } }];
-  const dynamicSys = (collectionsBlock && collectionsBlock.trim() ? collectionsBlock + '\n\n' : '')
-    + buildContextNote({ name, orderItems, total, city }) + (catalog ? '\n\n' + catalog : '');
+  if (collectionsBlock && collectionsBlock.trim()) systemBlocks.push({ type: 'text', text: collectionsBlock, cache_control: { type: 'ephemeral', ttl: '1h' } });
+  const dynamicSys = buildContextNote({ name, orderItems, total, city }) + (catalog ? '\n\n' + catalog : '');
   if (dynamicSys.trim()) systemBlocks.push({ type: 'text', text: dynamicSys });
   const reqBody = { model: MODEL, max_tokens: 1000, system: systemBlocks, messages };
   if (tools && tools.length) reqBody.tools = tools;
