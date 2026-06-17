@@ -13,6 +13,7 @@ const EGROW_BASE = 'https://api.egrow.com';
 const EGROW_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 const INTEGRATIONS = (process.env.EGROW_INTEGRATIONS || '5425').split(',').map((s) => s.trim()).filter(Boolean);
 const FRESH_WINDOW_SEC = parseInt(process.env.EGROW_FRESH_SEC || '600', 10); // ne répond qu'aux messages des 10 dernières min
+const HUMAN_HANDOVER_SEC = parseInt(process.env.EGROW_HUMAN_HANDOVER_SEC || '5400', 10); // si un humain a répondu il y a < 1h30, le bot se tait
 const MAX_PER_RUN = parseInt(process.env.EGROW_MAX_PER_RUN || '8', 10);      // garde-fou anti-blast
 // #4 — stages pipeline : commande en attente → Confirmer Wtsp (confirm) / Annuler Wtsp (cancel)
 const STAGE_CONFIRM = parseInt(process.env.EGROW_STAGE_CONFIRM || '49148', 10);
@@ -342,6 +343,53 @@ async function releaseClaim(msgId) {
   try { await fetch(`${SB_URL}/rest/v1/wa_agent_replied?msg_id=eq.${encodeURIComponent(msgId)}`, { method: 'DELETE', headers: supabaseHeaders(true) }); } catch (e) {}
 }
 
+// ── HANDOVER HUMAIN : ne pas marcher sur les pieds d'un opérateur humain ──
+// Le bot ET l'humain envoient depuis le MÊME numéro business (eGrow marque les deux `mine:true`).
+// Pour distinguer, on mémorise l'id de CHAQUE message envoyé par le bot (table agent_sent).
+// Enregistre l'id d'un message que le bot vient d'envoyer (depuis la réponse d'envoi, sinon en relisant le dernier message).
+async function markBotSent(convId, integrationId, sendRes) {
+  try {
+    let id = '';
+    const cands = [sendRes && sendRes.id, sendRes && sendRes.messageId,
+      sendRes && sendRes.data && (sendRes.data.id || sendRes.data.messageId || (sendRes.data.message && sendRes.data.message.id))];
+    for (const c of cands) { if (c) { id = String(c); break; } }
+    if (!id) { // fallback : relire le dernier message de la conv (= celui qu'on vient d'envoyer)
+      const recent = await egrowGetMessages(convId, 1);
+      const last = Array.isArray(recent) ? recent[0] : null;
+      if (last && (last.mine === true || last.mine === 'true') && last.id) id = String(last.id);
+    }
+    if (!id) return;
+    await fetch(`${SB_URL}/rest/v1/agent_sent`, {
+      method: 'POST',
+      headers: Object.assign({}, supabaseHeaders(true), { 'Content-Type': 'application/json', 'Prefer': 'resolution=ignore-duplicates' }),
+      body: JSON.stringify({ msg_id: id, conv_id: String(convId) }),
+    });
+  } catch (e) {}
+}
+// Parmi une liste d'ids sortants, lesquels sont des envois DU BOT (présents dans agent_sent) → Set.
+async function botSentIds(ids) {
+  const out = new Set();
+  if (!ids || !ids.length) return out;
+  try {
+    const inList = ids.map((i) => '"' + String(i).replace(/"/g, '') + '"').join(',');
+    const r = await fetch(`${SB_URL}/rest/v1/agent_sent?select=msg_id&msg_id=in.(${encodeURIComponent(inList)})`, { headers: supabaseHeaders(true) });
+    const j = await r.json().catch(() => []);
+    if (Array.isArray(j)) j.forEach((row) => out.add(String(row.msg_id)));
+  } catch (e) {}
+  return out;
+}
+// Un HUMAIN gère-t-il la conversation en ce moment ? (= message sortant récent <1h30 qui n'est PAS du bot)
+async function humanHandling(raw, nowSec) {
+  const HUMAN_TYPES = ['text', 'image', 'audio', 'voice', 'ptt', 'video', 'document'];
+  const outRecent = (raw || [])
+    .filter((m) => m && (m.mine === true || m.mine === 'true') && HUMAN_TYPES.includes(String(m.type || '')))
+    .map((m) => ({ id: String(m.id || ''), at: parseInt(m.sentAt || m.createdAt || m.timestamp || '0', 10) }))
+    .filter((m) => m.id && m.at && (nowSec - m.at) <= HUMAN_HANDOVER_SEC);
+  if (!outRecent.length) return false;
+  const ours = await botSentIds(outRecent.map((m) => m.id));
+  return outRecent.some((m) => !ours.has(m.id)); // au moins un sortant récent qui n'est pas du bot = humain actif
+}
+
 // Recherche catalogue Shopify (cache Supabase) selon la demande → bloc dispo en direct à injecter.
 const CATALOG_STOPWORDS = new Set('taille tailles size prix combien chhal taman bghit bghi bghyt veux voudrais cherche dispo disponible disponibles bonjour salam salut svp stp merci pour avec est une des les dans vous tu je oui non ok cest quoi autre meme original foot football equipe club saison commande commander acheter chri photo photos couleur couleurs livraison aujourd hui parfait prends prend piece pieces standard mon complet nom adresse ville rue confirme maintenant article articles nombre quantite bien donc alors voila moi prendre prenez prendrai numero tel chi 3ndkom 3ndkoum dial wach ash kayn avez avoir avez-vous propose proposez proposes vend vends vendez vendre fait faites donne donnez montre montrez envoie envoyez trouve trouvez regarde vois voir sur ce cette ces ton tes mes son ses mais que qui comme plus tres beaucoup aussi encore deja juste vraiment chez peux peut pouvez avait gout touni tola wrini werri werrini wri chof chouf nchouf chno chnou chnu chenou achno ach kayna kaynin tswira tswera tsawer tsewira liya lia ndir nbghi kanbghi rani rani bghyti bghiti baghi smiti smiti 3afak afak 3afak khoya sahbi wakha wakhaa walakin walayni'.split(' '));
 // Mots de CATÉGORIE : gardés (le client peut chercher une catégorie), mais on privilégie un mot spécifique (équipe) s'il y en a un.
@@ -548,13 +596,27 @@ async function runPoll(q) {
 
         // Historique de la conversation → réponse en contexte (multi-tours)
         let history = [];
+        let raw = [];
         try {
-          const raw = await egrowGetMessages(c.id, 20); // assez pour suivre le fil (ex: 2 maillots + 1) tout en limitant les tokens (coût)
+          raw = await egrowGetMessages(c.id, 20); // assez pour suivre le fil (ex: 2 maillots + 1) tout en limitant les tokens (coût)
           history = raw
             .filter((m) => { const t = (m.type || ''); return t === 'text' || t === 'template'; })
             .map((m) => ({ role: (m.mine === true || m.mine === 'true') ? 'assistant' : 'user', content: (m.body || (m.content && m.content.body) || '').toString() }))
             .reverse(); // ancien -> récent
         } catch (e) {}
+
+        // HANDOVER HUMAIN : si un humain (opératrice) gère déjà cette conv (a répondu < 1h30), le bot se TAIT et laisse l'humain.
+        // (ne s'applique PAS au numéro du marchand = assistant patron, lui répond toujours).
+        const _isMerchantHere = MERCHANT_PHONE && contactWaId.replace(/\D/g, '') === MERCHANT_PHONE;
+        if (!_isMerchantHere) {
+          let humanActive = false;
+          try { humanActive = await humanHandling(raw, nowSec); } catch (e) {}
+          if (humanActive) {
+            if (!dry && claimedMsgId) { await releaseClaim(claimedMsgId); claimedMsgId = null; } // libère → on pourra répondre plus tard si l'humain reste inactif 1h30
+            results.push({ conv: c.id, phone: contactWaId, msgId, body: body.slice(0, 60), decision: 'human_handover' });
+            processed++; continue;
+          }
+        }
 
         // NOS PAGES (collections, STATIQUE → caché) à part ; dispo produit LIVE (dynamique) à part.
         // ⚠️ La recherche produit se base sur le MESSAGE ACTUEL uniquement (pas l'historique) : sinon les mots des
@@ -623,7 +685,7 @@ async function runPoll(q) {
           } else {
             const sendRes = await egrowSend(integrationId, contactWaId, decision.reply);
             entry.sent = sendRes && sendRes.status;
-            if (sendRes && sendRes.status === 'success') claimedMsgId = null;     // envoi OK → ne PAS libérer (une erreur post-envoi ne doit pas provoquer de re-réponse)
+            if (sendRes && sendRes.status === 'success') { claimedMsgId = null; await markBotSent(c.id, integrationId, sendRes); } // envoi OK → ne PAS libérer + mémoriser l'id (handover humain)
             else await releaseClaim(msgId);                                       // envoi raté → libère pour réessayer au prochain run
             if (isAction && deal && curStage !== target) {
               try {
