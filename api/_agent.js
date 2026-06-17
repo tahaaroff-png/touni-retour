@@ -161,6 +161,15 @@ async function generateReply({ text, name, orderItems, total, city, history, cat
       messages.push({ role: 'user', content: blocks });
     }
   }
+  // Sans image : s'assurer que la conversation se TERMINE par le message ACTUEL du client (texte/transcription vocale).
+  // Cas vocal : le message audio est exclu de l'historique → sans ça, la conversation finirait par un tour "assistant"
+  // → l'API refuse ("conversation must end with a user message"). Cas texte : déjà présent dans l'historique → on n'ajoute pas en double.
+  if (!imageBase64) {
+    const curText = String(text || '').trim();
+    const last = messages.length ? messages[messages.length - 1] : null;
+    const lastIsSameUser = last && last.role === 'user' && typeof last.content === 'string' && last.content.trim() === curText;
+    if (curText && !lastIsSameUser) messages.push({ role: 'user', content: curText });
+  }
   if (!messages.length) {
     messages = [{ role: 'user', content: `Client${name ? ' (' + name + ')' : ''} a écrit : "${String(text).slice(0, 1500)}"` }];
   }
