@@ -434,12 +434,28 @@ async function buildCollectionsBlock() {
 // GARDE-FOU déterministe : aucun lien /collections/ inexistant ne doit JAMAIS partir, peu importe ce que Claude écrit.
 // On valide chaque lien collection contre la liste RÉELLE des handles publiés ; un handle inventé → remplacé par l'accueil.
 async function sanitizeReplyLinks(reply) {
-  if (!reply || reply.indexOf('/collections/') === -1) return reply;
-  let handles = new Set();
-  try { (await getCollections()).forEach((c) => handles.add(String(c.handle).toLowerCase())); } catch (e) {}
-  if (!handles.size) return reply; // si on n'a pas pu charger la liste, on ne casse rien
-  return reply.replace(/https?:\/\/touni\.ma\/collections\/([a-z0-9\-]+)/gi, (m, h) =>
-    handles.has(h.toLowerCase()) ? m : 'https://touni.ma');
+  if (!reply) return reply;
+  let out = String(reply);
+  // 1) Liens cliquables en ARABE (RTL) : retire les caractères de direction invisibles (bidi)
+  //    qui se glissent autour des URL et cassent la zone cliquable sur WhatsApp.
+  out = out.replace(/[\u200E\u200F\u202A-\u202E\u2066-\u2069\u061C]/g, '');
+  // 2) Isole chaque URL sur sa propre ligne (saut de ligne avant ET après) + retire la ponctuation
+  //    collée à la fin (.,;:!؟،) → WhatsApp détecte l'URL proprement, même au milieu d'un texte RTL.
+  out = out.replace(/[ \t]*(https?:\/\/[^\s]+)/g, (m, url) => {
+    const cleaned = url.replace(/[).,;:!؟،»"']+$/u, '');
+    return '\n' + cleaned + '\n';
+  });
+  out = out.replace(/\n{3,}/g, '\n\n').replace(/[ \t]+\n/g, '\n').trim();
+  // 3) Garde-fou : aucun lien /collections/ inexistant ne doit partir (sinon → page d'accueil).
+  if (out.indexOf('/collections/') !== -1) {
+    let handles = new Set();
+    try { (await getCollections()).forEach((c) => handles.add(String(c.handle).toLowerCase())); } catch (e) {}
+    if (handles.size) {
+      out = out.replace(/https?:\/\/touni\.ma\/collections\/([a-z0-9\-]+)/gi, (m, h) =>
+        handles.has(h.toLowerCase()) ? m : 'https://touni.ma');
+    }
+  }
+  return out;
 }
 // Transcription d'un message VOCAL (Groq Whisper large-v3, OpenAI-compatible) → texte, pour que Claude réponde.
 async function transcribeAudio(url) {
