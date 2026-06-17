@@ -158,7 +158,7 @@ function normalizeHistory(history) {
 }
 
 // Appelle Claude. history = tours précédents. catalog = dispo. imageBase64 = photo envoyée par le client (vision). Retourne {reply, intent, usage}. Throw si erreur API.
-async function generateReply({ text, name, orderItems, total, city, history, catalog, collectionsBlock, imageBase64, imageMime, tools, runTool }) {
+async function generateReply({ text, name, orderItems, total, city, history, catalog, collectionsBlock, imageBase64, imageMime, tools, runTool, systemOverride }) {
   let messages = normalizeHistory(history);
   if (imageBase64) {
     const blocks = [
@@ -188,7 +188,7 @@ async function generateReply({ text, name, orderItems, total, city, history, cat
   // PROMPT CACHING (économie) : bloc STATIQUE = prompt SYSTEM + NOS PAGES (collections triées, stables) mis en cache 1h
   // (refacturé ~0,1× et reste chaud entre les messages en flux régulier). Bloc DYNAMIQUE (non caché) = contexte client
   // + dispo produit live. 2 points de cache : SYSTEM (toujours stable) puis NOS PAGES → ce qui est stable se cache.
-  const systemBlocks = [{ type: 'text', text: SYSTEM, cache_control: { type: 'ephemeral', ttl: '1h' } }];
+  const systemBlocks = [{ type: 'text', text: systemOverride || SYSTEM, cache_control: { type: 'ephemeral', ttl: '1h' } }];
   if (collectionsBlock && collectionsBlock.trim()) systemBlocks.push({ type: 'text', text: collectionsBlock, cache_control: { type: 'ephemeral', ttl: '1h' } });
   const dynamicSys = buildContextNote({ name, orderItems, total, city }) + (catalog ? '\n\n' + catalog : '');
   if (dynamicSys.trim()) systemBlocks.push({ type: 'text', text: dynamicSys });
@@ -252,13 +252,13 @@ async function generateReply({ text, name, orderItems, total, city, history, cat
 
 // Décide quoi faire d'un message entrant. arg peut inclure `history` (tours précédents). opts: {bypassTime, unanswered, isButtonFlag}
 // Retourne {send, reply, intent, skipped, hour, usage}
-async function handleIncoming({ text, name, orderItems, total, city, history, catalog, collectionsBlock, imageBase64, imageMime, tools, runTool }, opts = {}) {
+async function handleIncoming({ text, name, orderItems, total, city, history, catalog, collectionsBlock, imageBase64, imageMime, tools, runTool, systemOverride }, opts = {}) {
   if (!ANTHROPIC_KEY) return { send: false, skipped: 'no_key' };
   if ((!text || String(text).trim().length === 0) && !imageBase64) return { send: false, skipped: 'no_text' };
   // (Les clics de bouton ne sont PLUS ignorés ici : si le bouton est laissé vide côté eGrow, l'agent répond ;
   //  s'il y a un template, eGrow répond → ce template devient le dernier message → l'agent se tait tout seul.)
   if (!opts.bypassTime && !opts.unanswered && isWorkHours()) return { send: false, skipped: 'work_hours', hour: maroccoHour() };
-  const g = await generateReply({ text, name, orderItems, total, city, history, catalog, collectionsBlock, imageBase64, imageMime, tools, runTool });
+  const g = await generateReply({ text, name, orderItems, total, city, history, catalog, collectionsBlock, imageBase64, imageMime, tools, runTool, systemOverride });
   return { send: !!(g.reply && g.reply.trim()), reply: g.reply, intent: g.intent, note: g.note, order: g.order, usage: g.usage };
 }
 

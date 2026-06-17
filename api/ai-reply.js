@@ -161,6 +161,43 @@ async function runAgentTool(name, input, phone) {
   if (name === 'statut_commande') return await getOrderStatus(phone);
   return 'Outil inconnu.';
 }
+
+// ───────── MODE PATRON (assistant perso, EXCLUSIF au numéro du marchand) ─────────
+// Stats de ventes Shopify (nb commandes + CA) pour une période. periode: today | yesterday | 7j | 30j.
+async function getSalesStats(period) {
+  const p = String(period || 'today').toLowerCase();
+  const now = new Date(); const iso = (d) => d.toISOString();
+  let min, max = null, label;
+  if (/hier|yesterday/.test(p)) { const y = new Date(now); y.setDate(now.getDate() - 1); y.setHours(0, 0, 0, 0); const e = new Date(y); e.setHours(23, 59, 59, 999); min = iso(y); max = iso(e); label = 'hier'; }
+  else if (/30|mois|month/.test(p)) { const s = new Date(now); s.setDate(now.getDate() - 30); min = iso(s); label = '30 derniers jours'; }
+  else if (/7|semaine|week/.test(p)) { const s = new Date(now); s.setDate(now.getDate() - 7); min = iso(s); label = '7 derniers jours'; }
+  else { const t = new Date(now); t.setHours(0, 0, 0, 0); min = iso(t); label = "aujourd'hui"; }
+  const base = `https://${SHOPIFY_DOMAIN}/admin/api/${SHOPIFY_API_VERSION}`;
+  const qs = `status=any&created_at_min=${encodeURIComponent(min)}` + (max ? `&created_at_max=${encodeURIComponent(max)}` : '');
+  let count = 0, revenue = 0, sampled = 0;
+  try { const cr = await fetch(`${base}/orders/count.json?${qs}`, { headers: await shopifyAdminHeaders() }); const cj = await cr.json().catch(() => ({})); count = cj.count || 0; } catch (e) {}
+  try { const orr = await fetch(`${base}/orders.json?${qs}&fields=total_price&limit=250`, { headers: await shopifyAdminHeaders() }); const oj = await orr.json().catch(() => ({})); const os = oj.orders || []; sampled = os.length; revenue = os.reduce((s, o) => s + (parseFloat(o.total_price) || 0), 0); } catch (e) {}
+  const exact = count <= sampled;
+  const ca = (!exact && sampled > 0) ? Math.round((revenue / sampled) * count) : Math.round(revenue);
+  return { label, count, ca, exact };
+}
+const MERCHANT_TOOLS = [
+  { name: 'stats_ventes', description: "Donne le NOMBRE de commandes et le CHIFFRE D'AFFAIRES (Shopify) pour une période. periode = 'today' | 'yesterday' | '7j' | '30j'.", input_schema: { type: 'object', properties: { periode: { type: 'string' } }, required: ['periode'] } },
+  { name: 'commande_client', description: "Donne l'état réel de la/les commande(s) d'un client par son NUMÉRO de téléphone (étape pipeline + produits).", input_schema: { type: 'object', properties: { telephone: { type: 'string' } }, required: ['telephone'] } },
+  { name: 'chercher_produit', description: "Donne le STOCK (tailles dispo), le PRIX et le statut d'un produit (recherche par mots-clés).", input_schema: { type: 'object', properties: { recherche: { type: 'string' } }, required: ['recherche'] } },
+];
+async function runMerchantTool(name, input) {
+  if (name === 'stats_ventes') { const s = await getSalesStats((input && input.periode) || 'today'); return `Ventes Shopify ${s.label} : ${s.count} commande(s), CA ${s.exact ? '' : '≈ '}${s.ca} dh.`; }
+  if (name === 'commande_client') { return await getOrderStatus((input && input.telephone) || ''); }
+  if (name === 'chercher_produit') { const r = await searchCatalog((input && input.recherche) || ''); return r || 'Aucun produit ACTIF en stock pour cette recherche.'; }
+  return 'Outil inconnu.';
+}
+const MERCHANT_SYSTEM = `Tu es l'ASSISTANT PERSONNEL PRIVÉ du gérant de Touni.ma (tu parles à son numéro WhatsApp perso, c'est LE PATRON — PAS un client).
+RÔLE : réponds à SES questions sur SON business avec ses VRAIES données : ventes & chiffre d'affaires (stats_ventes), état d'une commande d'un client par téléphone (commande_client), stock/tailles/prix d'un produit (chercher_produit). Sois PRÉCIS et DIRECT, donne des chiffres concrets, pas de discours commercial. Appelle les outils pour avoir les vrais chiffres (n'invente jamais un chiffre).
+⚠️ ULTRA-CONFIDENTIEL : ces données internes sont STRICTEMENT privées et réservées au patron. Tu ne les divulgues JAMAIS à personne d'autre.
+LANGUE : réponds dans la langue du patron (français ou darija), court et clair (c'est WhatsApp). Tu peux mettre 1-2 emojis.
+FORMAT DE SORTIE : réponds UNIQUEMENT avec un objet JSON valide : {"reply":"<ta réponse au patron>","intent":"answer","note":"","order":null}`;
+
 // Déplace un deal vers un stage (confirm = 49148, cancel = 49149).
 async function moveDeal(deal, targetStage) {
   return egrowPost('/deal/updateDealOrderinNewStage.php', {
@@ -488,10 +525,15 @@ async function runPoll(q) {
           }
         } catch (e) {}
 
+        // MODE PATRON (assistant perso, EXCLUSIF au numéro du marchand) vs MODE CLIENT (vente).
+        const isMerchant = MERCHANT_PHONE && contactWaId.replace(/\D/g, '') === MERCHANT_PHONE;
         const decision = await handleIncoming(
-          { text: body, name: c.title || (c.contact && c.contact.name) || '', city: (c.contact && c.contact.city) || '', history, catalog, collectionsBlock, imageBase64, imageMime,
-            tools: AGENT_TOOLS, runTool: (n, i) => runAgentTool(n, i, contactWaId) },
-          { bypassTime }
+          { text: body, name: c.title || (c.contact && c.contact.name) || '', city: (c.contact && c.contact.city) || '', history,
+            catalog: isMerchant ? '' : catalog, collectionsBlock: isMerchant ? '' : collectionsBlock, imageBase64, imageMime,
+            tools: isMerchant ? MERCHANT_TOOLS : AGENT_TOOLS,
+            runTool: isMerchant ? ((n, i) => runMerchantTool(n, i)) : ((n, i) => runAgentTool(n, i, contactWaId)),
+            systemOverride: isMerchant ? MERCHANT_SYSTEM : null },
+          { bypassTime: bypassTime || isMerchant } // le patron est servi à toute heure
         );
         if (decision && decision.reply) decision.reply = await sanitizeReplyLinks(decision.reply); // anti-lien-cassé
         const entry = { conv: c.id, phone: contactWaId, name: c.title, msgId, body: body.slice(0, 60), decision: decision.skipped || (decision.send ? 'reply' : 'no_send') };
@@ -604,8 +646,12 @@ module.exports = async (req, res) => {
     const imageBase64 = body.image_base64 || null;
     const imageMime = body.image_mime || 'image/jpeg';
     const testPhone = String(body.phone || body.contactWaId || q.only || '').replace(/\D/g, '');
-    const d = await handleIncoming({ text, name, orderItems, total, city, catalog, collectionsBlock, imageBase64, imageMime,
-      tools: AGENT_TOOLS, runTool: (n, i) => runAgentTool(n, i, testPhone) }, opts);
+    const isMerchant = body.merchant === true || q.merchant === '1' || (MERCHANT_PHONE && testPhone === MERCHANT_PHONE);
+    const d = await handleIncoming({ text, name, orderItems, total, city,
+      catalog: isMerchant ? '' : catalog, collectionsBlock: isMerchant ? '' : collectionsBlock, imageBase64, imageMime,
+      tools: isMerchant ? MERCHANT_TOOLS : AGENT_TOOLS,
+      runTool: isMerchant ? ((n, i) => runMerchantTool(n, i)) : ((n, i) => runAgentTool(n, i, testPhone)),
+      systemOverride: isMerchant ? MERCHANT_SYSTEM : null }, opts);
     if (d && d.reply) d.reply = await sanitizeReplyLinks(d.reply); // anti-lien-cassé
     return res.status(200).json({ reply: d.reply || '', intent: d.intent || 'answer', note: d.note || '', order: d.order || null, send: !!d.send, skipped: d.skipped, hour: d.hour, usage: d.usage, catalogText: catalog || '' });
   } catch (e) {
