@@ -443,7 +443,7 @@ async function runPoll(q) {
         }
         // APPEL (manqué) → message d'aide automatique (la porte horaire s'applique : surtout hors 9h-18h)
         if (isCall) {
-          body = "[Le client vient d'essayer de nous APPELER. Réponds par un message chaleureux : explique gentiment que la ligne téléphonique est ouverte de 9h à 18h, mais que tu es là tout de suite par message pour l'aider (commande, taille, produit, livraison, suivi…). Invite-le à écrire ce dont il a besoin. S'il veut absolument un appel, dis qu'un conseiller le rappellera demain dès 9h.]";
+          body = "[Le client vient d'essayer de nous APPELER. Réponds par un message chaleureux : explique gentiment que la ligne téléphonique est ouverte de 9h à 17h, mais que tu es là tout de suite par message pour l'aider (commande, taille, produit, livraison, suivi…). Invite-le à écrire ce dont il a besoin. S'il veut absolument un appel, dis qu'un conseiller le rappellera demain dès 9h.]";
         }
 
         // Historique de la conversation → réponse en contexte (multi-tours)
