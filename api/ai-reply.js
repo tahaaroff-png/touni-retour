@@ -13,6 +13,7 @@ const EGROW_BASE = 'https://api.egrow.com';
 const EGROW_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 const INTEGRATIONS = (process.env.EGROW_INTEGRATIONS || '5425').split(',').map((s) => s.trim()).filter(Boolean);
 const FRESH_WINDOW_SEC = parseInt(process.env.EGROW_FRESH_SEC || '600', 10); // ne répond qu'aux messages des 10 dernières min
+const REPLY_MIN_AGE_SEC = parseInt(process.env.EGROW_REPLY_MIN_AGE_SEC || '120', 10); // délai « humain » : laisse mûrir le msg ~2 min avant de répondre
 const MAX_PER_RUN = parseInt(process.env.EGROW_MAX_PER_RUN || '8', 10);      // garde-fou anti-blast
 // #4 — stages pipeline : commande en attente → Confirmer Wtsp (confirm) / Annuler Wtsp (cancel)
 const STAGE_CONFIRM = parseInt(process.env.EGROW_STAGE_CONFIRM || '49148', 10);
@@ -504,6 +505,9 @@ async function runPoll(q) {
         const incoming = senderWaId && contactWaId && senderWaId === contactWaId; // dernier msg = du client (sans réponse)
         if (!incoming) continue;
         if (!lastTime || (nowSec - lastTime) > FRESH_WINDOW_SEC) continue;        // frais uniquement (jamais le backlog)
+        // Délai « humain » : on ne répond pas dans la seconde. On laisse mûrir ~2 min (REPLY_MIN_AGE_SEC).
+        // On NE marque PAS le message (pas de claim) → il sera repris au tour de poll suivant, une fois assez vieux.
+        if (!bypassTime && !dry && (nowSec - lastTime) < REPLY_MIN_AGE_SEC) continue;
         if (!msgId) continue;
         const isImage = type === 'image';
         const isAudio = type === 'audio' || type === 'voice' || type === 'ptt';     // message vocal
