@@ -439,20 +439,20 @@ async function runPoll(q) {
         // Historique de la conversation → réponse en contexte (multi-tours)
         let history = [];
         try {
-          const raw = await egrowGetMessages(c.id, 30); // mémoire élargie : voir tout le fil (ex: 2 maillots ajoutés tôt + 1 plus tard)
+          const raw = await egrowGetMessages(c.id, 20); // assez pour suivre le fil (ex: 2 maillots + 1) tout en limitant les tokens (coût)
           history = raw
             .filter((m) => { const t = (m.type || ''); return t === 'text' || t === 'template'; })
             .map((m) => ({ role: (m.mine === true || m.mine === 'true') ? 'assistant' : 'user', content: (m.body || (m.content && m.content.body) || '').toString() }))
             .reverse(); // ancien -> récent
         } catch (e) {}
 
-        // Contexte produit : NOS PAGES (toutes les collections, pour que Claude choisisse le bon lien) + dispo EN DIRECT.
+        // NOS PAGES (collections, STATIQUE → caché) à part ; dispo produit LIVE (dynamique) à part.
         // ⚠️ La recherche produit se base sur le MESSAGE ACTUEL uniquement (pas l'historique) : sinon les mots des
         // messages précédents (« maillot »…) noient la demande en cours (« kora » → on croyait ne pas avoir de ballons).
-        let catalog = '';
+        let collectionsBlock = '', catalog = '';
         try {
           const [cb, prod] = await Promise.all([buildCollectionsBlock(), searchCatalog(body)]);
-          catalog = [cb, prod].filter(Boolean).join('\n\n');
+          collectionsBlock = cb; catalog = prod;
         } catch (e) {}
         // Message lié à un échange/retour → injecter l'état réel de la commande
         try {
@@ -466,7 +466,7 @@ async function runPoll(q) {
         } catch (e) {}
 
         const decision = await handleIncoming(
-          { text: body, name: c.title || (c.contact && c.contact.name) || '', city: (c.contact && c.contact.city) || '', history, catalog, imageBase64, imageMime,
+          { text: body, name: c.title || (c.contact && c.contact.name) || '', city: (c.contact && c.contact.city) || '', history, catalog, collectionsBlock, imageBase64, imageMime,
             tools: AGENT_TOOLS, runTool: (n, i) => runAgentTool(n, i, contactWaId) },
           { bypassTime }
         );
@@ -574,11 +574,11 @@ module.exports = async (req, res) => {
       unanswered: body.unanswered === true || body.unanswered === 'true' || q.unanswered === '1',
       isButtonFlag: body.is_button === true || body.is_button === 'true' || body.is_button === 1 || body.is_button === '1' || body.from_button === true || body.from_button === 'true',
     };
-    let catalog = ''; try { const [cb, prod] = await Promise.all([buildCollectionsBlock(), searchCatalog(text)]); catalog = [cb, prod].filter(Boolean).join('\n\n'); } catch (e) {}
+    let collectionsBlock = '', catalog = ''; try { const [cb, prod] = await Promise.all([buildCollectionsBlock(), searchCatalog(text)]); collectionsBlock = cb; catalog = prod; } catch (e) {}
     const imageBase64 = body.image_base64 || null;
     const imageMime = body.image_mime || 'image/jpeg';
     const testPhone = String(body.phone || body.contactWaId || q.only || '').replace(/\D/g, '');
-    const d = await handleIncoming({ text, name, orderItems, total, city, catalog, imageBase64, imageMime,
+    const d = await handleIncoming({ text, name, orderItems, total, city, catalog, collectionsBlock, imageBase64, imageMime,
       tools: AGENT_TOOLS, runTool: (n, i) => runAgentTool(n, i, testPhone) }, opts);
     if (d && d.reply) d.reply = await sanitizeReplyLinks(d.reply); // anti-lien-cassé
     return res.status(200).json({ reply: d.reply || '', intent: d.intent || 'answer', note: d.note || '', order: d.order || null, send: !!d.send, skipped: d.skipped, hour: d.hour, usage: d.usage, catalogText: catalog || '' });

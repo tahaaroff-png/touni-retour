@@ -146,7 +146,7 @@ function normalizeHistory(history) {
 }
 
 // Appelle Claude. history = tours précédents. catalog = dispo. imageBase64 = photo envoyée par le client (vision). Retourne {reply, intent, usage}. Throw si erreur API.
-async function generateReply({ text, name, orderItems, total, city, history, catalog, imageBase64, imageMime, tools, runTool }) {
+async function generateReply({ text, name, orderItems, total, city, history, catalog, collectionsBlock, imageBase64, imageMime, tools, runTool }) {
   let messages = normalizeHistory(history);
   if (imageBase64) {
     const blocks = [
@@ -164,10 +164,13 @@ async function generateReply({ text, name, orderItems, total, city, history, cat
   if (!messages.length) {
     messages = [{ role: 'user', content: `Client${name ? ' (' + name + ')' : ''} a écrit : "${String(text).slice(0, 1500)}"` }];
   }
-  // PROMPT CACHING : le prompt SYSTEM (gros, statique) est mis en cache (cache_control ephemeral) → ~90% moins cher sur
-  // les appels suivants (TTL 5 min). La partie DYNAMIQUE (contexte client + catalogue) est dans un 2e bloc non caché.
+  // PROMPT CACHING (économie) : bloc STATIQUE = prompt SYSTEM + NOS PAGES (collections, stables) → mis en cache 1h
+  // (cache_control ephemeral ttl 1h) → refacturé ~0,1× au lieu de 1× et reste chaud entre les messages (flux étalé).
+  // Bloc DYNAMIQUE (non caché, change à chaque message) = contexte client + dispo produit live.
+  const systemBlocks = [{ type: 'text', text: SYSTEM }];
+  if (collectionsBlock && collectionsBlock.trim()) systemBlocks.push({ type: 'text', text: collectionsBlock });
+  systemBlocks[systemBlocks.length - 1].cache_control = { type: 'ephemeral', ttl: '1h' }; // cache tools+SYSTEM+NOS PAGES
   const dynamicSys = buildContextNote({ name, orderItems, total, city }) + (catalog ? '\n\n' + catalog : '');
-  const systemBlocks = [{ type: 'text', text: SYSTEM, cache_control: { type: 'ephemeral' } }];
   if (dynamicSys.trim()) systemBlocks.push({ type: 'text', text: dynamicSys });
   const reqBody = { model: MODEL, max_tokens: 1000, system: systemBlocks, messages };
   if (tools && tools.length) reqBody.tools = tools;
@@ -229,12 +232,12 @@ async function generateReply({ text, name, orderItems, total, city, history, cat
 
 // Décide quoi faire d'un message entrant. arg peut inclure `history` (tours précédents). opts: {bypassTime, unanswered, isButtonFlag}
 // Retourne {send, reply, intent, skipped, hour, usage}
-async function handleIncoming({ text, name, orderItems, total, city, history, catalog, imageBase64, imageMime, tools, runTool }, opts = {}) {
+async function handleIncoming({ text, name, orderItems, total, city, history, catalog, collectionsBlock, imageBase64, imageMime, tools, runTool }, opts = {}) {
   if (!ANTHROPIC_KEY) return { send: false, skipped: 'no_key' };
   if ((!text || String(text).trim().length === 0) && !imageBase64) return { send: false, skipped: 'no_text' };
   if (!imageBase64 && (opts.isButtonFlag || isButton(text))) return { send: false, skipped: 'button' };
   if (!opts.bypassTime && !opts.unanswered && isWorkHours()) return { send: false, skipped: 'work_hours', hour: maroccoHour() };
-  const g = await generateReply({ text, name, orderItems, total, city, history, catalog, imageBase64, imageMime, tools, runTool });
+  const g = await generateReply({ text, name, orderItems, total, city, history, catalog, collectionsBlock, imageBase64, imageMime, tools, runTool });
   return { send: !!(g.reply && g.reply.trim()), reply: g.reply, intent: g.intent, note: g.note, order: g.order, usage: g.usage };
 }
 
