@@ -120,10 +120,16 @@ async function findMovableDeal(phone) {
 // Catégorie d'une étape de pipeline eGrow → pour le suivi de commande.
 const STAGE_CAT = (() => {
   const m = {};
-  [49152, 49214, 49209, 49210].forEach((id) => (m[id] = 'livree'));                                  // Livrée / Reçu / Payé / Facturé
-  [49150, 49151, 49197, 49199, 49200, 49213, 49154, 49212, 49201, 49202].forEach((id) => (m[id] = 'en_route')); // Traiter→Expédié→Ramassé→distribution→en cours
-  [49147, 62357, 49148, 49396, 53444, 51500, 55207, 49397, 49430, 49431].forEach((id) => (m[id] = 'avant_envoi')); // Pending/En attente/Confirmé/relances
-  [49149, 49153, 49205, 49206, 49155, 49265, 60359, 59765, 49211].forEach((id) => (m[id] = 'annulee_retour'));     // Annulée / Retour
+  // LIVRÉE (reçue par le client)
+  [49152, 49214, 49209, 49210].forEach((id) => (m[id] = 'livree'));                                  // Livrer / Recu / Payé / Facturé
+  // ⚠️ EXPÉDIÉE / EN ROUTE = UNIQUEMENT à partir du RAMASSAGE (le colis est physiquement parti chez le livreur).
+  //    « Success Ozone » / « Failed Ozone » NE sont PAS « expédiée » (c'est juste la création du colis chez Ozone).
+  [49213, 49151, 49199, 49200, 49201, 49202].forEach((id) => (m[id] = 'en_route'));                  // Ramassé / Expédier / Mise en distribution / En cours / Reporté / Pas de réponse
+  // PAS ENCORE EXPÉDIÉE : confirmation, traitement, créé chez Ozone mais PAS encore ramassé.
+  [49147, 62357, 49148, 49396, 63093, 53444, 51500, 60599, 55207, 49397, 63095, 60669, 49430, 49431,
+    49150, 49197, 49154, 49155, 49212, 49211].forEach((id) => (m[id] = 'avant_envoi'));              // En attente/relances/Traiter/Attente ramassage/Success Ozone/Failed Ozone/Erreur Ozone/Nouveau Colis/Rupture
+  // ANNULÉE / RETOUR
+  [49149, 49153, 49205, 49206, 49265, 60359, 59765].forEach((id) => (m[id] = 'annulee_retour'));     // Annuler Wtsp / Retourner / Retour agence / Retour reçu / Annuler Ozone / Annuler autres / Annuler pas de réponse
   return m;
 })();
 // État RÉEL des commandes du client (toutes étapes) → texte injecté à l'agent / renvoyé par l'outil statut_commande.
