@@ -480,7 +480,8 @@ async function runPoll(q) {
   // (Vide en prod → tous les clients, porte horaire active.)
   const envOnly = (process.env.EGROW_ONLY || '').replace(/\D/g, '');
   const dry = q.dry === '1';                          // dry-run : ne pas envoyer, juste lister
-  const bypassTime = q.test === '1' || !!envOnly;     // scope env = test → ignore l'heure
+  const alwaysOn = (process.env.EGROW_ALWAYS_ON || '') === '1'; // mode 24h/24 (phase de test) : répond à toute heure, tous les clients
+  const bypassTime = q.test === '1' || !!envOnly || alwaysOn;     // scope env = test → ignore l'heure
   const onlyPhone = envOnly || (q.only || '').toString().replace(/\D/g, ''); // numéro ciblé
   const nowSec = Math.floor(Date.now() / 1000);
   const results = [];
