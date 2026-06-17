@@ -287,7 +287,8 @@ async function buildCollectionsBlock() {
   if (_colBlock && (Date.now() - _colBlockAt) < 3600000) return _colBlock;
   const cols = await getCollections();
   if (!cols.length) return _colBlock || '';
-  const list = cols.map((c) => `- ${c.title} → https://touni.ma/collections/${c.handle}`).join('\n');
+  // tri déterministe (par handle) → le bloc est byte-stable d'un appel à l'autre → il se met en CACHE (économie)
+  const list = cols.slice().sort((a, b) => String(a.handle).localeCompare(String(b.handle))).map((c) => `- ${c.title} → https://touni.ma/collections/${c.handle}`).join('\n');
   _colBlock = `NOS PAGES (collections) — liste COMPLÈTE et OFFICIELLE, avec le lien EXACT et VÉRIFIÉ de chaque page. C'est ta SEULE source de liens de collection : copie le lien TEL QUEL, n'invente JAMAIS un lien ni un handle, ne devine pas.\n${list}\n→ Quand le client veut voir une équipe / une ligue / une catégorie (même écrit en darija, en abrégé, en surnom ou avec une faute — ex: "lbrazil"=Brésil, "barça"=FC Barcelone, "kaskita"=casquettes), trouve la BONNE page ci-dessus et partage SON lien (page = TOUS les modèles de l'équipe). ⚠️ Si PLUSIEURS pages peuvent correspondre (ex: "Inter" → Inter Miami ET Inter Milan ; "Maroc" → Classic / Rétro / Coupe du monde 2026), ne choisis PAS au hasard : DEMANDE d'abord au client de laquelle il parle, puis envoie le bon lien. Si AUCUNE page ne correspond vraiment, partage seulement https://touni.ma.`;
   _colBlockAt = Date.now();
   return _colBlock;
