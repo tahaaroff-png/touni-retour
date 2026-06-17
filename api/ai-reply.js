@@ -9,6 +9,8 @@ const SECRET = 'touni-sync-2026';
 const EGROW_ME = process.env.EGROW_ME || '';
 const EGROW_AK = process.env.EGROW_AK || '';
 const EGROW_BASE = 'https://api.egrow.com';
+// ⚠️ User-Agent navigateur OBLIGATOIRE : sans lui, eGrow renvoie 403 (anti-bot Cloudflare, code 1010) sur certains envois.
+const EGROW_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 const INTEGRATIONS = (process.env.EGROW_INTEGRATIONS || '5425').split(',').map((s) => s.trim()).filter(Boolean);
 const FRESH_WINDOW_SEC = parseInt(process.env.EGROW_FRESH_SEC || '600', 10); // ne répond qu'aux messages des 10 dernières min
 const MAX_PER_RUN = parseInt(process.env.EGROW_MAX_PER_RUN || '8', 10);      // garde-fou anti-blast
@@ -61,13 +63,13 @@ async function getBody(req) {
 // ───────── API eGrow + anti-doublon Supabase (mode POLLER) ─────────
 async function egrowGetConversations(integrationId, page) {
   const url = `${EGROW_BASE}/inbox/get_conversations.php?me=${EGROW_ME}&dev=0&integrationId=${integrationId}&page=${page}&limit=20`;
-  const r = await fetch(url, { headers: { 'account-key': EGROW_AK } });
+  const r = await fetch(url, { headers: { 'account-key': EGROW_AK, 'User-Agent': EGROW_UA } });
   const j = await r.json();
   return (j && j.data) || [];
 }
 async function egrowGetMessages(convId, limit) {
   const url = `${EGROW_BASE}/inbox/get_conversation_messages.php?me=${EGROW_ME}&dev=0&conversationId=${convId}&page=1&limit=${limit || 14}`;
-  const r = await fetch(url, { headers: { 'account-key': EGROW_AK } });
+  const r = await fetch(url, { headers: { 'account-key': EGROW_AK, 'User-Agent': EGROW_UA } });
   const j = await r.json().catch(() => ({}));
   return (j && j.data) || [];
 }
@@ -86,7 +88,7 @@ async function egrowSend(integrationId, toWaId, text) {
   const raw = `--${boundary}\r\nContent-Disposition: form-data; name="data"\r\n\r\n${payload}\r\n--${boundary}--\r\n`;
   const r = await fetch(`${EGROW_BASE}/inbox/send_conversation_message.php`, {
     method: 'POST',
-    headers: { 'account-key': EGROW_AK, 'content-type': `multipart/form-data; boundary=${boundary}` },
+    headers: { 'account-key': EGROW_AK, 'User-Agent': EGROW_UA, 'content-type': `multipart/form-data; boundary=${boundary}` },
     body: raw,
   });
   try { return await r.json(); } catch (e) { return { status: 'http_' + r.status }; }
@@ -96,7 +98,7 @@ async function egrowPost(path, params) {
   const p = Object.assign({}, params, { me: EGROW_ME, dev: 0 });
   const boundary = '----TouniAgent' + Math.random().toString(36).slice(2);
   const raw = `--${boundary}\r\nContent-Disposition: form-data; name="data"\r\n\r\n${JSON.stringify(p)}\r\n--${boundary}--\r\n`;
-  const r = await fetch(`${EGROW_BASE}${path}`, { method: 'POST', headers: { 'account-key': EGROW_AK, 'content-type': `multipart/form-data; boundary=${boundary}` }, body: raw });
+  const r = await fetch(`${EGROW_BASE}${path}`, { method: 'POST', headers: { 'account-key': EGROW_AK, 'User-Agent': EGROW_UA, 'content-type': `multipart/form-data; boundary=${boundary}` }, body: raw });
   try { return await r.json(); } catch (e) { return null; }
 }
 // Cherche la commande du client (par téléphone) DANS les étapes déplaçables (avant envoi). Retourne le deal ou null.
@@ -675,6 +677,12 @@ async function runPoll(q) {
 module.exports = async (req, res) => {
   const q = req.query || {};
   if (q.secret !== SECRET) return res.status(401).json({ error: 'unauthorized' });
+
+  // ── Diagnostic notif opératrice (depuis Vercel, avec le vrai egrowSend) ──
+  if (q.diagop === '1') {
+    const sr = await egrowSend(INTEGRATIONS[0] || '5425', OPERATOR_PHONE, '🔔 Test notification opératrice (diagnostic système Touni).');
+    return res.status(200).json({ operator_phone: OPERATOR_PHONE, send_result: sr });
+  }
 
   // ── Mode POLLER ──
   if (q.poll === '1') {
