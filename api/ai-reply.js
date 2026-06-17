@@ -548,7 +548,7 @@ async function runPoll(q) {
         results.push(entry);
       } catch (e) {
         if (claimedMsgId) await releaseClaim(claimedMsgId); // erreur (ex: Claude) après le claim → libère → le client sera répondu au prochain run
-        results.push({ conv: c && c.id, error: String(e) });
+        results.push({ conv: c && c.id, error: String(e), detail: (e && e.detail) || null });
       }
     }
   }
