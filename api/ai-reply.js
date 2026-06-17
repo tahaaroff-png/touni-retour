@@ -217,6 +217,29 @@ RÔLE : réponds à SES questions sur SON business avec ses VRAIES données : ve
 LANGUE : réponds dans la langue du patron (français ou darija), court et clair (c'est WhatsApp). Tu peux mettre 1-2 emojis.
 FORMAT DE SORTIE : réponds UNIQUEMENT avec un objet JSON valide : {"reply":"<ta réponse au patron>","intent":"answer","note":"","order":null}`;
 
+// Mode du patron (persisté) : 'patron' (assistant données, défaut) ou 'client' (teste l'expérience de vente).
+async function getMerchantMode() {
+  try {
+    const r = await fetch(`${SB_URL}/rest/v1/merchant_state?id=eq.1&select=mode`, { headers: supabaseHeaders(true) });
+    const j = await r.json().catch(() => []);
+    return (Array.isArray(j) && j[0] && j[0].mode) || 'patron';
+  } catch (e) { return 'patron'; }
+}
+async function setMerchantMode(mode) {
+  try {
+    await fetch(`${SB_URL}/rest/v1/merchant_state?id=eq.1`, {
+      method: 'PATCH', headers: Object.assign({}, supabaseHeaders(true), { 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ mode, updated_at: new Date().toISOString() }),
+    });
+  } catch (e) {}
+}
+// Détecte une commande de bascule de mode dans le message du patron. Renvoie 'client' | 'patron' | null.
+function detectModeCommand(text) {
+  const t = String(text || '').trim().toLowerCase().replace(/[^a-z\s\/]/g, '').trim();
+  if (/^\/?(mode\s+)?(client|public|vente|test)$/.test(t) || /(passe|mets?|active).*(mode\s+)?(client|public|vente)/.test(t)) return 'client';
+  if (/^\/?(mode\s+)?(patron|admin|boss|prive|prive|assistant)$/.test(t) || /(passe|mets?|active|reviens|retour).*(mode\s+)?(patron|admin|assistant)/.test(t)) return 'patron';
+  return null;
+}
 // Déplace un deal vers un stage (confirm = 49148, cancel = 49149).
 async function moveDeal(deal, targetStage) {
   return egrowPost('/deal/updateDealOrderinNewStage.php', {
@@ -545,7 +568,23 @@ async function runPoll(q) {
         } catch (e) {}
 
         // MODE PATRON (assistant perso, EXCLUSIF au numéro du marchand) vs MODE CLIENT (vente).
-        const isMerchant = MERCHANT_PHONE && contactWaId.replace(/\D/g, '') === MERCHANT_PHONE;
+        const isMerchantPhone = MERCHANT_PHONE && contactWaId.replace(/\D/g, '') === MERCHANT_PHONE;
+        let isMerchant = isMerchantPhone;
+        if (isMerchantPhone) {
+          // Commande de bascule de mode (« mode client » / « mode patron »)
+          const cmd = detectModeCommand(body);
+          if (cmd) {
+            await setMerchantMode(cmd);
+            const msg = cmd === 'client'
+              ? "✅ Mode CLIENT activé — je te traite maintenant comme un client (tu peux tester l'expérience de vente). Envoie « mode patron » pour revenir à ton assistant."
+              : "✅ Mode PATRON réactivé — je suis de nouveau ton assistant privé (ventes, pub Meta, commandes, stock).";
+            if (!dry) { try { await egrowSend(integrationId, contactWaId, msg); } catch (e) {} claimedMsgId = null; }
+            results.push({ conv: c.id, phone: contactWaId, decision: 'mode->' + cmd });
+            processed++; continue;
+          }
+          // Sinon, applique le mode mémorisé (le patron peut être passé en mode client pour tester)
+          if ((await getMerchantMode()) === 'client') isMerchant = false;
+        }
         const decision = await handleIncoming(
           { text: body, name: c.title || (c.contact && c.contact.name) || '', city: (c.contact && c.contact.city) || '', history,
             catalog: isMerchant ? '' : catalog, collectionsBlock: isMerchant ? '' : collectionsBlock, imageBase64, imageMime,
@@ -665,7 +704,13 @@ module.exports = async (req, res) => {
     const imageBase64 = body.image_base64 || null;
     const imageMime = body.image_mime || 'image/jpeg';
     const testPhone = String(body.phone || body.contactWaId || q.only || '').replace(/\D/g, '');
-    const isMerchant = body.merchant === true || q.merchant === '1' || (MERCHANT_PHONE && testPhone === MERCHANT_PHONE);
+    const isMerchantPhone = body.merchant === true || q.merchant === '1' || (MERCHANT_PHONE && testPhone === MERCHANT_PHONE);
+    let isMerchant = isMerchantPhone;
+    if (isMerchantPhone) {
+      const cmd = detectModeCommand(text);
+      if (cmd) { await setMerchantMode(cmd); return res.status(200).json({ reply: cmd === 'client' ? '✅ Mode CLIENT activé.' : '✅ Mode PATRON réactivé.', mode: cmd }); }
+      if ((await getMerchantMode()) === 'client') isMerchant = false;
+    }
     const d = await handleIncoming({ text, name, orderItems, total, city,
       catalog: isMerchant ? '' : catalog, collectionsBlock: isMerchant ? '' : collectionsBlock, imageBase64, imageMime,
       tools: isMerchant ? MERCHANT_TOOLS : AGENT_TOOLS,
