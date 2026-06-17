@@ -164,8 +164,12 @@ async function generateReply({ text, name, orderItems, total, city, history, cat
   if (!messages.length) {
     messages = [{ role: 'user', content: `Client${name ? ' (' + name + ')' : ''} a écrit : "${String(text).slice(0, 1500)}"` }];
   }
-  const sys = SYSTEM + buildContextNote({ name, orderItems, total, city }) + (catalog ? '\n\n' + catalog : '');
-  const reqBody = { model: MODEL, max_tokens: 1000, system: sys, messages };
+  // PROMPT CACHING : le prompt SYSTEM (gros, statique) est mis en cache (cache_control ephemeral) → ~90% moins cher sur
+  // les appels suivants (TTL 5 min). La partie DYNAMIQUE (contexte client + catalogue) est dans un 2e bloc non caché.
+  const dynamicSys = buildContextNote({ name, orderItems, total, city }) + (catalog ? '\n\n' + catalog : '');
+  const systemBlocks = [{ type: 'text', text: SYSTEM, cache_control: { type: 'ephemeral' } }];
+  if (dynamicSys.trim()) systemBlocks.push({ type: 'text', text: dynamicSys });
+  const reqBody = { model: MODEL, max_tokens: 1000, system: systemBlocks, messages };
   if (tools && tools.length) reqBody.tools = tools;
   // Un appel Claude avec retry sur erreurs TRANSITOIRES (529/429/5xx) → jamais muet pour un hoquet API.
   async function callClaude() {
