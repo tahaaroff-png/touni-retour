@@ -377,6 +377,14 @@ async function searchCatalog(text) {
 }
 
 async function runPoll(q) {
+  // Battement de cœur : à chaque passage du cron, on note l'heure → permet de vérifier que le cron tourne (PC éteint).
+  try {
+    await fetch(`${SB_URL}/rest/v1/agent_heartbeat?id=eq.1`, {
+      method: 'PATCH',
+      headers: Object.assign({}, supabaseHeaders(true), { 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ last_poll_at: new Date().toISOString(), source: q.src || 'cron' }),
+    });
+  } catch (e) {}
   // EGROW_ONLY (env) = mode TEST : l'agent ne répond QU'à ce numéro, et ignore la porte horaire.
   // (Vide en prod → tous les clients, porte horaire active.)
   const envOnly = (process.env.EGROW_ONLY || '').replace(/\D/g, '');
