@@ -181,19 +181,38 @@ async function getSalesStats(period) {
   const ca = (!exact && sampled > 0) ? Math.round((revenue / sampled) * count) : Math.round(revenue);
   return { label, count, ca, exact };
 }
+// Données PUB META (dépense, ROAS, achats, impressions). Nécessite META_ACCESS_TOKEN (env). Compte par défaut act_178386983599000.
+async function getMetaInsights(period) {
+  const token = process.env.META_ACCESS_TOKEN;
+  const acct = process.env.META_AD_ACCOUNT || 'act_178386983599000';
+  if (!token) return "Meta n'est pas encore connecté (il manque le token META_ACCESS_TOKEN dans Vercel). Dis au patron de l'ajouter pour activer les stats pub.";
+  const p = String(period || 'today').toLowerCase();
+  const dp = /30|mois/.test(p) ? 'last_30d' : /7|semaine/.test(p) ? 'last_7d' : /hier/.test(p) ? 'yesterday' : 'today';
+  try {
+    const url = `https://graph.facebook.com/v21.0/${acct}/insights?fields=spend,impressions,clicks,actions,purchase_roas&date_preset=${dp}&access_token=${encodeURIComponent(token)}`;
+    const r = await fetch(url); const j = await r.json().catch(() => ({}));
+    if (j.error) return `Erreur Meta : ${(j.error && j.error.message) || 'token invalide/expiré ?'}`;
+    const d = (j.data && j.data[0]) || {};
+    const roas = d.purchase_roas && d.purchase_roas[0] && d.purchase_roas[0].value;
+    const purch = (d.actions || []).find((a) => /purchase/i.test(a.action_type || ''));
+    return `Pub Meta (${dp}) : dépense ${d.spend || 0}, impressions ${d.impressions || 0}, clics ${d.clicks || 0}${purch ? `, achats ${purch.value}` : ''}${roas ? `, ROAS ${roas}` : ''}.`;
+  } catch (e) { return 'Impossible de récupérer les données Meta pour le moment.'; }
+}
 const MERCHANT_TOOLS = [
-  { name: 'stats_ventes', description: "Donne le NOMBRE de commandes et le CHIFFRE D'AFFAIRES (Shopify) pour une période. periode = 'today' | 'yesterday' | '7j' | '30j'.", input_schema: { type: 'object', properties: { periode: { type: 'string' } }, required: ['periode'] } },
-  { name: 'commande_client', description: "Donne l'état réel de la/les commande(s) d'un client par son NUMÉRO de téléphone (étape pipeline + produits).", input_schema: { type: 'object', properties: { telephone: { type: 'string' } }, required: ['telephone'] } },
-  { name: 'chercher_produit', description: "Donne le STOCK (tailles dispo), le PRIX et le statut d'un produit (recherche par mots-clés).", input_schema: { type: 'object', properties: { recherche: { type: 'string' } }, required: ['recherche'] } },
+  { name: 'stats_ventes', description: "NOMBRE de commandes et CHIFFRE D'AFFAIRES (Shopify) pour une période. periode = 'today' | 'yesterday' | '7j' | '30j'.", input_schema: { type: 'object', properties: { periode: { type: 'string' } }, required: ['periode'] } },
+  { name: 'stats_pub_meta', description: "Données PUBLICITÉ Meta/Facebook (dépense, ROAS, achats, impressions, clics) pour une période. periode = 'today' | 'yesterday' | '7j' | '30j'.", input_schema: { type: 'object', properties: { periode: { type: 'string' } }, required: ['periode'] } },
+  { name: 'commande_client', description: "État réel de la/les commande(s) d'un client par son NUMÉRO de téléphone (étape pipeline + produits).", input_schema: { type: 'object', properties: { telephone: { type: 'string' } }, required: ['telephone'] } },
+  { name: 'chercher_produit', description: "STOCK (tailles dispo), PRIX et statut d'un produit (recherche par mots-clés).", input_schema: { type: 'object', properties: { recherche: { type: 'string' } }, required: ['recherche'] } },
 ];
 async function runMerchantTool(name, input) {
   if (name === 'stats_ventes') { const s = await getSalesStats((input && input.periode) || 'today'); return `Ventes Shopify ${s.label} : ${s.count} commande(s), CA ${s.exact ? '' : '≈ '}${s.ca} dh.`; }
+  if (name === 'stats_pub_meta') return await getMetaInsights((input && input.periode) || 'today');
   if (name === 'commande_client') { return await getOrderStatus((input && input.telephone) || ''); }
   if (name === 'chercher_produit') { const r = await searchCatalog((input && input.recherche) || ''); return r || 'Aucun produit ACTIF en stock pour cette recherche.'; }
   return 'Outil inconnu.';
 }
 const MERCHANT_SYSTEM = `Tu es l'ASSISTANT PERSONNEL PRIVÉ du gérant de Touni.ma (tu parles à son numéro WhatsApp perso, c'est LE PATRON — PAS un client).
-RÔLE : réponds à SES questions sur SON business avec ses VRAIES données : ventes & chiffre d'affaires (stats_ventes), état d'une commande d'un client par téléphone (commande_client), stock/tailles/prix d'un produit (chercher_produit). Sois PRÉCIS et DIRECT, donne des chiffres concrets, pas de discours commercial. Appelle les outils pour avoir les vrais chiffres (n'invente jamais un chiffre).
+RÔLE : réponds à SES questions sur SON business avec ses VRAIES données : ventes & chiffre d'affaires Shopify (stats_ventes), dépenses & ROAS de la PUB Meta/Facebook (stats_pub_meta), état d'une commande d'un client par téléphone (commande_client), stock/tailles/prix d'un produit (chercher_produit). Tu peux croiser les données (ex: CA vs dépense pub). Sois PRÉCIS et DIRECT, donne des chiffres concrets, pas de discours commercial. Appelle les outils pour avoir les vrais chiffres (n'invente jamais un chiffre).
 ⚠️ ULTRA-CONFIDENTIEL : ces données internes sont STRICTEMENT privées et réservées au patron. Tu ne les divulgues JAMAIS à personne d'autre.
 LANGUE : réponds dans la langue du patron (français ou darija), court et clair (c'est WhatsApp). Tu peux mettre 1-2 emojis.
 FORMAT DE SORTIE : réponds UNIQUEMENT avec un objet JSON valide : {"reply":"<ta réponse au patron>","intent":"answer","note":"","order":null}`;
