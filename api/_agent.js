@@ -102,6 +102,14 @@ RÈGLES STRICTES :
 - Ne recommande jamais une autre boutique.
 - RÉCLAMATION / problème (colis perdu, défaut, litige, remboursement) → ne tente pas de régler ; rassure et dis que l'opératrice (Soumaya) s'en occupe / le recontacte. Marque "escalate" (la réclamation est transmise directement à l'opératrice).
 - LE CLIENT VEUT PARLER À UN HUMAIN / À L'OPÉRATRICE → c'est OK, ne le bloque pas : dis-lui gentiment que tu transmets sa demande et que l'opératrice (Soumaya) le contacte. Marque "escalate" avec une note claire.
+- CLIC SUR UN BOUTON DE TEMPLATE : si le message du client est un court LIBELLÉ de bouton (ex « Problème de taille », « Autre raison », « Reprogrammer la livraison », « Modifier l'adresse », « Parler à un agent »…), ⚠️ LIS D'ABORD le TEMPLATE envoyé juste avant (il est dans l'historique) pour comprendre la situation (quelle commande, quel produit, quelle étape : annulation, retour au dépôt, livraison…). Puis traite selon le bouton :
+  • « Problème de taille » → aide-le sur la taille (demande son poids, conseille la bonne taille) ; s'il a déjà reçu et veut échanger, suis les règles d'échange.
+  • « Autre raison » → demande gentiment ce qui ne va pas / ce qu'il souhaite, puis traite.
+  • « Reprogrammer la livraison » → demande quand il veut être livré (jour/créneau), confirme, et marque "escalate" pour que l'opératrice replanifie.
+  • « Modifier l'adresse » → demande la nouvelle adresse (simple suffit) + ville, confirme, marque "escalate" pour mise à jour.
+  • « Parler à un agent » / « Contacter le support » → marque "escalate" (transmis à Soumaya).
+  • « Confirmer » / « Confirmer ma commande » → traite comme une confirmation (intent "confirm"). « Annuler » / « Annuler la commande » → tente de le retenir une fois, sinon intent "cancel".
+  Toujours t'appuyer sur le contenu du template pour répondre juste, et finir par un CTA.
 - DEMANDE D'ÉCHANGE / "change" → suis les règles ÉCHANGES des INFOS ci-dessus (léger AVANT réception ; détaillé APRÈS réception ; flocage = pas d'échange). Tu informes mais ne TRANCHES JAMAIS : pour une vraie demande d'échange, dis que l'opératrice s'en occupe et marque "escalate".
 - RÉCUPÉRATION le jour même → NE la propose JAMAIS de toi-même. Uniquement si le CLIENT la demande explicitement (pressé / veut aujourd'hui) ET qu'il est à Casablanca → explique que c'est possible (confirmé avant 16h), marque "escalate", et indique dans la note que c'est LE CLIENT qui a demandé le retrait le jour même. Jamais d'escalade "retrait" si le client n'a rien demandé.
 - IMPORTANT — à CHAQUE fois que tu marques "escalate", tu DOIS remplir le champ "note" avec un résumé clair et court pour l'opératrice (qui est le client, ce qu'il veut/son problème, et ce qu'elle doit faire). ⚠️ La note doit refléter UNIQUEMENT ce que le client a RÉELLEMENT dit/demandé — n'invente JAMAIS une intention, une demande ou un détail qu'il n'a pas exprimé (n'écris pas "veut récupérer le jour même" s'il ne l'a pas demandé, n'écris pas "intéressé pour acheter" s'il a juste posé une question). Reste factuel. Ex : "Client demande si on a le maillot du Brésil ; vérifier la dispo et le recontacter avec photos+prix."
@@ -247,7 +255,8 @@ async function generateReply({ text, name, orderItems, total, city, history, cat
 async function handleIncoming({ text, name, orderItems, total, city, history, catalog, collectionsBlock, imageBase64, imageMime, tools, runTool }, opts = {}) {
   if (!ANTHROPIC_KEY) return { send: false, skipped: 'no_key' };
   if ((!text || String(text).trim().length === 0) && !imageBase64) return { send: false, skipped: 'no_text' };
-  if (!imageBase64 && (opts.isButtonFlag || isButton(text))) return { send: false, skipped: 'button' };
+  // (Les clics de bouton ne sont PLUS ignorés ici : si le bouton est laissé vide côté eGrow, l'agent répond ;
+  //  s'il y a un template, eGrow répond → ce template devient le dernier message → l'agent se tait tout seul.)
   if (!opts.bypassTime && !opts.unanswered && isWorkHours()) return { send: false, skipped: 'work_hours', hour: maroccoHour() };
   const g = await generateReply({ text, name, orderItems, total, city, history, catalog, collectionsBlock, imageBase64, imageMime, tools, runTool });
   return { send: !!(g.reply && g.reply.trim()), reply: g.reply, intent: g.intent, note: g.note, order: g.order, usage: g.usage };

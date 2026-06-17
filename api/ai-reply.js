@@ -2,7 +2,7 @@
 //   - POST /api/ai-reply            → répond à UN message (test manuel / eGrow Api Request).
 //   - GET  /api/ai-reply?poll=1     → POLLER : lit l'inbox eGrow, répond via Claude, envoie via l'API eGrow.
 // Sécurisé par ?secret=. Clé Claude + tokens eGrow en env. Anti-doublon Supabase (table wa_agent_replied).
-const { handleIncoming } = require('./_agent.js');
+const { handleIncoming, isButton } = require('./_agent.js');
 const { SB_URL, supabaseHeaders, shopifyAdminHeaders, SHOPIFY_DOMAIN, SHOPIFY_API_VERSION } = require('./_shopify-helpers.js');
 
 const SECRET = 'touni-sync-2026';
@@ -70,6 +70,15 @@ async function egrowGetMessages(convId, limit) {
   const r = await fetch(url, { headers: { 'account-key': EGROW_AK } });
   const j = await r.json().catch(() => ({}));
   return (j && j.data) || [];
+}
+// Pour un clic de BOUTON : eGrow a-t-il DÉJÀ répondu (template) juste après le clic ? (dernier message = sortant/mine)
+// → si oui, l'agent ne répond pas (évite la double-réponse en cas de course poll/template).
+async function buttonAlreadyAnswered(convId) {
+  try {
+    const recent = await egrowGetMessages(convId, 1);
+    const last = Array.isArray(recent) ? recent[0] : null;
+    return !!(last && (last.mine === true || last.mine === 'true'));
+  } catch (e) { return false; }
 }
 async function egrowSend(integrationId, toWaId, text) {
   const boundary = '----TouniAgent' + Math.random().toString(36).slice(2);
@@ -418,8 +427,12 @@ async function runPoll(q) {
         const isImage = type === 'image';
         const isAudio = type === 'audio' || type === 'voice' || type === 'ptt';     // message vocal
         const isCall = /call/i.test(type);                                          // appel (manqué) — détection best-effort
-        if (!isImage && !isAudio && !isCall && type && type !== 'text') continue;    // pas template/sticker/bouton/reaction
-        if (type === 'text' && !body.trim()) continue;
+        // Clic sur un BOUTON de template : peut arriver en type 'button'/'interactive' ou en 'text' (le libellé). On le traite.
+        const btnText = (lm.content && ((lm.content.button && lm.content.button.text) || lm.content.text || (lm.content.interactive && lm.content.interactive.button_reply && lm.content.interactive.button_reply.title))) || '';
+        if (btnText && !body.trim()) body = btnText;                                 // récupère le libellé cliqué
+        const isButtonMsg = type === 'button' || type === 'interactive' || type === 'button_reply' || isButton(body);
+        if (!isImage && !isAudio && !isCall && !isButtonMsg && type && type !== 'text') continue; // template sortant/sticker/reaction → ignore
+        if (!isImage && !isAudio && !isCall && !body.trim()) continue;
         if (!dry && !(await claimMessage(msgId, c.id, contactWaId, body || type))) continue; // anti-doublon ATOMIQUE
         if (!dry) claimedMsgId = msgId;
         // Photo entrante → télécharger + base64 pour Claude Vision
@@ -496,6 +509,9 @@ async function runPoll(q) {
             entry.reply_preview = decision.reply.slice(0, 140);
             if (isAction) entry.dealMove = !deal ? 'no_movable_deal' : (curStage === target ? 'already_there' : { wouldMove: deal.id, from: curStage, to: target });
             if (decision.order) entry.orderWould = decision.order;
+          } else if (isButtonMsg && await buttonAlreadyAnswered(c.id)) {
+            // BOUTON : eGrow a déjà répondu (un template) juste après le clic → on ne double PAS. L'agent se tait.
+            await releaseClaim(msgId); entry.sent = 'skip:template_a_repondu'; entry.decision = 'bouton_gere_par_template';
           } else {
             const sendRes = await egrowSend(integrationId, contactWaId, decision.reply);
             entry.sent = sendRes && sendRes.status;
