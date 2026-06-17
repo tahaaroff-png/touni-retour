@@ -532,8 +532,13 @@ async function runPoll(q) {
         if (isAudio) {
           const aurl = (lm.content && lm.content.url) || '';
           const txt = aurl ? await transcribeAudio(aurl) : '';
-          if (!txt) { await releaseClaim(msgId); continue; } // transcription impossible → on libère (réessai au prochain run)
-          body = '🎤 (message vocal du client, transcrit) ' + txt;
+          if (!txt) {
+            // Vocal illisible (transcription vide) → on RÉPOND quand même (on ne boucle pas en silence).
+            // L'agent demande de reformuler ; s'il a DÉJÀ demandé une fois dans l'historique → il escalade vers l'opératrice.
+            body = "🎤 [VOCAL ILLISIBLE : la transcription du message vocal du client a échoué (audio incompréhensible). Si tu as DÉJÀ demandé une fois de reformuler dans l'historique récent → NE redemande PAS, transfère directement à l'opératrice (escalate) avec une note « client envoie des vocaux illisibles, le rappeler ». Sinon : demande gentiment, en une phrase, de réécrire en texte ou de renvoyer un vocal plus court/plus clair.]";
+          } else {
+            body = '🎤 (message vocal du client, transcrit) ' + txt;
+          }
         }
         // APPEL (manqué) → message d'aide automatique (la porte horaire s'applique : surtout hors 9h-18h)
         if (isCall) {
