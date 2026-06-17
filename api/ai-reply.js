@@ -14,6 +14,7 @@ const EGROW_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/53
 const INTEGRATIONS = (process.env.EGROW_INTEGRATIONS || '5425').split(',').map((s) => s.trim()).filter(Boolean);
 const FRESH_WINDOW_SEC = parseInt(process.env.EGROW_FRESH_SEC || '600', 10); // ne répond qu'aux messages des 10 dernières min
 const HUMAN_HANDOVER_SEC = parseInt(process.env.EGROW_HUMAN_HANDOVER_SEC || '5400', 10); // si un humain a répondu il y a < 1h30, le bot se tait
+const HISTORY_LIMIT = parseInt(process.env.EGROW_HISTORY_LIMIT || '40', 10); // nb de messages d'historique lus (réponses multi-bulles → fenêtre large pour garder le contexte 1-2h)
 const MAX_PER_RUN = parseInt(process.env.EGROW_MAX_PER_RUN || '8', 10);      // garde-fou anti-blast
 // #4 — stages pipeline : commande en attente → Confirmer Wtsp (confirm) / Annuler Wtsp (cancel)
 const STAGE_CONFIRM = parseInt(process.env.EGROW_STAGE_CONFIRM || '49148', 10);
@@ -611,13 +612,25 @@ async function runPoll(q) {
         }
 
         // Historique de la conversation → réponse en contexte (multi-tours)
+        // NB: les réponses du bot font souvent plusieurs bulles (= plusieurs messages eGrow) → on prend une fenêtre plus large
+        // pour garder le contexte d'il y a 1-2h (ex: maillot déjà évoqué). Les PHOTOS sont gardées comme marqueur (sinon le fil est perdu).
         let history = [];
         let raw = [];
         try {
-          raw = await egrowGetMessages(c.id, 20); // assez pour suivre le fil (ex: 2 maillots + 1) tout en limitant les tokens (coût)
+          raw = await egrowGetMessages(c.id, HISTORY_LIMIT);
           history = raw
-            .filter((m) => { const t = (m.type || ''); return t === 'text' || t === 'template'; })
-            .map((m) => ({ role: (m.mine === true || m.mine === 'true') ? 'assistant' : 'user', content: (m.body || (m.content && m.content.body) || '').toString() }))
+            .map((m) => {
+              const mine = (m.mine === true || m.mine === 'true');
+              const t = String(m.type || '');
+              let content = (m.body || (m.content && m.content.body) || '').toString().trim();
+              if (!content) {
+                if (t === 'image') content = mine ? '[photo envoyée]' : '[le client a envoyé une PHOTO d\'un produit]';
+                else if (t === 'audio' || t === 'voice' || t === 'ptt') content = mine ? '[vocal]' : '[le client a envoyé un message vocal]';
+              }
+              const keep = ['text', 'template', 'image', 'audio', 'voice', 'ptt'].includes(t) && content;
+              return keep ? { role: mine ? 'assistant' : 'user', content } : null;
+            })
+            .filter(Boolean)
             .reverse(); // ancien -> récent
         } catch (e) {}
 
