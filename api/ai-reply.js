@@ -346,49 +346,46 @@ async function releaseClaim(msgId) {
 
 // ── HANDOVER HUMAIN : ne pas marcher sur les pieds d'un opérateur humain ──
 // Le bot ET l'humain envoient depuis le MÊME numéro business (eGrow marque les deux `mine:true`).
-// Pour distinguer, on mémorise l'id de CHAQUE message envoyé par le bot (table agent_sent).
-// Enregistre l'id d'un message que le bot vient d'envoyer (depuis la réponse d'envoi, sinon en relisant le dernier message).
-async function markBotSent(convId, integrationId, sendRes) {
+// On distingue par le TEXTE (fiable) : on mémorise le contenu de chaque message envoyé par le bot (table agent_sent).
+// Un message sortant dont le texte NE correspond À AUCUN envoi récent du bot = écrit par un humain.
+function normBody(s) { return String(s || '').toLowerCase().replace(/\s+/g, ' ').trim().slice(0, 160); }
+// Enregistre un message que le bot vient d'envoyer (texte normalisé + id si dispo, sinon id synthétique unique).
+async function markBotSent(convId, integrationId, sendRes, bodyText) {
   try {
     let id = '';
     const cands = [sendRes && sendRes.id, sendRes && sendRes.messageId,
       sendRes && sendRes.data && (sendRes.data.id || sendRes.data.messageId || (sendRes.data.message && sendRes.data.message.id))];
     for (const c of cands) { if (c) { id = String(c); break; } }
-    if (!id) { // fallback : relire le dernier message de la conv (= celui qu'on vient d'envoyer)
-      const recent = await egrowGetMessages(convId, 1);
-      const last = Array.isArray(recent) ? recent[0] : null;
-      if (last && (last.mine === true || last.mine === 'true') && last.id) id = String(last.id);
-    }
-    if (!id) return;
+    if (!id) id = String(convId) + '#' + Date.now(); // id synthétique : on s'appuie de toute façon sur le TEXTE
     await fetch(`${SB_URL}/rest/v1/agent_sent`, {
       method: 'POST',
       headers: Object.assign({}, supabaseHeaders(true), { 'Content-Type': 'application/json', 'Prefer': 'resolution=ignore-duplicates' }),
-      body: JSON.stringify({ msg_id: id, conv_id: String(convId) }),
+      body: JSON.stringify({ msg_id: id, conv_id: String(convId), body: normBody(bodyText) }),
     });
   } catch (e) {}
 }
-// Parmi une liste d'ids sortants, lesquels sont des envois DU BOT (présents dans agent_sent) → Set.
-async function botSentIds(ids) {
-  const out = new Set();
-  if (!ids || !ids.length) return out;
+// Récupère les envois récents DU BOT pour une conversation (≤ ~2h) → { ids:Set, bodies:Set }.
+async function recentBotSent(convId) {
+  const res = { ids: new Set(), bodies: new Set() };
   try {
-    const inList = ids.map((i) => '"' + String(i).replace(/"/g, '') + '"').join(',');
-    const r = await fetch(`${SB_URL}/rest/v1/agent_sent?select=msg_id&msg_id=in.(${encodeURIComponent(inList)})`, { headers: supabaseHeaders(true) });
+    const sinceIso = new Date(Date.now() - 7200000).toISOString(); // 2h
+    const r = await fetch(`${SB_URL}/rest/v1/agent_sent?select=msg_id,body,sent_at&conv_id=eq.${encodeURIComponent(String(convId))}&sent_at=gte.${encodeURIComponent(sinceIso)}`, { headers: supabaseHeaders(true) });
     const j = await r.json().catch(() => []);
-    if (Array.isArray(j)) j.forEach((row) => out.add(String(row.msg_id)));
+    if (Array.isArray(j)) j.forEach((row) => { if (row.msg_id) res.ids.add(String(row.msg_id)); if (row.body) res.bodies.add(String(row.body)); });
   } catch (e) {}
-  return out;
+  return res;
 }
-// Un HUMAIN gère-t-il la conversation en ce moment ? (= message sortant récent <1h30 qui n'est PAS du bot)
-async function humanHandling(raw, nowSec) {
+// Un HUMAIN gère-t-il la conversation ? (= message sortant récent <1h30 dont le texte n'est PAS un envoi du bot).
+function humanHandling(raw, nowSec, botSent) {
   const HUMAN_TYPES = ['text', 'image', 'audio', 'voice', 'ptt', 'video', 'document'];
   const outRecent = (raw || [])
     .filter((m) => m && (m.mine === true || m.mine === 'true') && HUMAN_TYPES.includes(String(m.type || '')))
-    .map((m) => ({ id: String(m.id || ''), at: parseInt(m.sentAt || m.createdAt || m.timestamp || '0', 10) }))
-    .filter((m) => m.id && m.at && (nowSec - m.at) <= HUMAN_HANDOVER_SEC);
+    .map((m) => ({ id: String(m.id || ''), body: normBody(m.body || (m.content && m.content.body) || ''), at: parseInt(m.sentAt || m.createdAt || m.timestamp || '0', 10) }))
+    .filter((m) => m.at && (nowSec - m.at) <= HUMAN_HANDOVER_SEC);
   if (!outRecent.length) return false;
-  const ours = await botSentIds(outRecent.map((m) => m.id));
-  return outRecent.some((m) => !ours.has(m.id)); // au moins un sortant récent qui n'est pas du bot = humain actif
+  // "humain" = un sortant récent qui n'est NI un id connu du bot NI un texte connu du bot.
+  // (un message sortant SANS texte — média envoyé par l'humain — compte aussi comme humain s'il n'est pas un id du bot)
+  return outRecent.some((m) => !botSent.ids.has(m.id) && !(m.body && botSent.bodies.has(m.body)));
 }
 
 // Recherche catalogue Shopify (cache Supabase) selon la demande → bloc dispo en direct à injecter.
@@ -582,18 +579,34 @@ async function runPoll(q) {
         if (!isImage && !isAudio && !isCall && !body.trim()) continue;
         if (!dry && !(await claimMessage(msgId, c.id, contactWaId, body || type))) continue; // anti-doublon ATOMIQUE
         if (!dry) claimedMsgId = msgId;
-        // Photo entrante → télécharger + base64 pour Claude Vision
-        let imageBase64 = null, imageMime = null;
+        // Messages récents de la conv (sert aux PHOTOS multiples, à l'historique, au handover) — un seul appel.
+        let raw = [];
+        try { raw = await egrowGetMessages(c.id, HISTORY_LIMIT); } catch (e) {}
+
+        // Photo(s) entrante(s) → base64 pour Claude Vision. Le client peut envoyer PLUSIEURS produits d'un coup → on prend la RAFALE.
+        let images = [];
         if (isImage) {
-          const iurl = (lm.content && lm.content.url) || '';
-          if (!iurl) { await releaseClaim(msgId); continue; }
-          try {
-            const ir = await fetch(iurl);
-            const buf = Buffer.from(await ir.arrayBuffer());
-            if (buf.length && buf.length < 4000000) { imageBase64 = buf.toString('base64'); imageMime = (lm.content && lm.content.mime_type) || 'image/jpeg'; }
-          } catch (e) {}
-          if (!imageBase64) { await releaseClaim(msgId); continue; }
+          const burst = []; // rafale de photos du client en tête (messages les plus récents, mine=false, type image)
+          for (const m of raw) {
+            const mine = (m.mine === true || m.mine === 'true');
+            if (mine) break;                                   // un message du bot coupe la rafale
+            if (String(m.type || '') !== 'image') { if (burst.length) break; else continue; }
+            const u = (m.content && m.content.url) || '';
+            if (u) burst.push({ url: u, mime: (m.content && m.content.mime_type) || 'image/jpeg' });
+            if (burst.length >= 4) break;                      // garde-fou coût (max 4 photos)
+          }
+          if (!burst.length) { const u = (lm.content && lm.content.url) || ''; if (u) burst.push({ url: u, mime: (lm.content && lm.content.mime_type) || 'image/jpeg' }); }
+          for (const b of burst.reverse()) {                   // ordre chronologique (ancienne → récente)
+            try {
+              const ir = await fetch(b.url);
+              const buf = Buffer.from(await ir.arrayBuffer());
+              if (buf.length && buf.length < 4000000) images.push({ base64: buf.toString('base64'), mime: b.mime });
+            } catch (e) {}
+          }
+          if (!images.length) { await releaseClaim(msgId); continue; }
         }
+        const imageBase64 = images[0] ? images[0].base64 : null; // rétro-compat (1ʳᵉ image)
+        const imageMime = images[0] ? images[0].mime : null;
         // Message VOCAL → transcrire (Groq Whisper) puis traiter comme du texte normal
         if (isAudio) {
           const aurl = (lm.content && lm.content.url) || '';
@@ -615,10 +628,8 @@ async function runPoll(q) {
         // NB: les réponses du bot font souvent plusieurs bulles (= plusieurs messages eGrow) → on prend une fenêtre plus large
         // pour garder le contexte d'il y a 1-2h (ex: maillot déjà évoqué). Les PHOTOS sont gardées comme marqueur (sinon le fil est perdu).
         let history = [];
-        let raw = [];
         try {
-          raw = await egrowGetMessages(c.id, HISTORY_LIMIT);
-          history = raw
+          history = (raw || [])
             .map((m) => {
               const mine = (m.mine === true || m.mine === 'true');
               const t = String(m.type || '');
@@ -634,12 +645,15 @@ async function runPoll(q) {
             .reverse(); // ancien -> récent
         } catch (e) {}
 
+        // Envois récents DU BOT pour cette conv (sert au handover ET à l'anti-doublon avant envoi).
+        const botSent = await recentBotSent(c.id);
+
         // HANDOVER HUMAIN : si un humain (opératrice) gère déjà cette conv (a répondu < 1h30), le bot se TAIT et laisse l'humain.
         // (ne s'applique PAS au numéro du marchand = assistant patron, lui répond toujours).
         const _isMerchantHere = MERCHANT_PHONE && contactWaId.replace(/\D/g, '') === MERCHANT_PHONE;
         if (!_isMerchantHere) {
           let humanActive = false;
-          try { humanActive = await humanHandling(raw, nowSec); } catch (e) {}
+          try { humanActive = humanHandling(raw, nowSec, botSent); } catch (e) {}
           if (humanActive) {
             if (!dry && claimedMsgId) { await releaseClaim(claimedMsgId); claimedMsgId = null; } // libère → on pourra répondre plus tard si l'humain reste inactif 1h30
             results.push({ conv: c.id, phone: contactWaId, msgId, body: body.slice(0, 60), decision: 'human_handover' });
@@ -686,7 +700,7 @@ async function runPoll(q) {
         }
         const decision = await handleIncoming(
           { text: body, name: c.title || (c.contact && c.contact.name) || '', city: (c.contact && c.contact.city) || '', history,
-            catalog: isMerchant ? '' : catalog, collectionsBlock: isMerchant ? '' : collectionsBlock, imageBase64, imageMime,
+            catalog: isMerchant ? '' : catalog, collectionsBlock: isMerchant ? '' : collectionsBlock, imageBase64, imageMime, images,
             tools: isMerchant ? MERCHANT_TOOLS : AGENT_TOOLS,
             runTool: isMerchant ? ((n, i) => runMerchantTool(n, i)) : ((n, i) => runAgentTool(n, i, contactWaId)),
             systemOverride: isMerchant ? MERCHANT_SYSTEM : null },
@@ -695,6 +709,12 @@ async function runPoll(q) {
         if (decision && decision.reply) decision.reply = await sanitizeReplyLinks(decision.reply); // anti-lien-cassé
         const entry = { conv: c.id, phone: contactWaId, name: c.title, msgId, body: body.slice(0, 60), decision: decision.skipped || (decision.send ? 'reply' : 'no_send') };
         if (!(decision.send && decision.reply) && !dry) await releaseClaim(msgId); // on ne répond pas (heures ouvrées/bouton) → libère le claim
+        // ANTI-DOUBLON : si le bot a DÉJÀ envoyé ce même texte récemment dans cette conv → ne le renvoie pas (évite le message en double).
+        if (decision.send && decision.reply && botSent.bodies.has(normBody(decision.reply))) {
+          if (!dry && claimedMsgId) { await releaseClaim(claimedMsgId); claimedMsgId = null; }
+          entry.decision = 'skip:doublon_meme_texte'; entry.sent = 'skip_duplicate';
+          results.push(entry); processed++; continue;
+        }
         if (decision.send && decision.reply) {
           entry.intent = decision.intent;
           // #4 : confirmation/annulation d'une commande EN ATTENTE → déplacer le deal
@@ -714,7 +734,7 @@ async function runPoll(q) {
           } else {
             const sendRes = await egrowSend(integrationId, contactWaId, decision.reply);
             entry.sent = sendRes && sendRes.status;
-            if (sendRes && sendRes.status === 'success') { claimedMsgId = null; await markBotSent(c.id, integrationId, sendRes); } // envoi OK → ne PAS libérer + mémoriser l'id (handover humain)
+            if (sendRes && sendRes.status === 'success') { claimedMsgId = null; await markBotSent(c.id, integrationId, sendRes, decision.reply); } // envoi OK → ne PAS libérer + mémoriser le texte (handover + anti-doublon)
             else await releaseClaim(msgId);                                       // envoi raté → libère pour réessayer au prochain run
             if (isAction && deal && curStage !== target) {
               try {

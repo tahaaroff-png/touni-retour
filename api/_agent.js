@@ -27,7 +27,7 @@ SITE WEB : https://touni.ma — si le client veut PARCOURIR le catalogue / voir 
 
 PHOTOS : les photos du site sont IDENTIQUES à ce que le client reçoit. Si le client demande la PHOTO d'un produit précis : partage-lui le LIEN de la PAGE PRODUIT (le champ « lien: » du bloc CATALOGUE ci-dessous) où il verra les photos, sinon le lien du site. S'il s'inquiète de la conformité : rassure-le — il pourra OUVRIR le colis et vérifier lui-même à la réception AVANT de payer (paiement à la livraison), donc aucun risque pour lui.
 
-PHOTO ENVOYÉE PAR LE CLIENT (vision) : si le client t'envoie une PHOTO d'un produit, analyse-la : identifie l'équipe + le type + l'année/saison + la couleur (ex « Real Madrid third rétro 2017/18 bleu/vert »). ⚠️ ENSUITE, TU DOIS appeler **chercher_catalogue** avec ce que tu as identifié (ex « Real Madrid third 2017 » ou « Real Madrid retro ») pour vérifier le STOCK et le PRIX RÉELS — le bloc CATALOGUE est VIDE pour une photo, donc NE conclus JAMAIS « pas dispo » sans avoir appelé l'outil d'abord. Si l'outil le trouve → donne le prix + les tailles dispo + propose de commander. Si l'outil trouve d'autres modèles de l'équipe → propose-les. Seulement si l'outil ne renvoie VRAIMENT rien pour cette équipe → propose la page de la collection. NE dis jamais « ce modèle précis n'est pas dispo » sans avoir cherché.
+PHOTO ENVOYÉE PAR LE CLIENT (vision) : si le client t'envoie une PHOTO d'un produit, analyse-la : identifie l'équipe + le type + l'année/saison + la couleur (ex « Real Madrid third rétro 2017/18 bleu/vert »). ⚠️ ENSUITE, TU DOIS appeler **chercher_catalogue** avec ce que tu as identifié (ex « Real Madrid third 2017 » ou « Real Madrid retro ») pour vérifier le STOCK et le PRIX RÉELS — le bloc CATALOGUE est VIDE pour une photo, donc NE conclus JAMAIS « pas dispo » sans avoir appelé l'outil d'abord. Si l'outil le trouve → donne le prix + les tailles dispo + propose de commander. Si l'outil trouve d'autres modèles de l'équipe → propose-les. Seulement si l'outil ne renvoie VRAIMENT rien pour cette équipe → propose la page de la collection. NE dis jamais « ce modèle précis n'est pas dispo » sans avoir cherché. ⚠️ PLUSIEURS PHOTOS / PLUSIEURS PRODUITS : si le client envoie PLUSIEURS photos (ou demande le prix de plusieurs maillots à la fois), traite-les TOUTES — identifie CHAQUE produit et donne le prix + la dispo de CHACUN, un par un (ex « 1) Brésil… 2) France… 3) Angleterre… »). NE réponds JAMAIS pour une seule photo en ignorant les autres. Appelle chercher_catalogue pour chaque produit si besoin.
 
 CONFIRMATION : la commande est confirmée en MOINS DE 24h. Un message de confirmation part tout de suite sur WhatsApp, puis notre opératrice APPELLE tout le monde pour confirmer la TAILLE (même si le client a déjà confirmé par message).
 
@@ -164,13 +164,19 @@ function normalizeHistory(history) {
 }
 
 // Appelle Claude. history = tours précédents. catalog = dispo. imageBase64 = photo envoyée par le client (vision). Retourne {reply, intent, usage}. Throw si erreur API.
-async function generateReply({ text, name, orderItems, total, city, history, catalog, collectionsBlock, imageBase64, imageMime, tools, runTool, systemOverride }) {
+async function generateReply({ text, name, orderItems, total, city, history, catalog, collectionsBlock, imageBase64, imageMime, images, tools, runTool, systemOverride }) {
   let messages = normalizeHistory(history);
-  if (imageBase64) {
-    const blocks = [
-      { type: 'text', text: (text && text.trim()) ? text : "Le client vient d'envoyer cette photo. Identifie le produit Touni le plus proche du catalogue et aide-le (prix, dispo, ou prise de commande)." },
-      { type: 'image', source: { type: 'base64', media_type: imageMime || 'image/jpeg', data: imageBase64 } },
-    ];
+  // Une ou PLUSIEURS photos (le client peut envoyer plusieurs produits d'un coup → on les passe TOUTES à la vision).
+  const imgs = (Array.isArray(images) && images.length) ? images : (imageBase64 ? [{ base64: imageBase64, mime: imageMime }] : []);
+  if (imgs.length) {
+    const intro = (text && text.trim())
+      ? text
+      : (imgs.length > 1
+        ? `Le client vient d'envoyer ${imgs.length} photos de produits. Identifie CHAQUE produit Touni le plus proche du catalogue et donne le prix + la dispo de CHACUN (un par un, dans l'ordre). Si tu n'es pas sûr d'un produit, appelle chercher_catalogue.`
+        : "Le client vient d'envoyer cette photo. Identifie le produit Touni le plus proche du catalogue et aide-le (prix, dispo, ou prise de commande).");
+    const blocks = [{ type: 'text', text: intro }].concat(
+      imgs.map((im) => ({ type: 'image', source: { type: 'base64', media_type: im.mime || 'image/jpeg', data: im.base64 } }))
+    );
     if (messages.length && messages[messages.length - 1].role === 'user') {
       const last = messages[messages.length - 1];
       const prev = typeof last.content === 'string' ? [{ type: 'text', text: last.content }] : (Array.isArray(last.content) ? last.content : []);
@@ -182,7 +188,7 @@ async function generateReply({ text, name, orderItems, total, city, history, cat
   // Sans image : s'assurer que la conversation se TERMINE par le message ACTUEL du client (texte/transcription vocale).
   // Cas vocal : le message audio est exclu de l'historique → sans ça, la conversation finirait par un tour "assistant"
   // → l'API refuse ("conversation must end with a user message"). Cas texte : déjà présent dans l'historique → on n'ajoute pas en double.
-  if (!imageBase64) {
+  if (!imgs.length) {
     const curText = String(text || '').trim();
     const last = messages.length ? messages[messages.length - 1] : null;
     const lastIsSameUser = last && last.role === 'user' && typeof last.content === 'string' && last.content.trim() === curText;
@@ -258,13 +264,14 @@ async function generateReply({ text, name, orderItems, total, city, history, cat
 
 // Décide quoi faire d'un message entrant. arg peut inclure `history` (tours précédents). opts: {bypassTime, unanswered, isButtonFlag}
 // Retourne {send, reply, intent, skipped, hour, usage}
-async function handleIncoming({ text, name, orderItems, total, city, history, catalog, collectionsBlock, imageBase64, imageMime, tools, runTool, systemOverride }, opts = {}) {
+async function handleIncoming({ text, name, orderItems, total, city, history, catalog, collectionsBlock, imageBase64, imageMime, images, tools, runTool, systemOverride }, opts = {}) {
   if (!ANTHROPIC_KEY) return { send: false, skipped: 'no_key' };
-  if ((!text || String(text).trim().length === 0) && !imageBase64) return { send: false, skipped: 'no_text' };
+  const hasImg = !!imageBase64 || (Array.isArray(images) && images.length > 0);
+  if ((!text || String(text).trim().length === 0) && !hasImg) return { send: false, skipped: 'no_text' };
   // (Les clics de bouton ne sont PLUS ignorés ici : si le bouton est laissé vide côté eGrow, l'agent répond ;
   //  s'il y a un template, eGrow répond → ce template devient le dernier message → l'agent se tait tout seul.)
   if (!opts.bypassTime && !opts.unanswered && isWorkHours()) return { send: false, skipped: 'work_hours', hour: maroccoHour() };
-  const g = await generateReply({ text, name, orderItems, total, city, history, catalog, collectionsBlock, imageBase64, imageMime, tools, runTool, systemOverride });
+  const g = await generateReply({ text, name, orderItems, total, city, history, catalog, collectionsBlock, imageBase64, imageMime, images, tools, runTool, systemOverride });
   return { send: !!(g.reply && g.reply.trim()), reply: g.reply, intent: g.intent, note: g.note, order: g.order, usage: g.usage };
 }
 
