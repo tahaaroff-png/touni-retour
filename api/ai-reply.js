@@ -408,15 +408,46 @@ const CATALOG_SYNONYMS = { barca: 'barcelon', barsa: 'barcelon', barcaa: 'barcel
 
 // Collections Shopify (page équipe/catégorie) — mises en cache mémoire (chaud) ~1h
 let _cols = null, _colsAt = 0;
+// Une collection montre-t-elle AU MOINS 1 produit au CLIENT (storefront) ? — évite d'envoyer un lien vide
+// (ex: nike-t-shirt / flash : publiées en admin mais 0 produit visible côté client → page vide).
+async function collectionHasStorefrontProducts(handle) {
+  try {
+    const r = await fetch(`https://touni.ma/collections/${encodeURIComponent(handle)}/products.json?limit=1`, { headers: { 'User-Agent': EGROW_UA }, signal: AbortSignal.timeout(6000) });
+    if (!r.ok) return true; // fail-open : on ne perd pas une collection sur une erreur réseau
+    const j = await r.json().catch(() => null);
+    if (!j || !Array.isArray(j.products)) return true;
+    return j.products.length > 0;
+  } catch (e) { return true; }
+}
 async function getCollections() {
   if (_cols && (Date.now() - _colsAt) < 3600000) return _cols;
-  const out = [];
+  let candidates = [];
+  // 1) Collections PUBLIÉES + non vides (GraphQL) — exclut déjà les brouillons et les collections à 0 produit.
   try {
-    for (const ep of ['custom_collections', 'smart_collections']) {
-      const cr = await fetch(`https://${SHOPIFY_DOMAIN}/admin/api/${SHOPIFY_API_VERSION}/${ep}.json?limit=250&fields=id,title,handle`, { headers: await shopifyAdminHeaders() });
-      const cj = await cr.json().catch(() => ({}));
-      (cj[ep] || []).forEach((c) => { if (c.handle) out.push({ title: c.title || '', handle: c.handle }); });
-    }
+    const gql = 'query { collections(first: 250, query: "published_status:published") { edges { node { handle title productsCount { count } } } } }';
+    const gr = await fetch(`https://${SHOPIFY_DOMAIN}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`, {
+      method: 'POST', headers: Object.assign({}, await shopifyAdminHeaders(), { 'Content-Type': 'application/json' }), body: JSON.stringify({ query: gql }),
+    });
+    const gj = await gr.json().catch(() => ({}));
+    const edges = (gj.data && gj.data.collections && gj.data.collections.edges) || [];
+    candidates = edges.map((e) => e.node).filter((n) => n && n.handle && (!n.productsCount || n.productsCount.count > 0)).map((n) => ({ title: n.title || '', handle: n.handle }));
+  } catch (e) {}
+  // Fallback REST si GraphQL échoue
+  if (!candidates.length) {
+    try {
+      for (const ep of ['custom_collections', 'smart_collections']) {
+        const cr = await fetch(`https://${SHOPIFY_DOMAIN}/admin/api/${SHOPIFY_API_VERSION}/${ep}.json?limit=250&fields=id,title,handle`, { headers: await shopifyAdminHeaders() });
+        const cj = await cr.json().catch(() => ({}));
+        (cj[ep] || []).forEach((c) => { if (c.handle) candidates.push({ title: c.title || '', handle: c.handle }); });
+      }
+    } catch (e) {}
+  }
+  // 2) VÉRITÉ STOREFRONT : ne garder que les collections qui montrent ≥1 produit AU CLIENT (sinon lien vide).
+  let out = candidates;
+  try {
+    const checks = await Promise.all(candidates.map((c) => collectionHasStorefrontProducts(c.handle).then((ok) => (ok ? c : null))));
+    const filtered = checks.filter(Boolean);
+    if (filtered.length) out = filtered;
   } catch (e) {}
   if (out.length) { _cols = out; _colsAt = Date.now(); }
   return _cols || [];
