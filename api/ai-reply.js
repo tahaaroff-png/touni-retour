@@ -398,12 +398,25 @@ async function createOrderDeal(order, contactId) {
     const wantCat = [...PROD_CATEGORY].find((ch) => want.split(' ').includes(ch));
     let p = prods.find((x) => normTxt(x.name) === want);
     if (!p) {
+      // Niveau 1 : catégorie présente dans le nom (includes, pas split) + ≥1 mot distinctif
       const cand = prods
-        .map((x) => { const nx = normTxt(x.name); return { x, dist: wantDistinct.filter((w) => nx.includes(w)).length, catOk: !wantCat || nx.split(' ').includes(wantCat) }; })
+        .map((x) => { const nx = normTxt(x.name); return { x, dist: wantDistinct.filter((w) => nx.includes(w)).length, catOk: !wantCat || nx.includes(wantCat) }; })
         .filter((c) => c.dist >= 1 && c.catOk)
         .sort((a, b) => b.dist - a.dist);
-      if (!cand.length) return { ok: false, reason: 'no_product_match' };
-      p = cand[0].x;
+      if (cand.length) { p = cand[0].x; }
+    }
+    if (!p) {
+      // Niveau 2 : juste ≥1 mot distinctif (sans exiger la catégorie dans le nom eGrow)
+      const candR = prods
+        .map((x) => { const nx = normTxt(x.name); return { x, dist: wantDistinct.filter((w) => nx.includes(w)).length }; })
+        .filter((c) => c.dist >= 1)
+        .sort((a, b) => b.dist - a.dist);
+      if (candR.length) { p = candR[0].x; }
+    }
+    if (!p) {
+      // Niveau 3 : aucun produit eGrow trouvé → commande créée quand même avec le nom dans les notes
+      // On utilise le premier résultat de la recherche comme support de prix (ou prix par défaut 329)
+      p = prods[0] ? Object.assign({}, prods[0], { name: item.product }) : { id: 0, name: item.product, price: '329', sku: '' };
     }
     const qty = Math.max(1, parseInt(item.quantity || 1, 10) || 1);
     const price = parseFloat(p.price) || 0;
