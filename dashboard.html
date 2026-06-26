@@ -1787,10 +1787,18 @@ function saveCaOzone(andRender){
   if(andRender) renderOverview();
 }
 function getCaOzone(){
+  // Override manuel (simulateur) — priorité absolue
   var el=document.getElementById('ca-ozone-input');
   if(el && el.value) return parseFloat(el.value)||0;
-  var val=localStorage.getItem(getCaOzoneKey());
-  return val ? parseFloat(val)||0 : 0;
+  var lsVal=localStorage.getItem(getCaOzoneKey());
+  if(lsVal && parseFloat(lsVal)>0) return parseFloat(lsVal)||0;
+  // Fallback : somme des vrais virements Supabase sur la période
+  if(virements && virements.length>0){
+    var sum=virements.filter(function(r){return inDateRange(r.date_virement);})
+      .reduce(function(s,r){return s+(+r.montant_mad||0);},0);
+    if(sum>0) return sum;
+  }
+  return 0;
 }
 
 // ── Render all ──
@@ -1951,7 +1959,13 @@ function renderOverview(){
   document.getElementById('kpi-ozone').textContent=Math.round(fraisOzoneInfo).toLocaleString('fr-FR');
 
   // P&L rows
-  document.getElementById('pl-ozone-vir-lbl').textContent=totalVirements>0?'CA Ozone (simulateur)':'CA eGrow (livré − frais Ozone)';
+  var manualInput=document.getElementById('ca-ozone-input');
+  var hasManual=(manualInput&&manualInput.value)||localStorage.getItem(getCaOzoneKey());
+  var hasVirements=virements&&virements.filter(function(r){return inDateRange(r.date_virement);}).some(function(r){return (+r.montant_mad||0)>0;});
+  document.getElementById('pl-ozone-vir-lbl').textContent=
+    totalVirements>0&&hasManual?'CA Ozone (simulateur manuel)':
+    totalVirements>0&&hasVirements?'CA Ozone (virements réels Supabase)':
+    'CA eGrow (livré − frais Ozone)';
   document.getElementById('pl-ozone-vir').textContent=fmt(revenus);
   document.getElementById('pl-rev-total').textContent=fmt(revenus);
   document.getElementById('pl-fourn').textContent='−'+fmt(totalFourn);
