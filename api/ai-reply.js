@@ -442,15 +442,28 @@ async function createOrderDeal(order, contactId) {
     ? `${order.customer_name || ''} - ${items.length} maillots`.slice(0, 120)
     : `${order.customer_name || ''} - ${productList[0].name}`.slice(0, 120);
 
+  const customNote = [
+    order.customer_name ? `Client: ${order.customer_name}` : null,
+    order.phone ? `Tél: ${order.phone}` : null,
+    order.size ? `Taille: ${order.size}` : null,
+    order.color ? `Couleur: ${order.color}` : null,
+    order.city ? `Ville: ${order.city}` : null,
+    order.notes ? `Remarque: ${order.notes}` : null,
+    flocageNote ? flocageNote.replace(/^\s*\|\s*/, '') : null,
+  ].filter(Boolean).join(' | ');
+
   const body = {
     id: 0, label: '', source: 'agent-ia-whatsapp',
     deal_city: order.city || '', country: 'MA', deal_address: order.address || '',
     deal_apartment: '', deal_province: '', deal_zip: '', deal_area: '', deal_street_name: '', deal_house_number: '', deal_nearest_place: '', deal_location: '', deal_district: '',
+    deal_customer_name: order.customer_name || '',
+    deal_phone: String(order.phone || '').replace(/\D/g, ''),
     deal_payment_method: 'Cash on Delivery (COD)', payment_status: 'pending',
     deal_shipping_price: 0, deal_shipping: null,
     contact_id: contactId, type: 'deal', title: dealTitle,
     deal_value: value, deal_currency: { id: 153, name: 'Dirham', code: 'MAD', symbol: 'MAD' },
-    deal_custom_fields: JSON.stringify({ note: [order.size ? `Taille: ${order.size}` : null, order.color ? `Couleur: ${order.color}` : null, order.notes ? `Remarque: ${order.notes}` : null, order.phone ? `Tél: ${order.phone}` : null, flocageNote ? `Flocage: ${flocageNote.replace(/^\s*\|\s*/, '')}` : null].filter(Boolean).join(' | ') }), products: JSON.stringify(productList),
+    deal_custom_fields: JSON.stringify({ note: customNote }),
+    products: JSON.stringify(productList),
     pipeline_stage: order.waiting_stock && STAGE_STOCK_WAIT ? STAGE_STOCK_WAIT : STAGE_CONFIRM, close_date: 0, deal_number: '', deal_tracking_number: '',
     users: '[]', do_not_update_assigned: false, shipping_user_connection: 0,
   };
@@ -460,7 +473,7 @@ async function createOrderDeal(order, contactId) {
   return { ok: !!(res && res.status === 'success'), dealId, product: productSummary, price, qty: totalQty, value, flocageNote, hasFlocage: !!flocageNote };
 }
 async function addDealNote(dealId, content) {
-  try { return await egrowPost('/notes/add_or_update_note.php', { id: 0, content: String(content).slice(0, 500), type: 'deal', context: dealId, color: '' }); } catch (e) { return null; }
+  try { return await egrowPost('/notes/add_or_update_note.php', { id: 0, content: String(content).slice(0, 1200), type: 'deal', context: dealId, color: '' }); } catch (e) { return null; }
 }
 // Claim ATOMIQUE (anti-doublon) : insère msg_id et renvoie true UNIQUEMENT si c'est NOUS qui venons de l'insérer.
 // Deux runs simultanés (2 crons, ou un run qui chevauche le suivant) → un seul gagne le claim, l'autre reçoit false et skip
