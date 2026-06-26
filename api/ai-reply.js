@@ -19,8 +19,10 @@ const MAX_PER_RUN = parseInt(process.env.EGROW_MAX_PER_RUN || '8', 10);      // 
 // #4 — stages pipeline : commande en attente → Confirmer Wtsp (confirm) / Annuler Wtsp (cancel)
 const STAGE_CONFIRM = parseInt(process.env.EGROW_STAGE_CONFIRM || '49148', 10);
 const STAGE_CANCEL = parseInt(process.env.EGROW_STAGE_CANCEL || '49149', 10);
+const STAGE_STOCK_WAIT = parseInt(process.env.EGROW_STAGE_STOCK_WAIT || '60669', 10); // stage "rappeler le stock"
+const STAGE_RUPTURE = parseInt(process.env.EGROW_STAGE_RUPTURE || '49430', 10);     // stage "Rupture"
 // On ne déplace QUE si la commande est encore dans une étape AVANT envoi (sinon expédiée → on ne touche pas).
-const MOVABLE_STAGES = (process.env.EGROW_MOVABLE_STAGES || '62357,49148,49149').split(',').map((s) => parseInt(s.trim(), 10)).filter(Boolean);
+const MOVABLE_STAGES = (process.env.EGROW_MOVABLE_STAGES || '62357,49148,49149,60669,49430').split(',').map((s) => parseInt(s.trim(), 10)).filter(Boolean);
 // Notifications : opératrice e-commerce (Soumaya) sur escalade ; marchand sur upsell/vente.
 const OPERATOR_PHONE = (process.env.EGROW_OPERATOR_PHONE || '212672193297').replace(/\D/g, '');
 const MERCHANT_PHONE = (process.env.EGROW_MERCHANT_PHONE || '212612717593').replace(/\D/g, '');
@@ -95,6 +97,74 @@ async function egrowSend(integrationId, toWaId, text) {
   });
   try { return await r.json(); } catch (e) { return { status: 'http_' + r.status }; }
 }
+// Envoi d'un template WhatsApp via Meta Cloud API (hors fenêtre 24h)
+// eGrow /inbox/send_conversation_template_message.php requiert un cookie session navigateur → inaccessible côté serveur.
+// On passe directement par Meta Graph API avec META_WA_TOKEN + META_WA_PHONE_ID.
+const META_WA_TOKEN    = process.env.META_WA_TOKEN    || '';
+const META_WA_PHONE_ID = process.env.META_WA_PHONE_ID || '784496338069572';
+async function egrowSendTemplate(integrationId, toWaId, templateName, language, bodyParams) {
+  if (!META_WA_TOKEN) return { status: 'error', message: 'META_WA_TOKEN manquant' };
+  const to = String(toWaId).replace(/\D/g, '');
+  const components = bodyParams && bodyParams.length ? [{
+    type: 'body',
+    parameters: bodyParams.map((v) => ({ type: 'text', text: String(v) })),
+  }] : [];
+  const body = JSON.stringify({
+    messaging_product: 'whatsapp',
+    to,
+    type: 'template',
+    template: { name: templateName, language: { code: language || 'fr' }, components },
+  });
+  const r = await fetch(`https://graph.facebook.com/v19.0/${META_WA_PHONE_ID}/messages`, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${META_WA_TOKEN}`, 'Content-Type': 'application/json' },
+    body,
+  });
+  const json = await r.json().catch(() => ({ status: 'http_' + r.status }));
+  return { status: r.ok ? 'success' : 'error', ...json };
+}
+// ── FILE D'ATTENTE NOTIFICATIONS (rattrapage fenêtre 24h) ──────────────────────────────────────
+// Chaque message envoyé à l'opératrice ou au patron est aussi enregistré en base.
+// Quand ils répondent (fenêtre ouverte), on renvoie immédiatement tout ce qui n'est pas arrivé.
+async function queueNotification(phone, message) {
+  if (!SB_URL || !phone) return;
+  try {
+    await fetch(`${SB_URL}/rest/v1/pending_notifications`, {
+      method: 'POST',
+      headers: Object.assign({}, supabaseHeaders(true), { 'Content-Type': 'application/json', 'Prefer': 'resolution=ignore-duplicates' }),
+      body: JSON.stringify({ recipient_phone: String(phone).replace(/\D/g, ''), message: String(message).slice(0, 2000) }),
+    });
+  } catch (e) {}
+}
+async function sendAndQueue(integrationId, phone, message) {
+  try { await egrowSend(integrationId, phone, message); } catch (e) {}
+  await queueNotification(phone, message);
+}
+async function resendPendingNotifications(integrationId, phone) {
+  if (!SB_URL || !phone) return 0;
+  const digits = String(phone).replace(/\D/g, '');
+  const twoDaysAgo = new Date(Date.now() - 48 * 3600 * 1000).toISOString();
+  try {
+    const res = await fetch(
+      `${SB_URL}/rest/v1/pending_notifications?recipient_phone=eq.${digits}&delivered=eq.false&created_at=gte.${encodeURIComponent(twoDaysAgo)}&order=created_at.asc&select=id,message`,
+      { headers: supabaseHeaders() }
+    );
+    const items = await res.json();
+    if (!Array.isArray(items) || !items.length) return 0;
+    for (const item of items) {
+      try { await egrowSend(integrationId, phone, item.message); } catch (e) {}
+      try {
+        await fetch(`${SB_URL}/rest/v1/pending_notifications?id=eq.${item.id}`, {
+          method: 'PATCH',
+          headers: Object.assign({}, supabaseHeaders(true), { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' }),
+          body: JSON.stringify({ delivered: true, delivered_at: new Date().toISOString() }),
+        });
+      } catch (e) {}
+    }
+    return items.length;
+  } catch (e) { return 0; }
+}
+// ───────────────────────────────────────────────────────────────────────────────────────────────
 // POST générique eGrow (multipart, champ "data" = JSON {params, me, dev}) — format universel de l'app.
 async function egrowPost(path, params) {
   const p = Object.assign({}, params, { me: EGROW_ME, dev: 0 });
@@ -107,15 +177,28 @@ async function egrowPost(path, params) {
 async function findMovableDeal(phone) {
   const digits = String(phone || '').replace(/\D/g, '');
   if (!digits) return null;
+  const phoneMatch = (d) => {
+    const dp = String((d.contact && d.contact.phone) || '').replace(/\D/g, '');
+    return dp && (dp === digits || dp.endsWith(digits) || digits.endsWith(dp));
+  };
   for (const sid of MOVABLE_STAGES) {
+    // Essai 1 : recherche par numéro (rapide)
     const r = await egrowPost('/deal/getStageDeals.php', { stage: sid, search: digits, page: 1, limit: 5 });
     const arr = Array.isArray(r) ? r : (r && r.data) || [];
-    for (const d of arr) {
-      const dp = String((d.contact && d.contact.phone) || '').replace(/\D/g, '');
-      if (dp && (dp === digits || dp.endsWith(digits) || digits.endsWith(dp))) return d;
+    const hit = arr.find(phoneMatch);
+    if (hit) return hit;
+    // Essai 2 : fallback scan complet (nécessaire pour Rupture/rappeler le stock où la recherche par tél ne fonctionne pas)
+    const maxPages = (sid === STAGE_RUPTURE || sid === STAGE_STOCK_WAIT) ? 7 : 1;
+    for (let page = 1; page <= maxPages; page++) {
+      const r2 = await egrowPost('/deal/getStageDeals.php', { stage: sid, search: '', page, limit: 20 });
+      const arr2 = Array.isArray(r2) ? r2 : (r2 && r2.data) || [];
+      if (!arr2.length) break;
+      const hit2 = arr2.find(phoneMatch);
+      if (hit2) return hit2;
+      if (arr2.length < 20) break;
     }
   }
-  return null; // pas trouvé dans une étape avant-envoi → soit expédiée, soit pas de commande → on ne bouge pas
+  return null;
 }
 // Catégorie d'une étape de pipeline eGrow → pour le suivi de commande.
 const STAGE_CAT = (() => {
@@ -279,53 +362,102 @@ async function egrowSearchProduct(name) {
   }
   return arr; // peut être vide → createOrderDeal le gère (échec → marchand prévenu)
 }
+// ── STOCK WAITLIST — sauvegarde en Supabase ──
+async function saveStockWaitlist(phone, order) {
+  try {
+    await fetch(`${SB_URL}/rest/v1/stock_waitlist`, {
+      method: 'POST',
+      headers: Object.assign({}, supabaseHeaders(true), { 'Content-Type': 'application/json', 'Prefer': 'resolution=ignore-duplicates' }),
+      body: JSON.stringify({
+        phone: String(phone || ''),
+        name: String(order.customer_name || ''),
+        product_name: String(order.product || ''),
+        size: String(order.size || ''),
+        city: String(order.city || ''),
+      }),
+    });
+  } catch (e) { /* non bloquant */ }
+}
+
 async function createOrderDeal(order, contactId) {
-  const prods = await egrowSearchProduct(order.product);
-  if (!prods.length) return { ok: false, reason: 'product_not_found' };
-  const want = normTxt(order.product);
-  // GARDE-FOU MATCH : le produit choisi doit (a) être de la même CATÉGORIE (un maillot ≠ un hoodie) et
-  // (b) partager ≥1 mot DISTINCTIF (équipe/année/couleur). Sinon on n'invente pas un deal → échec → marchand prévenu.
-  const wantDistinct = want.split(' ').filter((w) => w.length > 2 && !PROD_GENERIC.has(w));
-  const wantCat = [...PROD_CATEGORY].find((ch) => want.split(' ').includes(ch));
-  let p = prods.find((x) => normTxt(x.name) === want);
-  if (!p) {
-    const cand = prods
-      .map((x) => { const nx = normTxt(x.name); return { x, dist: wantDistinct.filter((w) => nx.includes(w)).length, catOk: !wantCat || nx.split(' ').includes(wantCat) }; })
-      .filter((c) => c.dist >= 1 && c.catOk)
-      .sort((a, b) => b.dist - a.dist);
-    if (!cand.length) return { ok: false, reason: 'no_product_match' }; // rien de fiable → ne crée pas un mauvais deal
-    p = cand[0].x;
+  // Support multi-product orders via order.products array
+  const items = Array.isArray(order.products) && order.products.length > 0
+    ? order.products
+    : [{ product: order.product, size: order.size, color: order.color, quantity: order.quantity }];
+
+  const productList = [];
+  let value = 0;
+  const matchedNames = [];
+
+  for (const item of items) {
+    const prods = await egrowSearchProduct(item.product);
+    if (!prods.length) return { ok: false, reason: 'product_not_found' };
+    const want = normTxt(item.product);
+    // GARDE-FOU MATCH : le produit choisi doit (a) être de la même CATÉGORIE et (b) partager ≥1 mot DISTINCTIF.
+    const wantDistinct = want.split(' ').filter((w) => w.length > 2 && !PROD_GENERIC.has(w));
+    const wantCat = [...PROD_CATEGORY].find((ch) => want.split(' ').includes(ch));
+    let p = prods.find((x) => normTxt(x.name) === want);
+    if (!p) {
+      const cand = prods
+        .map((x) => { const nx = normTxt(x.name); return { x, dist: wantDistinct.filter((w) => nx.includes(w)).length, catOk: !wantCat || nx.split(' ').includes(wantCat) }; })
+        .filter((c) => c.dist >= 1 && c.catOk)
+        .sort((a, b) => b.dist - a.dist);
+      if (!cand.length) return { ok: false, reason: 'no_product_match' };
+      p = cand[0].x;
+    }
+    const qty = Math.max(1, parseInt(item.quantity || 1, 10) || 1);
+    const price = parseFloat(p.price) || 0;
+    value += price * qty;
+    productList.push(Object.assign({}, p, { quantity: qty }));
+    matchedNames.push(`${qty}x ${p.name}${item.size ? ' taille ' + item.size : ''}`);
   }
-  const qty = Math.max(1, parseInt(order.quantity || 1, 10) || 1);
-  const price = parseFloat(p.price) || 0;
-  const productList = [Object.assign({}, p, { quantity: qty })];
-  let value = price * qty;
-  // FLOCAGE : si le client veut un flocage (nom/numéro), on ajoute le produit eGrow "Flocage Personnalisé PRO" (99 dh) au deal.
+
+  // FLOCAGE : par article (multi-produit) ou global (produit unique)
   let flocageNote = '';
-  const fl = order.flocage;
-  if (fl && (fl.name || fl.number)) {
+  const perItemFlocages = items.map((item, idx) => (item.flocage && (item.flocage.name || item.flocage.number)) ? { label: matchedNames[idx], flocage: item.flocage } : null).filter(Boolean);
+  const globalFl = order.flocage;
+  const hasGlobalFl = perItemFlocages.length === 0 && globalFl && (globalFl.name || globalFl.number);
+  const totalFlocageQty = perItemFlocages.length > 0 ? perItemFlocages.length : (hasGlobalFl ? items.reduce((s, i) => s + Math.max(1, parseInt(i.quantity || 1, 10) || 1), 0) : 0);
+  if (totalFlocageQty > 0) {
     try {
       const fres = await egrowSearchProduct('Flocage');
       const fp = (fres || []).find((x) => /flocage/i.test(x.name || ''));
-      if (fp) { productList.push(Object.assign({}, fp, { quantity: qty })); value += (parseFloat(fp.price) || 99) * qty; }
+      if (fp) {
+        productList.push(Object.assign({}, fp, { quantity: totalFlocageQty }));
+        value += (parseFloat(fp.price) || 99) * totalFlocageQty;
+      }
     } catch (e) {}
-    flocageNote = ` | FLOCAGE: ${[fl.name, fl.number].filter(Boolean).join(' ')}`;
+    if (perItemFlocages.length > 0) {
+      // Flocages distincts par maillot
+      flocageNote = ` | FLOCAGES (${totalFlocageQty}x) : ` + perItemFlocages.map((f) => `${f.label} → ${[f.flocage.name, f.flocage.number].filter(Boolean).join(' ')}`).join(' / ');
+    } else {
+      flocageNote = ` | FLOCAGE (${totalFlocageQty}x): ${[globalFl.name, globalFl.number].filter(Boolean).join(' ')}`;
+    }
   }
+
+  const isMulti = items.length > 1;
+  const totalQty = items.reduce((s, i) => s + Math.max(1, parseInt(i.quantity || 1, 10) || 1), 0);
+  const productSummary = matchedNames.join(' + ');
+  const dealTitle = isMulti
+    ? `${order.customer_name || ''} - ${items.length} maillots`.slice(0, 120)
+    : `${order.customer_name || ''} - ${productList[0].name}`.slice(0, 120);
+
   const body = {
     id: 0, label: '', source: 'agent-ia-whatsapp',
     deal_city: order.city || '', country: 'MA', deal_address: order.address || '',
     deal_apartment: '', deal_province: '', deal_zip: '', deal_area: '', deal_street_name: '', deal_house_number: '', deal_nearest_place: '', deal_location: '', deal_district: '',
     deal_payment_method: 'Cash on Delivery (COD)', payment_status: 'pending',
     deal_shipping_price: 0, deal_shipping: null,
-    contact_id: contactId, type: 'deal', title: `${order.customer_name || ''} - ${p.name}`.slice(0, 120),
+    contact_id: contactId, type: 'deal', title: dealTitle,
     deal_value: value, deal_currency: { id: 153, name: 'Dirham', code: 'MAD', symbol: 'MAD' },
-    deal_custom_fields: JSON.stringify({ note: '' }), products: JSON.stringify(productList),
-    pipeline_stage: STAGE_CONFIRM, close_date: 0, deal_number: '', deal_tracking_number: '',
+    deal_custom_fields: JSON.stringify({ note: [order.size ? `Taille: ${order.size}` : null, order.color ? `Couleur: ${order.color}` : null, order.notes ? `Remarque: ${order.notes}` : null, order.phone ? `Tél: ${order.phone}` : null, flocageNote ? `Flocage: ${flocageNote.replace(/^\s*\|\s*/, '')}` : null].filter(Boolean).join(' | ') }), products: JSON.stringify(productList),
+    pipeline_stage: order.waiting_stock && STAGE_STOCK_WAIT ? STAGE_STOCK_WAIT : STAGE_CONFIRM, close_date: 0, deal_number: '', deal_tracking_number: '',
     users: '[]', do_not_update_assigned: false, shipping_user_connection: 0,
   };
   const res = await egrowPost('/deal/add_or_update_deal.php', body);
   const dealId = (res && res.deal && res.deal.id) || null;
-  return { ok: !!(res && res.status === 'success'), dealId, product: p.name, price, qty, value, flocageNote, hasFlocage: !!flocageNote };
+  const price = isMulti ? 0 : (parseFloat(productList[0].price) || 0);
+  return { ok: !!(res && res.status === 'success'), dealId, product: productSummary, price, qty: totalQty, value, flocageNote, hasFlocage: !!flocageNote };
 }
 async function addDealNote(dealId, content) {
   try { return await egrowPost('/notes/add_or_update_note.php', { id: 0, content: String(content).slice(0, 500), type: 'deal', context: dealId, color: '' }); } catch (e) { return null; }
@@ -403,6 +535,8 @@ const CATEGORY_WORDS = new Set('maillot maillots kit kits ensemble ensembles sur
 const GENERIC_MODIFIERS = new Set('retro retros vintage classic classique version versions edition editions speciale special collector authentique modele modeles tenue tenues saison nouvelle nouveau neuf neuve domicile exterieur exterieure third'.split(' '));
 // Synonymes / surnoms → terme présent dans les titres Shopify
 const CATALOG_SYNONYMS = { barca: 'barcelon', barsa: 'barcelon', barcaa: 'barcelon', psg: 'paris', real: 'madrid', juve: 'juventus', mancity: 'manchester', manu: 'manchester', citizens: 'manchester', bayern: 'bayern', intermilan: 'milan', wac: 'wydad', wydadi: 'wydad', rajaoui: 'raja', kora: 'ballon', koura: 'ballon', balon: 'ballon', kaskita: 'casquette', training: 'entrainement', survet: 'survetement', short: 'short', chaussette: 'chaussette',
+  // darija : kitma / jogging / survêt = survêtement (tracksuit), pas un kit maillot+short
+  kitma: 'survetement', jogging: 'survetement', tracksuit: 'survetement', survetements: 'survetement',
   // pays / surnoms fréquents (darija incluse) → terme présent dans les titres Shopify
   brazil: 'bresil', brasil: 'bresil', lbrazil: 'bresil', lbresil: 'bresil', bresil: 'bresil', selecao: 'bresil', argentine: 'argentin', lmaghrib: 'maroc', maghrib: 'maroc', morocco: 'maroc', allemagne: 'allemagne', mancunian: 'manchester', reds: 'liverpool', citoyens: 'manchester' };
 
@@ -616,6 +750,31 @@ async function runPoll(q) {
         if (!isImage && !isAudio && !isCall && !body.trim()) continue;
         if (!dry && !(await claimMessage(msgId, c.id, contactWaId, body || type))) continue; // anti-doublon ATOMIQUE
         if (!dry) claimedMsgId = msgId;
+
+        // ── RATTRAPAGE NOTIFICATIONS : l'opératrice ou le patron viennent de répondre → fenêtre ouverte ──
+        const _digits = contactWaId.replace(/\D/g, '');
+        if (_digits === OPERATOR_PHONE) {
+          // Opératrice : resend toutes les notifs en attente, puis skip (pas de réponse client)
+          const _count = !dry ? await resendPendingNotifications(integrationId, OPERATOR_PHONE) : 0;
+          if (!dry && _count > 0) {
+            try { await egrowSend(integrationId, OPERATOR_PHONE, `✅ ${_count} notification${_count > 1 ? 's rattrapées' : ' rattrapée'} — fenêtre ouverte.`); } catch (e) {}
+          }
+          if (claimedMsgId) { await releaseClaim(claimedMsgId); claimedMsgId = null; }
+          results.push({ conv: c.id, phone: contactWaId, decision: 'operator_catchup', caught_up: _count });
+          processed++; continue;
+        }
+        if (_digits === MERCHANT_PHONE) {
+          // Patron : rattrapage silencieux avant de continuer en mode patron normal
+          if (!dry) await resendPendingNotifications(integrationId, MERCHANT_PHONE);
+          // Clic bouton template (ex: "OK" sur morning ping) → fenêtre ouverte, mais pas de réponse bot
+          if (isButtonMsg) {
+            if (claimedMsgId) { await releaseClaim(claimedMsgId); claimedMsgId = null; }
+            results.push({ conv: c.id, phone: contactWaId, decision: 'merchant_button_ack' });
+            processed++; continue;
+          }
+        }
+        // ────────────────────────────────────────────────────────────────────────────────────────────────
+
         // Messages récents de la conv (sert aux PHOTOS multiples, à l'historique, au handover) — un seul appel.
         let raw = [];
         try { raw = await egrowGetMessages(c.id, HISTORY_LIMIT); } catch (e) {}
@@ -785,33 +944,89 @@ async function runPoll(q) {
             if (decision.intent === 'escalate' && OPERATOR_PHONE) {
               try {
                 const summary = `🔔 *Client à gérer (agent IA Touni)*\n👤 ${c.title || contactWaId}\n📱 ${contactWaId}\n📝 ${(decision.note || '').slice(0, 400) || 'voir la conversation'}\n💬 « ${body.slice(0, 220)} »`;
-                await egrowSend(integrationId, OPERATOR_PHONE, summary);
+                await sendAndQueue(integrationId, OPERATOR_PHONE, summary);
                 entry.operatorNotified = true;
               } catch (e) { entry.operatorNotified = 'err'; }
             }
-            // #3 : prise de commande (nouveau client → crée le deal)
-            if (decision.order && decision.order.product && decision.order.customer_name && decision.order.city) {
+            // Avis Instagram → notifier le patron pour screenshot / screen recording
+            if (decision.intent === 'review_positive' && MERCHANT_PHONE) {
               try {
-                const contactId = c.contactId || (c.contact && c.contact.id);
+                const clientName = c.title || contactWaId;
+                const isVocalReview = isAudio || type === 'ptt' || type === 'voice';
+                const msgType = isVocalReview ? '🎙️ *VOCAL*' : '💬 *Message*';
+                const preview = isVocalReview ? '[message vocal]' : (body.slice(0, 200) || '[avis]');
+                const notif = `📸 *Avis client pour Instagram !*\n👤 ${clientName} (${contactWaId})\n${msgType} : « ${preview} »\n→ Ouvre la conv et fais un screen (ou screen recording si vocal) 🎬`;
+                await sendAndQueue(integrationId, MERCHANT_PHONE, notif);
+                entry.reviewNotified = true;
+              } catch (e) { entry.reviewNotified = 'err'; }
+            }
+            // #3 : prise de commande (nouveau client → crée le deal)
+            if (decision.order && (decision.order.product || (Array.isArray(decision.order.products) && decision.order.products.length > 0)) && decision.order.customer_name && decision.order.city) {
+              try {
+                // Injecter le téléphone WA dans l'order (utile pour le champ note du deal et l'identification)
+                if (!decision.order.phone) decision.order.phone = contactWaId;
+                // Résoudre le contact eGrow — fallback searchContact, puis création si absent
+                let contactId = c.contactId || (c.contact && c.contact.id);
+                if (!contactId && contactWaId) {
+                  try {
+                    const digits = contactWaId.replace(/\D/g, '');
+                    const cSearch = await egrowPost('/contact/searchContact.php', { search: digits });
+                    const contacts = Array.isArray(cSearch) ? cSearch : ((cSearch && cSearch.data) || []);
+                    const found = contacts.find((ct) => String(ct.phone || '').replace(/\D/g, '').endsWith(digits.slice(-9)));
+                    contactId = found ? found.id : null;
+                  } catch (e) { /* search failed, will try create */ }
+                }
+                // Si toujours pas de contact → créer un nouveau contact eGrow pour que le deal soit bien lié
+                if (!contactId && decision.order.customer_name && contactWaId) {
+                  try {
+                    const nameParts = String(decision.order.customer_name || '').trim().split(/\s+/);
+                    const firstName = nameParts[0] || '';
+                    const lastName = nameParts.slice(1).join(' ') || '';
+                    const cCreate = await egrowPost('/contact/add_or_update_contact.php', {
+                      id: 0, type: 'contact', source: 'agent-ia-whatsapp',
+                      first_name: firstName, last_name: lastName,
+                      phone: contactWaId.replace(/\D/g, ''),
+                      city: decision.order.city || '', country: 'MA',
+                    });
+                    const newId = cCreate && (cCreate.id || (cCreate.contact && cCreate.contact.id) || (cCreate.data && cCreate.data.id));
+                    if (newId) contactId = newId;
+                  } catch (e) { /* non bloquant : deal créé sans contact */ }
+                }
                 const r = await createOrderDeal(decision.order, contactId);
                 entry.orderCreated = r.ok ? { deal: r.dealId, product: r.product, value: r.value, flocage: r.hasFlocage } : ('fail:' + (r.reason || 'unknown'));
                 const o = decision.order;
                 if (r.ok) {
-                  if (r.dealId) await addDealNote(r.dealId, `Commande prise par l'agent IA (WhatsApp). ${r.qty}x ${r.product}${o.size ? ' taille ' + o.size : ''}${o.color ? ' ' + o.color : ''}.${r.flocageNote || ''} Client: ${o.customer_name}. Adresse: ${o.address}, ${o.city}. Confirmer la taille par appel.`);
-                  const saleMsg = `💰 *Nouvelle commande (agent IA)*\n👤 ${o.customer_name} (${contactWaId})\n📦 ${r.qty}x ${r.product}${o.size ? ' (' + o.size + ')' : ''}${r.flocageNote || ''}\n💵 ${r.value} dh · 📍 ${o.city}\n→ créée dans « Confirmer Wtsp »`;
-                  try { if (MERCHANT_PHONE) await egrowSend(integrationId, MERCHANT_PHONE, saleMsg); } catch (e) {}
+                  const isStockWait = !!(o.waiting_stock);
+                  const isMultiProd = Array.isArray(o.products) && o.products.length > 1;
+                  const prodDesc = isMultiProd ? r.product : `${r.qty}x ${r.product}${o.size ? ' taille ' + o.size : ''}${o.color ? ' ' + o.color : ''}`;
+                  const noteText = isStockWait
+                    ? `⏳ EN ATTENTE DE STOCK — prise par l'agent IA. Produit : ${r.product}${o.size ? ' taille ' + o.size : ' (taille non précisée)'}. Client : ${o.customer_name} | Tél WA : ${o.phone || contactWaId}${o.city ? ' | Ville : ' + o.city : ''}${o.notes ? ' | Remarque : ' + o.notes : ''}. Notifier dès que le stock revient.`
+                    : `Commande prise par l'agent IA (WhatsApp). ${prodDesc}.${r.flocageNote || ''} Client: ${o.customer_name} | Tél WA : ${o.phone || contactWaId}. Adresse: ${o.address || ''}, ${o.city}${o.notes ? ' | Remarque : ' + o.notes : ''}. Confirmer la taille par appel.`;
+                  if (r.dealId) await addDealNote(r.dealId, noteText);
+                  if (isStockWait) {
+                    // Sauvegarder dans la waitlist Supabase pour surveillance automatique du stock
+                    await saveStockWaitlist(contactWaId, o);
+                    const waitMsg = `📋 *Attente stock (agent IA)*\n👤 ${o.customer_name} (${o.phone || contactWaId})\n📦 ${o.product}${o.size ? ' taille ' + o.size : ' ⚠️ taille non précisée'}${o.notes ? '\n📝 ' + o.notes : ''}\n📍 ${o.city}\n→ créé dans « Rappeler le stock » — notif auto quand dispo`;
+                    try { if (MERCHANT_PHONE) await sendAndQueue(integrationId, MERCHANT_PHONE, waitMsg); } catch (e) {}
+                  } else {
+                  const saleMsg = `💰 *Nouvelle commande (agent IA)*\n👤 ${o.customer_name} (${contactWaId})\n📦 ${prodDesc}${r.flocageNote || ''}\n💵 ${r.value} dh · 📍 ${o.city}\n→ créée dans « Confirmer Wtsp »`;
+                  try { if (MERCHANT_PHONE) await sendAndQueue(integrationId, MERCHANT_PHONE, saleMsg); } catch (e) {}
+                  }
                 } else {
                   // ÉCHEC de création → on prévient le marchand pour qu'il crée la commande à la main (jamais de commande perdue)
                   const fl = o.flocage && (o.flocage.name || o.flocage.number) ? `\n🖊️ Flocage: ${[o.flocage.name, o.flocage.number].filter(Boolean).join(' ')} (+99dh)` : '';
-                  const failMsg = `⚠️ *Commande à CRÉER À LA MAIN (échec auto: ${r.reason || 'inconnu'})*\n👤 ${o.customer_name} (${contactWaId})\n📦 ${o.quantity || 1}x ${o.product}${o.size ? ' (' + o.size + ')' : ''}${o.color ? ' ' + o.color : ''}${fl}\n📍 ${o.address || ''}, ${o.city}\n→ Le client a confirmé, mais l'agent n'a pas pu créer le deal automatiquement.`;
-                  try { if (MERCHANT_PHONE) await egrowSend(integrationId, MERCHANT_PHONE, failMsg); } catch (e) {}
+                  const failProdDesc = Array.isArray(o.products) && o.products.length > 1
+                    ? o.products.map((p) => `${p.quantity || 1}x ${p.product}${p.size ? ' (' + p.size + ')' : ''}`).join(' + ')
+                    : `${o.quantity || 1}x ${o.product}${o.size ? ' (' + o.size + ')' : ''}${o.color ? ' ' + o.color : ''}`;
+                  const failMsg = `⚠️ *Commande à créer manuellement dans eGrow*\n❌ Raison : ${r.reason || 'produit introuvable dans le catalogue'}\n\n👤 *Client :* ${o.customer_name} (${contactWaId})\n📦 *Produit :* ${failProdDesc}${fl}\n📍 *Adresse :* ${o.address || ''}, ${o.city}\n\n👉 *À faire :* Aller dans eGrow → Nouveau deal → saisir ces infos manuellement. Le client a déjà confirmé.`;
+                  try { if (MERCHANT_PHONE) await sendAndQueue(integrationId, MERCHANT_PHONE, failMsg); } catch (e) {}
                 }
               } catch (e) {
                 entry.orderCreated = 'err:' + String(e).slice(0, 80);
                 // exception → on prévient quand même le marchand avec ce qu'on a
                 try {
                   const o = decision.order; const fl = o.flocage && (o.flocage.name || o.flocage.number) ? `\n🖊️ Flocage: ${[o.flocage.name, o.flocage.number].filter(Boolean).join(' ')}` : '';
-                  if (MERCHANT_PHONE) await egrowSend(integrationId, MERCHANT_PHONE, `⚠️ *Commande à créer à la main (erreur)*\n👤 ${o.customer_name} (${contactWaId})\n📦 ${o.quantity || 1}x ${o.product}${o.size ? ' (' + o.size + ')' : ''}${fl}\n📍 ${o.address || ''}, ${o.city}`);
+                  if (MERCHANT_PHONE) await sendAndQueue(integrationId, MERCHANT_PHONE, `⚠️ *Commande à créer à la main (erreur)*\n👤 ${o.customer_name} (${contactWaId})\n📦 ${o.quantity || 1}x ${o.product}${o.size ? ' (' + o.size + ')' : ''}${fl}\n📍 ${o.address || ''}, ${o.city}`);
                 } catch (e2) {}
               }
             }
@@ -836,6 +1051,412 @@ module.exports = async (req, res) => {
   if (q.diagop === '1') {
     const sr = await egrowSend(INTEGRATIONS[0] || '5425', OPERATOR_PHONE, '🔔 Test notification opératrice (diagnostic système Touni).');
     return res.status(200).json({ operator_phone: OPERATOR_PHONE, send_result: sr });
+  }
+
+  // ── GET PIPELINE STAGES (endpoint direct) ──
+  if (q.get_pipeline_stages === '1') {
+    try {
+      const r = await egrowPost('/deal/getuserPipeLineStages.php', {});
+      return res.status(200).json({ raw: r });
+    } catch (e) { return res.status(500).json({ error: String(e) }); }
+  }
+
+  // ── DEBUG DEAL STRUCTURE ──
+  if (q.debug_deal === '1') {
+    try {
+      const sid = parseInt(q.stage || '49430', 10);
+      const limit = parseInt(q.limit || '1', 10);
+      const search = q.search || '';
+      const r = await egrowPost('/deal/getStageDeals.php', { stage: sid, search, page: 1, limit });
+      return res.status(200).json({ sample: r });
+    } catch (e) { return res.status(500).json({ error: String(e) }); }
+  }
+
+  // ── DEBUG CATALOGUE ──
+  if (q.catalog_search) {
+    try {
+      const result = await searchCatalog(String(q.catalog_search));
+      return res.status(200).json({ query: q.catalog_search, result });
+    } catch (e) { return res.status(500).json({ error: String(e) }); }
+  }
+
+  // ── CONFIRMER MANUELLEMENT UNE COMMANDE STOCK (confirm_deal) ──
+  // ?confirm_deal=1&phone=212724909794&msg=<texte optionnel>
+  if (q.confirm_deal === '1') {
+    const integrationId = INTEGRATIONS[0] || '5425';
+    const phone = String(q.phone || '').replace(/\D/g, '');
+    if (!phone) return res.status(400).json({ error: 'phone requis' });
+    try {
+      const deal = await findMovableDeal(phone);
+      if (!deal) return res.status(200).json({ ok: false, reason: 'deal_not_found', phone });
+      const curStage = deal.stage && deal.stage.id;
+      let moveResult = null;
+      if (curStage !== STAGE_CONFIRM) {
+        moveResult = await moveDeal(deal, STAGE_CONFIRM);
+      }
+      const prodName = (Array.isArray(deal.products) && deal.products[0] && deal.products[0].name) || (deal.title || '');
+      const firstName = (deal.contact && deal.contact.name) ? deal.contact.name.split(' ')[0] : '';
+      const customMsg = q.msg ? decodeURIComponent(String(q.msg)) : null;
+      const msg = customMsg || `🎉 Parfait${firstName ? ' ' + firstName : ''} ! Voici le récap de ta commande :\n\n📦 *${prodName}*\n💵 Livraison gratuite\n\n✅ C'est confirmé ! Notre équipe va t'appeler très bientôt pour finaliser les détails et envoyer ton colis. À tout de suite ! 😊`;
+      const sendRes = await egrowSend(integrationId, phone, msg);
+      // Notifier patron uniquement
+      const notifMsg = `✅ *Commande confirmée (stock)*\n👤 ${(deal.contact && deal.contact.name) || phone}\n📦 ${prodName}\n→ déplacée en Confirmer Wtsp`;
+      try { if (MERCHANT_PHONE) await sendAndQueue(integrationId, MERCHANT_PHONE, notifMsg); } catch (e) {}
+      return res.status(200).json({ ok: true, deal: deal.id, from: curStage, to: STAGE_CONFIRM, moved: moveResult && moveResult.status, msgSent: sendRes && sendRes.status });
+    } catch (e) { return res.status(500).json({ error: String(e) }); }
+  }
+
+  // ── CRÉER UN DEAL RUPTURE STOCK MANUELLEMENT (create_stock_deal) ──
+  // ?create_stock_deal=1&phone=32477914959&name=Rian+Leila&product=Maillot+Pre-Match+Zelige&size=S&city=Rabat
+  if (q.create_stock_deal === '1') {
+    const integrationId = INTEGRATIONS[0] || '5425';
+    const phone = String(q.phone || '').replace(/\D/g, '');
+    const name = decodeURIComponent(String(q.name || ''));
+    const product = decodeURIComponent(String(q.product || ''));
+    const size = String(q.size || '').toUpperCase();
+    const city = decodeURIComponent(String(q.city || ''));
+    if (!phone || !product) return res.status(400).json({ error: 'phone et product requis' });
+    try {
+      // Rechercher le contact eGrow par téléphone
+      const contactSearch = await egrowPost('/contact/searchContact.php', { search: phone });
+      const contacts = Array.isArray(contactSearch) ? contactSearch : (contactSearch && contactSearch.data) || [];
+      const contact = contacts.find((c) => String(c.phone || '').replace(/\D/g, '').endsWith(phone.slice(-9))) || contacts[0] || null;
+      const contactId = contact ? contact.id : null;
+      const order = { product, size, city, customer_name: name, address: '', quantity: 1, waiting_stock: true };
+      const r = await createOrderDeal(order, contactId);
+      if (r.ok) {
+        const noteText = `⏳ EN ATTENTE DE STOCK — créé manuellement. Produit : ${r.product}${size ? ' taille ' + size : ''}. Client : ${name}${city ? ' (' + city + ')' : ''}. Notifier dès que le stock revient.`;
+        if (r.dealId) await addDealNote(r.dealId, noteText);
+        // Enregistrer dans stock_notifications pour ne pas re-notifier trop tôt
+        try {
+          await fetch(`${SB_URL}/rest/v1/stock_notifications`, {
+            method: 'POST',
+            headers: Object.assign({}, supabaseHeaders(true), { 'Content-Type': 'application/json', 'Prefer': 'resolution=ignore-duplicates' }),
+            body: JSON.stringify({ deal_id: String(r.dealId), phone, product_name: r.product }),
+          });
+        } catch (e) {}
+        // Notifier patron uniquement
+        const notifMsg = `📋 *Attente stock (manuel)*\n👤 ${name} (${phone})\n📦 ${r.product}${size ? ' taille ' + size : ''}\n📍 ${city}\n→ créé dans « Rappeler le stock »`;
+        try { if (MERCHANT_PHONE) await sendAndQueue(integrationId, MERCHANT_PHONE, notifMsg); } catch (e) {}
+      }
+      return res.status(200).json({ ok: r.ok, dealId: r.dealId, product: r.product, reason: r.reason, contact: contactId });
+    } catch (e) { return res.status(500).json({ error: String(e) }); }
+  }
+
+  // ── Resend notifications manquées (fenêtre 24h fermée) ──
+  // ── LIST STAGES (diagnostic) — scan + pipeline endpoints ──
+  if (q.list_stages === '1') {
+    const results = {};
+    // 1) Essai d'endpoints directs
+    const pipelineEndpoints = [
+      '/deal/getPipeline.php', '/deal/getUserPipelines.php', '/pipeline/getStages.php',
+      '/deal/getStages.php', '/crm/getPipelines.php', '/deal/getAllStages.php',
+    ];
+    for (const ep of pipelineEndpoints) {
+      try {
+        const r = await egrowPost(ep, {});
+        if (r && typeof r === 'object') results[ep] = JSON.stringify(r).slice(0, 300);
+      } catch (e) { results[ep] = 'err:' + String(e).slice(0, 80); }
+    }
+    // 2) Scan IDs autour des stages connus (49140-49180 + 62340-62370)
+    const found = {};
+    const scanRanges = [];
+    for (let i = 49140; i <= 49180; i++) scanRanges.push(i);
+    for (let i = 62340; i <= 62380; i++) scanRanges.push(i);
+    for (const sid of scanRanges) {
+      try {
+        const r = await egrowPost('/deal/getStageDeals.php', { stage: sid, search: '', page: 1, limit: 1 });
+        // Si on obtient un array (même vide) ou un objet structuré → le stage existe
+        if (Array.isArray(r)) {
+          found[sid] = `array(${r.length})${r[0] && r[0].stage ? ' name=' + (r[0].stage.name || '?') : ''}`;
+        } else if (r && typeof r === 'object' && !r.error && !r.message) {
+          found[sid] = 'obj:' + JSON.stringify(r).slice(0, 100);
+        }
+      } catch (e) { /* stage n'existe pas → on ignore */ }
+    }
+    return res.status(200).json({ pipelineEndpoints: results, stagesScan: found });
+  }
+
+  // ── DEBUG : récupère une conversation pour trouver phone_number_id WhatsApp ──
+  if (q.debug_integrations === '1') {
+    const integrationId = INTEGRATIONS[0] || '5425';
+    // Fetch first conversation to see its integration/meta structure
+    const convR = await fetch(`${EGROW_BASE}/inbox/get_conversations.php?me=${EGROW_ME}&dev=0&integrationId=${integrationId}&page=1&limit=1`, { headers: { 'account-key': EGROW_AK, 'User-Agent': EGROW_UA } });
+    const convData = await convR.json().catch(() => ({}));
+    // Also try to get integration details from eGrow
+    const META_TOKEN = process.env.META_ACCESS_TOKEN || '';
+    let wabaData = {};
+    if (META_TOKEN) {
+      // Discover WABA via /me?fields=
+      const meR = await fetch(`https://graph.facebook.com/v20.0/me?fields=id,name&access_token=${META_TOKEN}`);
+      const meData = await meR.json().catch(() => ({}));
+      wabaData.me = meData;
+      // Try to list WABAs from the business
+      const wabaListR = await fetch(`https://graph.facebook.com/v20.0/me/businesses?access_token=${META_TOKEN}`);
+      wabaData.businesses = await wabaListR.json().catch(() => ({}));
+      // Try direct WABA phone numbers endpoint
+      const pnDirectR = await fetch(`https://graph.facebook.com/v20.0/${meData.id}/phone_numbers?access_token=${META_TOKEN}`);
+      wabaData.phone_numbers_direct = await pnDirectR.json().catch(() => ({}));
+    }
+    return res.status(200).json({ ok: true, conv_sample: convData, waba: wabaData, meta_token_set: !!META_TOKEN });
+  }
+
+  // ── STOCK CHECK : vérifie l'inventaire Shopify pour les clients en attente de stock ──
+  // ── MORNING PING : ouvre la fenêtre 24h de l'opératrice et du patron via template Utility ──
+  if (q.morning_ping === '1') {
+    const integrationId = INTEGRATIONS[0] || '5425';
+    const SESSION_TEMPLATE = process.env.EGROW_SESSION_TEMPLATE || 'touni_session_bot';
+    const OPERATOR_NAME   = process.env.EGROW_OPERATOR_NAME   || 'Soumaya';
+    const MERCHANT_NAME   = process.env.EGROW_MERCHANT_NAME   || 'Patron';
+    // Date du jour en français (ex: "Samedi 21 juin")
+    const dateLabel = new Intl.DateTimeFormat('fr-FR', { timeZone: 'Africa/Casablanca', weekday: 'long', day: 'numeric', month: 'long' }).format(new Date());
+    const dateStr = dateLabel.charAt(0).toUpperCase() + dateLabel.slice(1);
+    const results = {};
+    try {
+      results.operator = await egrowSendTemplate(integrationId, OPERATOR_PHONE, SESSION_TEMPLATE, 'en_US', [dateStr, OPERATOR_NAME]);
+    } catch (e) { results.operator = { error: String(e) }; }
+    try {
+      results.merchant = await egrowSendTemplate(integrationId, MERCHANT_PHONE, SESSION_TEMPLATE, 'en_US', [dateStr, MERCHANT_NAME]);
+    } catch (e) { results.merchant = { error: String(e) }; }
+    return res.status(200).json({ ok: true, template: SESSION_TEMPLATE, date: dateStr, results });
+  }
+
+  if (q.stock_check === '1') {
+    const integrationId = INTEGRATIONS[0] || '5425';
+    try {
+      // Charger les deal_ids déjà notifiés dans les 7 derniers jours (anti-spam)
+      const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString();
+      const snRes = await fetch(`${SB_URL}/rest/v1/stock_notifications?notified_at=gte.${encodeURIComponent(sevenDaysAgo)}&select=deal_id,phone,product_name`, { headers: supabaseHeaders() });
+      const recentNotifs = await snRes.json().catch(() => []);
+      const notifiedDealIds = new Set((Array.isArray(recentNotifs) ? recentNotifs : []).map((n) => String(n.deal_id)));
+      const notifiedPhoneProds = new Set((Array.isArray(recentNotifs) ? recentNotifs : []).map((n) => `${n.phone}|${n.product_name}`));
+
+      // Source 1 : Supabase stock_waitlist
+      const wlRes = await fetch(`${SB_URL}/rest/v1/stock_waitlist?notified=eq.false&select=*`, { headers: supabaseHeaders() });
+      const supabaseList = await wlRes.json().catch(() => []);
+
+      // Source 2 : eGrow deals dans STAGE_STOCK_WAIT (rappeler le stock) et STAGE_RUPTURE
+      const eGrowEntries = [];
+      const stagesToScan = [...new Set([STAGE_STOCK_WAIT, STAGE_RUPTURE].filter(Boolean))];
+      for (const sid of stagesToScan) {
+        try {
+          for (let page = 1; page <= 5; page++) {
+            const deals = await egrowPost('/deal/getStageDeals.php', { stage: sid, search: '', page, limit: 20 });
+            if (!Array.isArray(deals) || !deals.length) break;
+            deals.forEach((d) => {
+              const phone = String((d.contact && d.contact.phone) || '').replace(/\D/g, '');
+              if (!phone) return;
+              // Ignorer les deals déjà notifiés récemment
+              if (notifiedDealIds.has(String(d.id))) return;
+              const prods = (Array.isArray(d.products) ? d.products : []).filter((p) => !p.deleted && p.name && !p.name.toLowerCase().includes('flocage'));
+              if (!prods.length) return;
+              const productName = prods[0].name;
+              const sizeOpt = (prods[0].options || []).find((o) => /taille|size/i.test(o.name));
+              const size = (sizeOpt && sizeOpt.selected) ? String(sizeOpt.selected).toUpperCase() : '';
+              eGrowEntries.push({ source: 'egrow', dealId: String(d.id), phone, name: (d.contact && d.contact.name) || '', product_name: productName, size, city: d.deal_city || '' });
+            });
+            if (deals.length < 20) break;
+          }
+        } catch (e) { /* non bloquant */ }
+      }
+
+      // Fusionner : éviter les doublons par téléphone+produit, ignorer déjà notifiés
+      const seen = new Set();
+      const waitlist = [];
+      (Array.isArray(supabaseList) ? supabaseList : []).forEach((e) => {
+        const k = `${e.phone}|${e.product_name}`;
+        if (!seen.has(k) && !notifiedPhoneProds.has(k)) { seen.add(k); waitlist.push(e); }
+      });
+      eGrowEntries.forEach((e) => {
+        const k = `${e.phone}|${e.product_name}`;
+        if (!seen.has(k)) { seen.add(k); waitlist.push(e); }
+      });
+
+      if (!waitlist.length) return res.status(200).json({ checked: 0, skipped_recent: notifiedDealIds.size, results: [] });
+
+      const results = [];
+      for (const entry of waitlist) {
+        try {
+          const catalog = await searchCatalog(`${entry.product_name} ${entry.size || ''}`);
+          const inStock = catalog && catalog.includes('EN STOCK');
+          const sizeOk = !entry.size || (new RegExp(`\\b${entry.size.toUpperCase()}\\b`)).test(catalog || '');
+          if (inStock && sizeOk) {
+            const firstName = (entry.name ? entry.name.split(' ')[0] : '') || 'cher client';
+            const productLabel = `${entry.product_name}${entry.size ? ' (taille ' + entry.size + ')' : ''}`;
+            // Template touni_dispo_stock_v2 : {{1}} = prénom, {{2}} = produit — fonctionne hors fenêtre 24h
+            const sendRes = await egrowSendTemplate(integrationId, entry.phone, 'touni_dispo_stock_v2', 'en_US', [firstName, productLabel]);
+            const sendOk = sendRes && sendRes.status === 'success';
+            // Enregistrer la tentative dans stock_notifications (anti-spam 7j), que ça marche ou pas
+            if (entry.dealId) {
+              try {
+                await fetch(`${SB_URL}/rest/v1/stock_notifications`, {
+                  method: 'POST',
+                  headers: Object.assign({}, supabaseHeaders(true), { 'Content-Type': 'application/json', 'Prefer': 'resolution=ignore-duplicates' }),
+                  body: JSON.stringify({ deal_id: String(entry.dealId), phone: entry.phone, product_name: entry.product_name }),
+                });
+              } catch (e) { /* non bloquant */ }
+            }
+            if (sendOk) {
+              if (entry.id && entry.source !== 'egrow') {
+                await fetch(`${SB_URL}/rest/v1/stock_waitlist?id=eq.${entry.id}`, {
+                  method: 'PATCH',
+                  headers: Object.assign({}, supabaseHeaders(true), { 'Content-Type': 'application/json' }),
+                  body: JSON.stringify({ notified: true, notified_at: new Date().toISOString() }),
+                });
+              }
+              results.push({ phone: entry.phone, name: entry.name, product: entry.product_name, source: entry.source || 'supabase', status: 'notified' });
+            } else {
+              results.push({ phone: entry.phone, name: entry.name, product: entry.product_name, source: entry.source || 'supabase', status: 'send_failed', sendRes });
+            }
+          } else {
+            results.push({ phone: entry.phone, product: entry.product_name, source: entry.source || 'supabase', status: 'still_out_of_stock' });
+          }
+        } catch (e) { results.push({ phone: entry.phone, status: 'err', err: String(e) }); }
+      }
+
+      // Résumé patron — envoi vers MERCHANT_PHONE ET OPERATOR_PHONE en fallback
+      const notified = results.filter((r) => r.status === 'notified');
+      const failed = results.filter((r) => r.status === 'send_failed');
+      const oos = results.filter((r) => r.status === 'still_out_of_stock').length;
+      const date = new Date().toISOString().slice(0, 10);
+      const lines = notified.map((r) => `✅ ${r.name || r.phone} — ${String(r.product || '').slice(0, 35)}`);
+      const failLines = failed.map((r) => `⏳ ${r.name || r.phone} — fenêtre WhatsApp fermée`);
+      const summary = `📦 *Stock Check Touni* (${date})\n${notified.length} notifié(s)${failed.length ? ', ' + failed.length + ' fenêtre fermée' : ''} :\n${[...lines, ...failLines].join('\n')}\n\n${oos} encore en rupture. ${notifiedDealIds.size} skippés (déjà notifiés).`;
+      // Résumé stock → patron uniquement (l'opératrice voit le pipeline)
+      if ((notified.length || failed.length) && MERCHANT_PHONE) {
+        try { await sendAndQueue(integrationId, MERCHANT_PHONE, summary); } catch (e) { /* non bloquant */ }
+      }
+
+      return res.status(200).json({ checked: waitlist.length, skipped_recent: notifiedDealIds.size, supabase: (Array.isArray(supabaseList) ? supabaseList : []).length, egrow: eGrowEntries.length, notified: notified.length, failed: failed.length, results });
+    } catch (e) { return res.status(500).json({ error: String(e) }); }
+  }
+
+  if (q.resend_missed === '1') {
+    const integrationId = INTEGRATIONS[0] || '5425';
+    const convIds = (q.conv_ids ? String(q.conv_ids).split(',') : ['2579903','2407725','1374109','2398791','2587955','2575495','2461723','2562857','1041549','2561335','2598547']).map((s) => s.trim()).filter(Boolean);
+    const getMsgBody = (m) => String((m && (m.body || (m.content && m.content.body))) || '');
+    const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY || '';
+
+    async function genSummary(msgs) {
+      if (!ANTHROPIC_KEY) return null;
+      const lines = (msgs || []).slice(0, 10).reverse().map((m) => {
+        const who = (m.mine === true || m.mine === 'true') ? 'Bot' : 'Client';
+        return `${who}: ${getMsgBody(m).slice(0, 200)}`;
+      }).join('\n');
+      try {
+        const r = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: { 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+          body: JSON.stringify({
+            model: 'claude-haiku-4-5-20251001',
+            max_tokens: 120,
+            messages: [{ role: 'user', content: `Tu es l'assistant de l'opératrice d'une boutique de maillots. En lisant cet échange WhatsApp, résume EN 1-2 PHRASES MAXIMUM ce que le client demande ou quel est son problème — pour que l'opératrice sache immédiatement quoi faire. Sois direct, factuel, pas de formule de politesse.\n\n${lines}\n\nRésumé (1-2 phrases max) :` }],
+          }),
+        });
+        const j = await r.json().catch(() => ({}));
+        return (j.content && j.content[0] && j.content[0].text || '').trim().slice(0, 350) || null;
+      } catch (e) { return null; }
+    }
+
+    const results = [];
+    for (const convId of convIds) {
+      try {
+        const msgs = await egrowGetMessages(convId, 12);
+        const incoming = (msgs || []).filter((m) => m && !(m.mine === true || m.mine === 'true'));
+        const lastIn  = incoming[0];
+        const lastMsg = getMsgBody(lastIn).slice(0, 220);
+        const phone = (lastIn && (lastIn.senderPhone || lastIn.senderWaId)) || '?';
+        const name  = (lastIn && lastIn.contact && lastIn.contact.name) || phone;
+        // Générer un vrai résumé de situation via Claude (pas copier-coller le message du bot)
+        const note = (await genSummary(msgs)) || 'voir la conversation';
+        const summary = `🔔 *[RATTRAPÉ] Client à gérer (notif manquée — fenêtre 24h)*\n👤 ${name}\n📱 ${phone}\n📝 ${note}\n💬 « ${lastMsg} »`;
+        const sr = await egrowSend(integrationId, OPERATOR_PHONE, summary);
+        results.push({ convId, name, phone, note, status: sr && sr.status });
+      } catch (e) { results.push({ convId, status: 'err', err: String(e) }); }
+    }
+    return res.status(200).json({ sent: results.length, results });
+  }
+
+  // ── STOCK CATCHUP — déplacer vers STAGE_CONFIRM les clients qui ont déjà confirmé après le template stock ──
+  if (q.stock_catchup === '1') {
+    const integrationId = INTEGRATIONS[0] || '5425';
+    const CONFIRM_RE = /\b(oui|wah|n3am|ok|zid|confirme|confirm[eé]|r[eé]serve|yes)\b/i;
+    const BTN_CONFIRM_RE = /confirmer.{0,25}exp[eé]dition/i;
+    try {
+      // Étape 1 : collecter tous les deals en STAGE_STOCK_WAIT + STAGE_RUPTURE
+      const stockDeals = new Map(); // phone → deal object
+      for (const sid of [STAGE_STOCK_WAIT, STAGE_RUPTURE].filter(Boolean)) {
+        for (let page = 1; page <= 7; page++) {
+          const deals = await egrowPost('/deal/getStageDeals.php', { stage: sid, search: '', page, limit: 20 });
+          if (!Array.isArray(deals) || !deals.length) break;
+          deals.forEach((d) => {
+            const ph = String((d.contact && d.contact.phone) || '').replace(/\D/g, '');
+            if (ph && !stockDeals.has(ph)) stockDeals.set(ph, d);
+          });
+          if (deals.length < 20) break;
+        }
+      }
+      if (!stockDeals.size) return res.status(200).json({ stockDeals: 0, moved: 0, results: [] });
+      // Mode debug : affiche les numéros pour diagnostiquer le mismatch
+      if (q.debug === '1') {
+        const sampleDeals = [...stockDeals.entries()].slice(0, 5).map(([ph, d]) => ({ phone: ph, dealId: d.id }));
+        const pg1 = await egrowGetConversations(integrationId, 1).catch(() => []);
+        const sampleConvs = (pg1 || []).slice(0, 10).map((c) => ({ contactWaId: c.contactWaId, contactPhone: c.contact && c.contact.phone, convId: c.id }));
+        return res.status(200).json({ stockDeals: stockDeals.size, sampleDeals, sampleConvs });
+      }
+
+      // Normalise un numéro en suffixe 9 chiffres (Maroc : 212XXXXXXXXX → XXXXXXXXX)
+      const suffix9 = (ph) => String(ph).replace(/\D/g, '').slice(-9);
+      // Index suffix → phone exact du deal
+      const suffixToPhone = new Map([...stockDeals.keys()].map((ph) => [suffix9(ph), ph]));
+
+      // Étape 2 : scanner l'inbox pour retrouver les conversations de ces phones (5 pages = ~100 convs récentes)
+      const convByPhone = new Map(); // phone (deal) → convId
+      const inboxPages = await Promise.all([1,2,3,4,5,6,7,8,9,10].map((p) => egrowGetConversations(integrationId, p).catch(() => [])));
+      for (const convs of inboxPages) {
+        if (!Array.isArray(convs)) continue;
+        for (const conv of convs) {
+          const rawPh = String(conv.contactWaId || (conv.contact && (conv.contact.phone || conv.contact.wa_id)) || '').replace(/\D/g, '');
+          const suf = suffix9(rawPh);
+          const dealPhone = suffixToPhone.get(suf);
+          if (dealPhone && !convByPhone.has(dealPhone)) convByPhone.set(dealPhone, conv.id);
+        }
+      }
+
+      // Étape 3 : vérifier le dernier message client de chaque conversation trouvée (parallèle)
+      const results = [];
+      const msgsList = await Promise.all([...convByPhone.entries()].map(([ph, cid]) => egrowGetMessages(cid, 8).then((msgs) => ({ ph, cid, msgs })).catch(() => ({ ph, cid, msgs: [] }))));
+      for (const { ph: phone, msgs } of msgsList) {
+        const convId = convByPhone.get(phone);
+        if (!Array.isArray(msgs) || !msgs.length) continue;
+        // msgs[0] = plus récent. Cherche le dernier message du CLIENT (mine=false)
+        const lastClient = msgs.find((m) => !(m.mine === true || m.mine === 'true'));
+        if (!lastClient) continue;
+        const body = String(lastClient.body || (lastClient.content && ((lastClient.content.button && lastClient.content.button.text) || lastClient.content.text || (lastClient.content.interactive && lastClient.content.interactive.button_reply && lastClient.content.interactive.button_reply.title))) || '');
+        const type = String(lastClient.type || '');
+        // Détection confirmation : bouton "Confirmer l'expédition" OU mot-clé texte
+        const isBtn = type === 'button' || type === 'button_reply' || type === 'interactive';
+        const isConfirm = BTN_CONFIRM_RE.test(body) || (isBtn && !/annul/i.test(body) && /confirm/i.test(body)) || CONFIRM_RE.test(body);
+        if (!isConfirm || /annul/i.test(body)) {
+          results.push({ phone, convId, lastMsg: body.slice(0, 60), status: 'not_confirmed' }); continue;
+        }
+        // Déplace le deal vers STAGE_CONFIRM
+        const deal = stockDeals.get(phone);
+        const curStage = deal && deal.stage && deal.stage.id;
+        if (curStage === STAGE_CONFIRM) { results.push({ phone, deal: deal.id, status: 'already_confirmed' }); continue; }
+        try {
+          const mv = await moveDeal(deal, STAGE_CONFIRM);
+          results.push({ phone, deal: deal.id, from: curStage, to: STAGE_CONFIRM, lastMsg: body.slice(0, 60), status: 'moved', mvOk: mv && mv.status });
+        } catch (e) { results.push({ phone, deal: deal && deal.id, status: 'move_err', err: String(e) }); }
+      }
+
+      const moved = results.filter((r) => r.status === 'moved');
+      if (moved.length && MERCHANT_PHONE) {
+        const lines = moved.map((r) => `✅ ${r.phone} → Confirmer Wtsp (deal ${r.deal})`).join('\n');
+        try { await egrowSend(integrationId, MERCHANT_PHONE, `📦 *Stock Catchup Touni*\n${moved.length} commande(s) confirmée(s) :\n${lines}`); } catch (e) {}
+      }
+      return res.status(200).json({ stockDeals: stockDeals.size, found_in_inbox: convByPhone.size, moved: moved.length, results });
+    } catch (e) { return res.status(500).json({ error: String(e) }); }
   }
 
   // ── Mode POLLER ──
