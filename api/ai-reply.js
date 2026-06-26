@@ -14,7 +14,7 @@ const EGROW_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/53
 const INTEGRATIONS = (process.env.EGROW_INTEGRATIONS || '5425').split(',').map((s) => s.trim()).filter(Boolean);
 const FRESH_WINDOW_SEC = parseInt(process.env.EGROW_FRESH_SEC || '600', 10); // ne répond qu'aux messages des 10 dernières min
 const HUMAN_HANDOVER_SEC = parseInt(process.env.EGROW_HUMAN_HANDOVER_SEC || '5400', 10); // si un humain a répondu il y a < 1h30, le bot se tait
-const HISTORY_LIMIT = parseInt(process.env.EGROW_HISTORY_LIMIT || '40', 10); // nb de messages d'historique lus (réponses multi-bulles → fenêtre large pour garder le contexte 1-2h)
+const HISTORY_LIMIT = parseInt(process.env.EGROW_HISTORY_LIMIT || '20', 10); // nb de messages d'historique lus
 const MAX_PER_RUN = parseInt(process.env.EGROW_MAX_PER_RUN || '8', 10);      // garde-fou anti-blast
 // #4 — stages pipeline : commande en attente → Confirmer Wtsp (confirm) / Annuler Wtsp (cancel)
 const STAGE_CONFIRM = parseInt(process.env.EGROW_STAGE_CONFIRM || '49148', 10);
