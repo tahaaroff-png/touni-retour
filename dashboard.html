@@ -496,6 +496,23 @@ td{padding:12px 14px;vertical-align:middle}
   <!-- Tab: Meta -->
   <div id="tab-meta" style="display:none">
 
+    <!-- ══ VUE DIRECTEUR — Meta Ads en direct (API serveur) ══ -->
+    <div class="card" style="margin-bottom:16px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+        <div class="section-title" style="margin:0">📊 Vue Directeur — Meta Ads (live)</div>
+        <div style="margin-left:auto;display:flex;gap:5px;align-items:center">
+          <button onclick="loadMetaLive('last_7d')" style="background:none;border:1.5px solid var(--border);border-radius:8px;padding:5px 9px;font-size:11px;font-family:'Jost',sans-serif;font-weight:700;cursor:pointer">7j</button>
+          <button onclick="loadMetaLive('last_14d')" style="background:none;border:1.5px solid var(--border);border-radius:8px;padding:5px 9px;font-size:11px;font-family:'Jost',sans-serif;font-weight:700;cursor:pointer">14j</button>
+          <button onclick="loadMetaLive('last_30d')" style="background:none;border:1.5px solid var(--border);border-radius:8px;padding:5px 9px;font-size:11px;font-family:'Jost',sans-serif;font-weight:700;cursor:pointer">30j</button>
+          <button onclick="loadMetaLive('bar')" title="Suivre la barre de dates en haut" style="background:none;border:1.5px solid var(--border);border-radius:8px;padding:5px 9px;font-size:11px;font-family:'Jost',sans-serif;font-weight:700;cursor:pointer">📅 Barre</button>
+          <button onclick="loadMetaLive()" title="Rafraîchir" style="background:none;border:1.5px solid var(--border);border-radius:8px;padding:5px 10px;font-size:11px;font-family:'Jost',sans-serif;font-weight:700;cursor:pointer">🔄</button>
+        </div>
+      </div>
+      <div id="meta-live-updated" style="font-size:11px;color:var(--muted);margin-bottom:12px">Ouvre l'onglet pour charger…</div>
+      <div id="meta-live-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:6px"></div>
+      <div id="meta-live-body"></div>
+    </div>
+
     <!-- Connexion API Meta -->
     <div class="card" style="margin-bottom:16px">
       <div class="section-title">Connexion Meta Ads API</div>
@@ -2365,18 +2382,16 @@ async function fetchMetaAPI(manual){
       resultEl.textContent='✅ Dépense importée : '+spend.toFixed(2)+' USD = '+Math.round(mad).toLocaleString('fr-FR')+' MAD';
     }
     if(manual && spend>0){
-      // Save to Supabase with today's date (monthly entry)
       var today=new Date().toISOString().split('T')[0];
-      // Check if an API entry already exists for this month to avoid duplicates
-      var existingApi=metaDepenses.find(function(r){
-        return r.source==='api' && inDateRange(r.date);
+      // Supprimer TOUTES les entrées existantes dans la période (source api OU même date) pour éviter les doublons
+      var toDelete=metaDepenses.filter(function(r){
+        return inDateRange(r.date) || r.date===today;
       });
-      if(existingApi){
-        // Update existing entry by deleting and re-inserting
-        await sbDelete('meta_depenses',existingApi.id);
-        metaDepenses=metaDepenses.filter(function(r){return r.id!==existingApi.id;});
+      for(var di=0;di<toDelete.length;di++){
+        try{ await sbDelete('meta_depenses',toDelete[di].id); }catch(e){}
       }
-      var row=await sbInsert('meta_depenses',{date:today,montant_usd:spend,montant_mad:mad});
+      metaDepenses=metaDepenses.filter(function(r){return !toDelete.find(function(d){return d.id===r.id;});});
+      var row=await sbInsert('meta_depenses',{date:today,montant_usd:spend,montant_mad:mad,source:'api'});
       metaDepenses.unshift(row);
       renderMeta(); renderOverview();
     }
@@ -2656,7 +2671,38 @@ function mnbA(id){
   document.querySelectorAll('.mnb').forEach(function(b){b.classList.remove('active');});
   var el=document.getElementById(id); if(el) el.classList.add('active');
 }
+var META_PERIOD='last_7d';
+async function loadMetaLive(p){
+  if(p) META_PERIOD=p;
+  var rate=parseFloat((document.getElementById('m-rate')||{}).value||'10')||10;
+  var up=document.getElementById('meta-live-updated'),kp=document.getElementById('meta-live-kpis'),bd=document.getElementById('meta-live-body');
+  if(!up)return;
+  up.textContent='Chargement des données Meta…';
+  try{
+    var q='preset='+(META_PERIOD==='bar'?'last_7d':META_PERIOD);
+    if(META_PERIOD==='bar' && typeof filterFrom!=='undefined' && filterFrom && filterTo){
+      q='since='+filterFrom.toISOString().slice(0,10)+'&until='+filterTo.toISOString().slice(0,10);
+    }
+    var r=await fetch('/api/notifications?secret='+SYNC_SECRET+'&meta=1&rate='+rate+'&'+q);
+    var txt=await r.text(); var d;
+    try{ d=JSON.parse(txt); }catch(_){ up.textContent='⚠️ Meta a mis trop de temps à répondre — clique 🔄 Actualiser dans quelques secondes.'; kp.innerHTML='';bd.innerHTML=''; return; }
+    if(d.error){up.textContent='⚠️ '+d.error;kp.innerHTML='';bd.innerHTML='';return;}
+    var a=d.account;
+    function k(l,v,s){return '<div style="background:var(--bg);border:1px solid var(--border);border-radius:12px;padding:12px 14px"><div style="font-size:10px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.04em">'+l+'</div><div style="font-size:21px;font-weight:800;margin-top:4px">'+v+'</div>'+(s?'<div style="font-size:11px;color:var(--muted);margin-top:2px">'+s+'</div>':'')+'</div>';}
+    kp.innerHTML=k('Dépense du jour',a.spend_today_mad.toLocaleString()+' MAD','$'+a.spend_today_usd)+k('ROAS (7j)',a.roas_7d+'x','CPA $'+a.cpa_usd)+k('Ventes (7j)',a.purchases_7d,a.revenue_7d_mad.toLocaleString()+' MAD')+k('Budget / jour',a.daily_budget_mad.toLocaleString()+' MAD','$'+a.daily_budget_usd+' · '+a.campaigns_active+' camp.');
+    function rc(x){return x>=10?'#16a34a':(x>=4?'#ca8a04':'#dc2626');}
+    var h='<div class="section-title" style="margin-top:8px">Campagnes actives (7j)</div><div class="tbl-wrap"><table><thead><tr><th>Campagne</th><th>Dépense</th><th>ROAS</th><th>CPA</th><th>Ventes</th></tr></thead><tbody>';
+    d.campaigns.forEach(function(c){h+='<tr><td>'+(c.is_test?'🧪 ':'')+c.name+'</td><td>$'+c.spend_usd+'</td><td style="font-weight:800;color:'+rc(c.roas)+'">'+c.roas+'x</td><td>$'+c.cpa_usd+'</td><td>'+c.purchases+'</td></tr>';});
+    h+='</tbody></table></div><div class="section-title" style="margin-top:16px">🏆 Meilleurs créatifs (7j)</div><div class="tbl-wrap"><table><thead><tr><th>Créatif</th><th>Campagne</th><th>Dépense</th><th>ROAS</th><th>Ventes</th></tr></thead><tbody>';
+    (d.top_creatives||[]).forEach(function(c){h+='<tr><td>'+c.name+'</td><td style="color:var(--muted);font-size:11px">'+c.campaign+'</td><td>$'+c.spend_usd+'</td><td style="font-weight:800;color:'+rc(c.roas)+'">'+c.roas+'x</td><td>'+c.purchases+'</td></tr>';});
+    h+='</tbody></table></div>';
+    if((d.alerts||[]).length){h+='<div class="alert warn" style="margin-top:16px"><span>⚠️</span><span><b>'+d.alerts.length+' créatif(s) à couper</b> (≥ seuil sans vente) : '+d.alerts.map(function(x){return x.name+' ($'+x.spend_usd+')';}).join(', ')+'</span></div>';}
+    bd.innerHTML=h;
+    up.textContent='📅 '+(d.period||META_PERIOD)+' · maj '+new Date(d.updated_at).toLocaleString('fr-FR')+' · 1 USD = '+rate+' MAD';
+  }catch(e){up.textContent='⚠️ Erreur: '+e.message;}
+}
 function finTab(name,btn){
+  if(name==='meta'){ try{ loadMetaLive(); }catch(e){} }
   ['fournisseurs','virements','meta'].forEach(function(t){
     document.getElementById('tab-'+t).style.display=t===name?'block':'none';
   });
