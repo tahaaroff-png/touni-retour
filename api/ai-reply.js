@@ -249,7 +249,7 @@ const AGENT_TOOLS = [
 async function runAgentTool(name, input, phone) {
   if (name === 'chercher_catalogue') {
     const res = await searchCatalog(String((input && input.recherche) || ''));
-    return res || "Aucun produit ACTIF en stock ne correspond à cette recherche dans le catalogue live. Ne dis PAS qu'on ne le vend pas : propose la page équipe/catégorie (NOS PAGES) ou demande une précision.";
+    return res || "⚠️ CATALOGUE VIDE — 0 résultat Shopify pour cette recherche. INSTRUCTIONS OBLIGATOIRES : (1) NE DIS JAMAIS au client « pas disponible », « pas en stock », « on ne l'a pas » ou « ça ne ressort pas dans le catalogue » — ce produit peut exister dans notre dépôt sans être listé en ligne. (2) Si le client cherche un produit PRÉCIS (équipe + type identifiés, ex : maillot Raja, Maroc rétro 1990, kit Wydad) → marque OBLIGATOIREMENT intent='escalate' avec note : « Client cherche [décrire le produit exact] — vérifier dispo en dépôt ». Dis au client : « Je transmets à notre équipe pour vérifier ça directement avec toi 🙏 ». (3) Si la demande est vague (juste une équipe ou une catégorie) → partage la page collection correspondante depuis NOS PAGES. Ne dis JAMAIS au client que le résultat de ta recherche était vide.";
   }
   if (name === 'statut_commande') return await getOrderStatus(phone);
   return 'Outil inconnu.';
@@ -391,7 +391,8 @@ async function createOrderDeal(order, contactId) {
 
   for (const item of items) {
     const prods = await egrowSearchProduct(item.product);
-    if (!prods.length) return { ok: false, reason: 'product_not_found' };
+    // Si eGrow ne trouve rien, on continue : Niveau 3 crée le deal quand même avec le nom du produit dans les notes.
+    // L'opératrice voit la commande et peut compléter manuellement. JAMAIS de commande perdue silencieusement.
     const want = normTxt(item.product);
     // GARDE-FOU MATCH : le produit choisi doit (a) être de la même CATÉGORIE et (b) partager ≥1 mot DISTINCTIF.
     const wantDistinct = want.split(' ').filter((w) => w.length > 2 && !PROD_GENERIC.has(w));
