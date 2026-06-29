@@ -559,7 +559,8 @@ const CATALOG_STOPWORDS = new Set('taille tailles size prix combien chhal taman 
 const CATEGORY_WORDS = new Set('maillot maillots kit kits ensemble ensembles survetement survetements casquette casquettes ballon ballons short shorts chaussette chaussettes accessoire accessoires gourde'.split(' '));
 // Modificateurs génériques : souvent PAS dans le titre exact du produit → on les retire de la REQUÊTE (sinon la recherche
 // AND de Shopify renvoie 0), mais on les garde pour le SCORE (départager les modèles, ex: la version "blanc").
-const GENERIC_MODIFIERS = new Set('retro retros vintage classic classique version versions edition editions speciale special collector authentique modele modeles tenue tenues saison nouvelle nouveau neuf neuve domicile exterieur exterieure third'.split(' '));
+// Les COULEURS sont incluses : "raja vert" → query "raja" (pas "raja vert" qui échouerait si "vert" absent du titre).
+const GENERIC_MODIFIERS = new Set('retro retros vintage classic classique version versions edition editions speciale special collector authentique modele modeles tenue tenues saison nouvelle nouveau neuf neuve domicile exterieur exterieure third vert rouge blanc noir bleu jaune orange violet rose gris marron bordeaux kaki dore dore argent beige marine khdra lkhdra kahla lkahla byda lbyda hamra lhamra zrqa lzrqa'.split(' '));
 // Synonymes / surnoms → terme présent dans les titres Shopify
 const CATALOG_SYNONYMS = { barca: 'barcelon', barsa: 'barcelon', barcaa: 'barcelon', psg: 'paris', real: 'madrid', juve: 'juventus', mancity: 'manchester', manu: 'manchester', citizens: 'manchester', bayern: 'bayern', intermilan: 'milan', wac: 'wydad', wydadi: 'wydad', rajaoui: 'raja', kora: 'ballon', koura: 'ballon', balon: 'ballon', kaskita: 'casquette', training: 'entrainement', survet: 'survetement', short: 'short', chaussette: 'chaussette',
   // darija : kitma / jogging / survêt = survêtement (tracksuit), pas un kit maillot+short
@@ -681,29 +682,50 @@ async function searchCatalog(text) {
     const specific = allToks.filter((t) => !CATEGORY_WORDS.has(t));
     const toks = (specific.length ? specific : allToks).slice(0, 6);
     // Synonymes + RECHERCHE LIVE Shopify (GraphQL) → TOUJOURS à jour : prix, stock, statut, nouveaux produits
-    const termSet = new Set();
+    // RÈGLE CLEF : dans la requête Shopify on n'injecte QUE le terme RÉSOLU (jamais l'alias brut du client).
+    // Ex : "lmaghrib" → queryTermSet = {"maroc"} (pas {"lmaghrib","maroc"} qui ferait échouer le AND Shopify).
+    const queryTermSet = new Set();
+    const scoreTermSet = new Set();
     for (const t of toks) {
-      termSet.add(t);
-      if (t.length > 4 && /[sx]$/.test(t)) termSet.add(t.slice(0, -1)); // pluriel → singulier (ballons→ballon, casquettes→casquette)
-      if (CATALOG_SYNONYMS[t]) termSet.add(CATALOG_SYNONYMS[t]);
+      scoreTermSet.add(t);
+      const resolved = CATALOG_SYNONYMS[t];
+      if (resolved) {
+        queryTermSet.add(resolved);
+        scoreTermSet.add(resolved);
+      } else {
+        queryTermSet.add(t);
+      }
+      if (t.length > 4 && /[sx]$/.test(t)) {
+        const sing = t.slice(0, -1);
+        const singRes = CATALOG_SYNONYMS[sing];
+        if (singRes) { queryTermSet.add(singRes); scoreTermSet.add(singRes); }
+        else { queryTermSet.add(sing); scoreTermSet.add(sing); }
+      }
     }
-    const searchTerms = [...termSet];
+    const searchTerms = [...scoreTermSet];
     // Recherche FULL-TEXT Shopify, termes séparés par ESPACE (≈ AND, insensible aux accents : "bresil" trouve "Brésil").
-    // On retire les modificateurs génériques (retro, version…) de la requête (sinon "maroc retro 98 blanc" = 0 résultat,
-    // car aucun titre ne contient "retro"). On les garde dans searchTerms pour le SCORE (départager les modèles).
-    const queryTerms = searchTerms.filter((t) => !GENERIC_MODIFIERS.has(t));
-    const qstr = (queryTerms.length ? queryTerms : searchTerms).join(' ');
+    // On retire les modificateurs génériques (retro, version, couleurs…) de la requête pour éviter les AND qui échouent.
+    // Ex : "raja vert" → queryTerms = ["raja"] ; "lmaghrib 1990" → queryTerms = ["maroc","1990"]
+    const queryTerms = [...queryTermSet].filter((t) => !GENERIC_MODIFIERS.has(t));
+    const qstr = (queryTerms.length ? queryTerms : [...queryTermSet]).join(' ');
     const gql = 'query($q:String!){ products(first:40, query:$q){ edges{ node{ title handle status variants(first:25){ edges{ node{ title price inventoryQuantity } } } } } } }';
-    let products = [];
-    try {
-      const gr = await fetch(`https://${SHOPIFY_DOMAIN}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`, {
-        method: 'POST',
-        headers: Object.assign({}, await shopifyAdminHeaders(), { 'Content-Type': 'application/json' }),
-        body: JSON.stringify({ query: gql, variables: { q: qstr } }),
-      });
-      const gj = await gr.json().catch(() => ({}));
-      products = ((gj.data && gj.data.products && gj.data.products.edges) || []).map((e) => e.node);
-    } catch (e) {}
+    const doShopifySearch = async (q) => {
+      try {
+        const gr = await fetch(`https://${SHOPIFY_DOMAIN}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`, {
+          method: 'POST',
+          headers: Object.assign({}, await shopifyAdminHeaders(), { 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ query: gql, variables: { q } }),
+        });
+        const gj = await gr.json().catch(() => ({}));
+        return ((gj.data && gj.data.products && gj.data.products.edges) || []).map((e) => e.node);
+      } catch (e) { return []; }
+    };
+    let products = await doShopifySearch(qstr);
+    // Fallback : 0 résultat + query multi-termes → réessayer avec le terme le plus long (souvent l'équipe/club)
+    if (!products.length && queryTerms.length > 1) {
+      const fallback = queryTerms.reduce((a, b) => b.length > a.length ? b : a, queryTerms[0]);
+      products = await doShopifySearch(fallback);
+    }
     // garder UNIQUEMENT les produits ACTIFS avec au moins une taille en stock (live), classés par pertinence
     const SIZE_RE = /\b(XS|S|M|L|XL|XXL|2XL|3XL|4XL)\b/i;
     const scored = products.map((p) => { const nt = normTxt(p.title); return { p, score: searchTerms.filter((w) => nt.indexOf(w) !== -1).length }; }).sort((a, b) => b.score - a.score);

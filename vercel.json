@@ -1,11 +1,21 @@
 {
+  "crons": [
+    {
+      "path": "/api/ai-reply?secret=touni-sync-2026&morning_ping=1",
+      "schedule": "0 9 * * *"
+    },
+    {
+      "path": "/api/ai-reply?secret=touni-sync-2026&stock_check=1",
+      "schedule": "0 11 * * *"
+    }
+  ],
   "functions": {
     "api/shopify-webhook.js": { "maxDuration": 30 },
     "api/sync-products-cache.js": { "maxDuration": 60 },
     "api/sync-return-to-shopify.js": { "maxDuration": 60 },
     "api/shopify-order-webhook.js": { "maxDuration": 15 },
     "api/list-shopify-locations.js": { "maxDuration": 10 },
-    "api/notifications.js": { "maxDuration": 10 },
+    "api/notifications.js": { "maxDuration": 30 },
     "api/sync-rupture-shopify.js": { "maxDuration": 60 },
     "api/unsync-item.js": { "maxDuration": 30 },
     "api/oauth-callback.js": { "maxDuration": 15 },
