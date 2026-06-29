@@ -2,7 +2,7 @@
   "crons": [
     {
       "path": "/api/ai-reply?secret=touni-sync-2026&morning_ping=1",
-      "schedule": "0 9 * * *"
+      "schedule": "0 7 * * *"
     },
     {
       "path": "/api/ai-reply?secret=touni-sync-2026&stock_check=1",
