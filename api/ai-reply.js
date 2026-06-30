@@ -422,7 +422,8 @@ async function createOrderDeal(order, contactId) {
     const qty = Math.max(1, parseInt(item.quantity || 1, 10) || 1);
     const price = parseFloat(p.price) || 0;
     value += price * qty;
-    productList.push(Object.assign({}, p, { quantity: qty }));
+    // FIX: inclure la taille dans l'objet produit → s'affiche sous le produit dans eGrow (comme une commande Shopify normale)
+    productList.push(Object.assign({}, p, { quantity: qty, size: item.size || '', option: item.size || '' }));
     matchedNames.push(`${qty}x ${p.name}${item.size ? ' taille ' + item.size : ''}`);
   }
 
@@ -456,12 +457,10 @@ async function createOrderDeal(order, contactId) {
     ? `${order.customer_name || ''} - ${items.length} maillots`.slice(0, 120)
     : `${order.customer_name || ''} - ${productList[0].name}`.slice(0, 120);
 
+  // FIX: ne mettre dans le champ custom "note" QUE ce qui n'a pas de champ dédié.
+  // Client/tél/ville sont déjà dans deal_customer_name / deal_phone / deal_city → pas dans la note.
   const customNote = [
-    order.customer_name ? `Client: ${order.customer_name}` : null,
-    order.phone ? `Tél: ${order.phone}` : null,
-    order.size ? `Taille: ${order.size}` : null,
     order.color ? `Couleur: ${order.color}` : null,
-    order.city ? `Ville: ${order.city}` : null,
     order.notes ? `Remarque: ${order.notes}` : null,
     flocageNote ? flocageNote.replace(/^\s*\|\s*/, '') : null,
   ].filter(Boolean).join(' | ');
@@ -1020,9 +1019,13 @@ async function runPoll(q) {
                   try {
                     const digits = contactWaId.replace(/\D/g, '');
                     const cSearch = await egrowPost('/contact/searchContact.php', { search: digits });
-                    const contacts = Array.isArray(cSearch) ? cSearch : ((cSearch && cSearch.data) || []);
+                    // FIX: gérer tous les formats de réponse eGrow (tableau direct, data[], contacts[])
+                    const contacts = Array.isArray(cSearch) ? cSearch
+                      : (cSearch && Array.isArray(cSearch.data) ? cSearch.data
+                      : (cSearch && Array.isArray(cSearch.contacts) ? cSearch.contacts
+                      : []));
                     const found = contacts.find((ct) => String(ct.phone || '').replace(/\D/g, '').endsWith(digits.slice(-9)));
-                    contactId = found ? found.id : null;
+                    if (found && found.id) contactId = found.id;
                   } catch (e) { /* search failed, will try create */ }
                 }
                 // Si toujours pas de contact → créer un nouveau contact eGrow pour que le deal soit bien lié
@@ -1037,7 +1040,12 @@ async function runPoll(q) {
                       phone: contactWaId.replace(/\D/g, ''),
                       city: decision.order.city || '', country: 'MA',
                     });
-                    const newId = cCreate && (cCreate.id || (cCreate.contact && cCreate.contact.id) || (cCreate.data && cCreate.data.id));
+                    // FIX: gérer tous les formats de réponse possibles de eGrow
+                    const newId = cCreate && (
+                      (typeof cCreate.id === 'number' && cCreate.id > 0 ? cCreate.id : null) ||
+                      (cCreate.contact && cCreate.contact.id) ||
+                      (cCreate.data && typeof cCreate.data === 'object' && (cCreate.data.id || (cCreate.data.contact && cCreate.data.contact.id)))
+                    );
                     if (newId) contactId = newId;
                   } catch (e) { /* non bloquant : deal créé sans contact */ }
                 }
