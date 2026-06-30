@@ -707,7 +707,8 @@ async function searchCatalog(text) {
     // Ex : "raja vert" → queryTerms = ["raja"] ; "lmaghrib 1990" → queryTerms = ["maroc","1990"]
     const queryTerms = [...queryTermSet].filter((t) => !GENERIC_MODIFIERS.has(t));
     const qstr = (queryTerms.length ? queryTerms : [...queryTermSet]).join(' ');
-    const gql = 'query($q:String!){ products(first:40, query:$q){ edges{ node{ title handle status variants(first:25){ edges{ node{ title price inventoryQuantity } } } } } } }';
+    // inventoryManagement: SHOPIFY = suivi (quantité réelle) ; NOT_MANAGED = non-suivi = TOUJOURS disponible même à 0.
+    const gql = 'query($q:String!){ products(first:40, query:$q){ edges{ node{ title handle status variants(first:25){ edges{ node{ title price inventoryQuantity inventoryManagement } } } } } } }';
     const doShopifySearch = async (q) => {
       try {
         const gr = await fetch(`https://${SHOPIFY_DOMAIN}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`, {
@@ -733,8 +734,13 @@ async function searchCatalog(text) {
       if (lines.length >= 6) break;
       if (score < 1) continue;           // le terme doit être dans le TITRE (full-text peut ramener des produits où le mot n'est que dans la description)
       if (p.status !== 'ACTIVE') continue; // pas de brouillon/archivé
-      const avail = ((p.variants && p.variants.edges) || []).map((e) => e.node).filter((v) => Number(v.inventoryQuantity) > 0);
-      if (!avail.length) continue; // rien en stock
+      // FIX CRITIQUE : un produit non-suivi (NOT_MANAGED) a inventoryQuantity=0 dans l'API
+      // mais est TOUJOURS disponible à la vente. Ne filtrer comme "épuisé" que les produits
+      // SUIVIS (SHOPIFY) avec stock réel = 0. Les non-suivis passent toujours.
+      const avail = ((p.variants && p.variants.edges) || []).map((e) => e.node).filter((v) =>
+        v.inventoryManagement !== 'SHOPIFY' || Number(v.inventoryQuantity) > 0
+      );
+      if (!avail.length) continue; // rien en stock (seulement les produits suivis à 0)
       const sizes = [...new Set(avail.map((v) => { const mm = String(v.title || '').match(SIZE_RE); return mm ? mm[1].toUpperCase() : ''; }).filter(Boolean))];
       const price = avail[0].price;
       // Lien DIRECT de la fiche produit (/products/<handle>) — vérifié 200. Fallback recherche si pas de handle.
