@@ -1,7 +1,10 @@
 // Cerveau partagé de l'agent IA Touni (Claude).
 // Utilisé par ai-poll.js (poller eGrow, prod) et ai-reply.js (test manuel).
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY || '';
-const MODEL = 'claude-sonnet-4-6';
+const MODEL_SONNET = 'claude-sonnet-4-6';
+const MODEL_HAIKU  = 'claude-haiku-4-5-20251001';
+// Haiku = même qualité pour texte pur, 10× moins cher. Sonnet réservé aux images (vision).
+const MODEL = MODEL_SONNET; // conservé pour compatibilité (non utilisé directement)
 const REVIEW_LINK = process.env.REVIEW_LINK || '';
 
 // Libellés des boutons de templates eGrow → si le message entrant = un de ces textes (clic bouton), l'agent NE répond PAS.
@@ -252,7 +255,9 @@ async function generateReply({ text, name, orderItems, total, city, history, cat
   if (collectionsBlock && collectionsBlock.trim()) systemBlocks.push({ type: 'text', text: collectionsBlock, cache_control: { type: 'ephemeral', ttl: '1h' } });
   const dynamicSys = buildContextNote({ name, orderItems, total, city }) + (catalog ? '\n\n' + catalog : '');
   if (dynamicSys.trim()) systemBlocks.push({ type: 'text', text: dynamicSys });
-  const reqBody = { model: MODEL, max_tokens: 700, system: systemBlocks, messages };
+  // Sonnet uniquement si image (vision critique). Haiku pour tout le reste = 10× moins cher.
+  const selectedModel = imgs.length > 0 ? MODEL_SONNET : MODEL_HAIKU;
+  const reqBody = { model: selectedModel, max_tokens: 700, system: systemBlocks, messages };
   if (tools && tools.length) reqBody.tools = tools;
   // Un appel Claude avec retry sur erreurs TRANSITOIRES (529/429/5xx) → jamais muet pour un hoquet API.
   async function callClaude() {
