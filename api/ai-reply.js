@@ -200,6 +200,94 @@ async function findMovableDeal(phone) {
   }
   return null;
 }
+// Cherche UNE commande récente non-expédiée pour ce numéro (toutes étapes avant envoi).
+// Utilisée pour détecter si on doit ajouter à une commande existante plutôt que d'en créer une nouvelle.
+async function findRecentUnshippedDeal(phone) {
+  const digits = String(phone || '').replace(/\D/g, '');
+  if (!digits) return null;
+  try {
+    const r = await egrowPost('/deal/getStageDeals.php', { search: digits, page: 1, limit: 10 });
+    const deals = Array.isArray(r) ? r : (r && r.data) || [];
+    const phoneMatch = (d) => {
+      const dp = String((d.contact && d.contact.phone) || (d.deal_phone) || '').replace(/\D/g, '');
+      return dp && (dp === digits || dp.endsWith(digits) || digits.endsWith(dp));
+    };
+    const matched = deals.filter(phoneMatch);
+    // Retourner le premier deal avant_envoi (pas encore expédié)
+    return matched.find((d) => {
+      const stageId = d.stage && d.stage.id;
+      return STAGE_CAT[stageId] === 'avant_envoi';
+    }) || null;
+  } catch (e) { return null; }
+}
+// Ajoute des produits à un deal eGrow existant (avant envoi).
+async function addProductsToExistingDeal(existingDeal, order) {
+  const existingProducts = Array.isArray(existingDeal.products) ? existingDeal.products : [];
+  const items = Array.isArray(order.products) && order.products.length > 0
+    ? order.products
+    : [{ product: order.product, size: order.size, color: order.color, quantity: order.quantity }];
+
+  const newProductList = [];
+  let addedValue = 0;
+  const matchedNames = [];
+
+  for (const item of items) {
+    const prods = await egrowSearchProduct(item.product);
+    const want = normTxt(item.product);
+    const wantDistinct = want.split(' ').filter((w) => w.length > 2 && !PROD_GENERIC.has(w));
+    const wantCat = [...PROD_CATEGORY].find((ch) => want.split(' ').includes(ch));
+    let p = prods.find((x) => normTxt(x.name) === want);
+    if (!p) {
+      const cand = prods.map((x) => { const nx = normTxt(x.name); return { x, dist: wantDistinct.filter((w) => nx.includes(w)).length, catOk: !wantCat || nx.includes(wantCat) }; }).filter((c) => c.dist >= 1 && c.catOk).sort((a, b) => b.dist - a.dist);
+      if (cand.length) p = cand[0].x;
+    }
+    if (!p) {
+      const candR = prods.map((x) => { const nx = normTxt(x.name); return { x, dist: wantDistinct.filter((w) => nx.includes(w)).length }; }).filter((c) => c.dist >= 1).sort((a, b) => b.dist - a.dist);
+      if (candR.length) p = candR[0].x;
+    }
+    if (!p) {
+      p = prods[0] ? Object.assign({}, prods[0], { name: item.product }) : { id: 0, name: item.product, price: '329', sku: '' };
+    }
+    const qty = Math.max(1, parseInt(item.quantity || 1, 10) || 1);
+    addedValue += (parseFloat(p.price) || 0) * qty;
+    newProductList.push(Object.assign({}, p, { quantity: qty, size: item.size || '', option: item.size || '' }));
+    matchedNames.push(`${qty}x ${p.name}${item.size ? ' taille ' + item.size : ''}`);
+  }
+
+  const mergedProducts = [...existingProducts, ...newProductList];
+  const newTotal = (parseFloat(existingDeal.deal_value) || 0) + addedValue;
+  const existingContactId = (existingDeal.contact && existingDeal.contact.id) || existingDeal.contact_id || null;
+
+  const body = {
+    id: existingDeal.id,
+    deal_city: existingDeal.deal_city || '', country: 'MA',
+    deal_address: existingDeal.deal_address || '',
+    deal_apartment: '', deal_province: '', deal_zip: '', deal_area: '', deal_street_name: '', deal_house_number: '', deal_nearest_place: '', deal_location: '', deal_district: '',
+    deal_customer_name: existingDeal.deal_customer_name || (existingDeal.contact && existingDeal.contact.name) || '',
+    deal_phone: existingDeal.deal_phone || (existingDeal.contact && existingDeal.contact.phone) || '',
+    deal_payment_method: 'Cash on Delivery (COD)', payment_status: 'pending',
+    deal_shipping_price: 0, deal_shipping: null,
+    contact_id: existingContactId,
+    type: 'deal', title: existingDeal.title || '',
+    deal_value: newTotal,
+    deal_currency: { id: 153, name: 'Dirham', code: 'MAD', symbol: 'MAD' },
+    deal_custom_fields: existingDeal.deal_custom_fields || JSON.stringify({ note: '' }),
+    products: JSON.stringify(mergedProducts),
+    pipeline_stage: (existingDeal.stage && existingDeal.stage.id) || STAGE_CONFIRM,
+    close_date: 0, deal_number: existingDeal.deal_number || '', deal_tracking_number: existingDeal.deal_tracking_number || '',
+    users: '[]', do_not_update_assigned: false, shipping_user_connection: 0,
+  };
+
+  const res = await egrowPost('/deal/add_or_update_deal.php', body);
+  return {
+    ok: !!(res && res.status === 'success'),
+    dealId: existingDeal.id,
+    product: matchedNames.join(' + '),
+    qty: newProductList.reduce((s, p) => s + (p.quantity || 1), 0),
+    value: addedValue,
+    existingDealNumber: existingDeal.deal_number || String(existingDeal.id),
+  };
+}
 // Catégorie d'une étape de pipeline eGrow → pour le suivi de commande.
 const STAGE_CAT = (() => {
   const m = {};
@@ -1055,13 +1143,32 @@ async function runPoll(q) {
                     if (newId) contactId = newId;
                   } catch (e) { /* non bloquant : deal créé sans contact */ }
                 }
-                const r = await createOrderDeal(decision.order, contactId);
-                entry.orderCreated = r.ok ? { deal: r.dealId, product: r.product, value: r.value, flocage: r.hasFlocage } : ('fail:' + (r.reason || 'unknown'));
+                // Vérifier si une commande non-expédiée existe déjà pour ce client → ajouter dessus plutôt que créer un doublon
+                const isStockWaitOrder = !!(decision.order && decision.order.waiting_stock);
+                let existingDealForAdd = null;
+                if (!isStockWaitOrder) {
+                  try { existingDealForAdd = await findRecentUnshippedDeal(contactWaId); } catch (e) {}
+                }
+                let r;
+                if (existingDealForAdd) {
+                  r = await addProductsToExistingDeal(existingDealForAdd, decision.order);
+                  r.isAddition = true;
+                } else {
+                  r = await createOrderDeal(decision.order, contactId);
+                }
+                entry.orderCreated = r.ok ? { deal: r.dealId, product: r.product, value: r.value, flocage: r.hasFlocage, addition: !!r.isAddition } : ('fail:' + (r.reason || 'unknown'));
                 const o = decision.order;
                 if (r.ok) {
-                  const isStockWait = !!(o.waiting_stock);
+                  const isStockWait = isStockWaitOrder;
                   const isMultiProd = Array.isArray(o.products) && o.products.length > 1;
                   const prodDesc = isMultiProd ? r.product : `${r.qty}x ${r.product}${o.size ? ' taille ' + o.size : ''}${o.color ? ' ' + o.color : ''}`;
+                  if (r.isAddition) {
+                    // Ajout sur commande existante
+                    const noteText = `Ajout produit par l'agent IA (WhatsApp). ${prodDesc} ajouté à la commande #${r.existingDealNumber}.`;
+                    if (r.dealId) await addDealNote(r.dealId, noteText);
+                    const addMsg = `➕ *Ajout sur commande existante (agent IA)*\n👤 ${o.customer_name || c.title || contactWaId} (${contactWaId})\n📦 ${prodDesc} ajouté à commande #${r.existingDealNumber}\n💵 +${r.value} dh`;
+                    try { if (MERCHANT_PHONE) await sendAndQueue(integrationId, MERCHANT_PHONE, addMsg); } catch (e) {}
+                  } else {
                   const noteText = isStockWait
                     ? `⏳ EN ATTENTE DE STOCK — prise par l'agent IA. Produit : ${r.product}${o.size ? ' taille ' + o.size : ' (taille non précisée)'}. Client : ${o.customer_name} | Tél WA : ${o.phone || contactWaId}${o.city ? ' | Ville : ' + o.city : ''}${o.notes ? ' | Remarque : ' + o.notes : ''}. Notifier dès que le stock revient.`
                     : `Commande prise par l'agent IA (WhatsApp). ${prodDesc}.${r.flocageNote || ''} Client: ${o.customer_name} | Tél WA : ${o.phone || contactWaId}. Adresse: ${o.address || ''}, ${o.city}${o.notes ? ' | Remarque : ' + o.notes : ''}. Confirmer la taille par appel.`;
@@ -1074,6 +1181,7 @@ async function runPoll(q) {
                   } else {
                   const saleMsg = `💰 *Nouvelle commande (agent IA)*\n👤 ${o.customer_name} (${contactWaId})\n📦 ${prodDesc}${r.flocageNote || ''}\n💵 ${r.value} dh · 📍 ${o.city}\n→ créée dans « Confirmer Wtsp »`;
                   try { if (MERCHANT_PHONE) await sendAndQueue(integrationId, MERCHANT_PHONE, saleMsg); } catch (e) {}
+                  }
                   }
                 } else {
                   // ÉCHEC de création → on prévient le marchand pour qu'il crée la commande à la main (jamais de commande perdue)
