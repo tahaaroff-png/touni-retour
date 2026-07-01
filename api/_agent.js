@@ -214,6 +214,32 @@ function normalizeHistory(history) {
   return msgs;
 }
 
+// Choisit le modèle Claude selon la complexité du message.
+// Règle : Sonnet si risque d'erreur (commande, flocage, image, message long/complexe).
+//         Haiku pour tout ce qui est simple (salutation, suivi, question courte).
+function _pickModel(text, hasImage) {
+  if (hasImage) return MODEL_SONNET; // vision → Sonnet obligatoire
+
+  const t = String(text || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+
+  // ── Signaux COMMANDE (extraction JSON précise requise) → Sonnet ──
+  // Darija + français : intention d'achat combinée à des données concrètes (taille, nom, ville)
+  const wantsOrder = /\b(commander|commande|je veux|je voudrais|bghit|bghyt|je prends|j'achete|j'achète|ana bghit)\b/.test(t);
+  const hasSize    = /\b(taille|size)\b/.test(t) || /\b(xs|s|m|l|xl|2xl|3xl)\b/.test(t);
+  const hasName    = /\b(je m'appelle|mon nom|smiyti|smiyt|ana ismي|ismi)\b/.test(t);
+  const hasCity    = /\b(casablanca|rabat|marrakech|fes|fez|tanger|agadir|meknes|oujda|kenitra|temara|sale|mohammedia|je suis a|je vis a|habitant|je suis de)\b/.test(t);
+  if (wantsOrder && (hasSize || hasName || hasCity)) return MODEL_SONNET;
+
+  // ── Flocage (toujours complexe — extraction nom + numéro sur plusieurs champs) → Sonnet ──
+  if (/\b(flocage|floque|floqué|flock|personnalis|nom sur|numero sur|numéro sur)\b/.test(t)) return MODEL_SONNET;
+
+  // ── Message très long (> 220 chars) → probablement multi-infos → Sonnet ──
+  if (t.length > 220) return MODEL_SONNET;
+
+  // ── Tout le reste → Haiku (salutations, questions simples, suivi, remerciements) ──
+  return MODEL_HAIKU;
+}
+
 // Appelle Claude. history = tours précédents. catalog = dispo. imageBase64 = photo envoyée par le client (vision). Retourne {reply, intent, usage}. Throw si erreur API.
 async function generateReply({ text, name, orderItems, total, city, history, catalog, collectionsBlock, imageBase64, imageMime, images, tools, runTool, systemOverride }) {
   let messages = normalizeHistory(history);
@@ -255,8 +281,8 @@ async function generateReply({ text, name, orderItems, total, city, history, cat
   if (collectionsBlock && collectionsBlock.trim()) systemBlocks.push({ type: 'text', text: collectionsBlock, cache_control: { type: 'ephemeral', ttl: '1h' } });
   const dynamicSys = buildContextNote({ name, orderItems, total, city }) + (catalog ? '\n\n' + catalog : '');
   if (dynamicSys.trim()) systemBlocks.push({ type: 'text', text: dynamicSys });
-  // Sonnet uniquement si image (vision critique). Haiku pour tout le reste = 10× moins cher.
-  const selectedModel = imgs.length > 0 ? MODEL_SONNET : MODEL_HAIKU;
+  // Sélection du modèle : Sonnet si risque d'erreur, Haiku sinon (10× moins cher).
+  const selectedModel = _pickModel(text, imgs.length > 0);
   const reqBody = { model: selectedModel, max_tokens: 700, system: systemBlocks, messages };
   if (tools && tools.length) reqBody.tools = tools;
   // Un appel Claude avec retry sur erreurs TRANSITOIRES (529/429/5xx) → jamais muet pour un hoquet API.
