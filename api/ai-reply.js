@@ -279,7 +279,20 @@ async function addProductsToExistingDeal(existingDeal, order) {
     type: 'deal', title: existingDeal.title || '',
     deal_value: newTotal,
     deal_currency: { id: 153, name: 'Dirham', code: 'MAD', symbol: 'MAD' },
-    deal_custom_fields: existingDeal.deal_custom_fields || JSON.stringify({ note: '' }),
+    deal_custom_fields: (() => {
+      let cf = {};
+      try { cf = JSON.parse(existingDeal.deal_custom_fields || '{}'); } catch (e) {}
+      const existingCount = Object.keys(cf).filter(k => /^item_\d+_maillot$/.test(k)).length;
+      newProductList.forEach((prod, idx) => {
+        const i = existingCount + idx + 1;
+        const item = items[idx];
+        cf[`item_${i}_maillot`] = item.size ? `${prod.name} - ${item.size}` : prod.name;
+        const fl = item.flocage;
+        if (fl && fl.name) cf[`item_${i}_name`] = fl.name;
+        if (fl && fl.number) cf[`item_${i}_numero`] = String(fl.number);
+      });
+      return JSON.stringify(cf);
+    })(),
     products: JSON.stringify(mergedProducts),
     pipeline_stage: (existingDeal.stage && existingDeal.stage.id) || STAGE_CONFIRM,
     close_date: 0, deal_number: existingDeal.deal_number || '', deal_tracking_number: existingDeal.deal_tracking_number || '',
@@ -566,17 +579,22 @@ async function createOrderDeal(order, contactId) {
     ? `${order.customer_name || ''} - ${items.length} maillots`.slice(0, 120)
     : `${order.customer_name || ''} - ${productList[0].name}`.slice(0, 120);
 
-  // Note visible dans eGrow : résumé complet de la commande pour l'opératrice.
-  const prodSummaryForNote = matchedNames.join(' + ');
-  const customNote = [
-    prodSummaryForNote,
-    flocageNote ? flocageNote.replace(/^\s*\|\s*/, '') : null,
+  // Custom fields structurés — format natif eGrow : item_N_maillot / item_N_name / item_N_numero
+  const customFieldsObj = {};
+  items.forEach((item, idx) => {
+    const i = idx + 1;
+    const egrowName = (productList[idx] && productList[idx].name) || item.product;
+    customFieldsObj[`item_${i}_maillot`] = item.size ? `${egrowName} - ${item.size}` : egrowName;
+    const fl = item.flocage || (hasGlobalFl && idx === 0 ? globalFl : null);
+    if (fl && fl.name) customFieldsObj[`item_${i}_name`] = fl.name;
+    if (fl && fl.number) customFieldsObj[`item_${i}_numero`] = String(fl.number);
+  });
+  // Note additionnelle : info supplémentaire seulement (couleur, remarque client)
+  const additionalNote = [
     order.color ? `Couleur: ${order.color}` : null,
-    `Client: ${order.customer_name}`,
-    order.phone ? `Tél: ${order.phone}` : null,
-    order.address ? `Adresse: ${order.address}, ${order.city}` : (order.city ? `Ville: ${order.city}` : null),
-    order.notes ? `Remarque: ${order.notes}` : null,
+    order.notes ? order.notes : null,
   ].filter(Boolean).join(' | ');
+  if (additionalNote) customFieldsObj.note = additionalNote;
 
   const body = {
     id: 0, label: '', source: 'agent-ia-whatsapp',
@@ -588,7 +606,7 @@ async function createOrderDeal(order, contactId) {
     deal_shipping_price: 0, deal_shipping: null,
     contact_id: contactId, type: 'deal', title: dealTitle,
     deal_value: value, deal_currency: { id: 153, name: 'Dirham', code: 'MAD', symbol: 'MAD' },
-    deal_custom_fields: JSON.stringify({ note: customNote }),
+    deal_custom_fields: JSON.stringify(customFieldsObj),
     products: JSON.stringify(productList),
     pipeline_stage: order.waiting_stock && STAGE_STOCK_WAIT ? STAGE_STOCK_WAIT : STAGE_CONFIRM, close_date: 0, deal_number: '', deal_tracking_number: '',
     users: '[]', do_not_update_assigned: false, shipping_user_connection: 0,
@@ -1155,6 +1173,7 @@ async function runPoll(q) {
                     const lastName = nameParts.slice(1).join(' ') || '';
                     const cCreate = await egrowPost('/contact/add_or_update_contact.php', {
                       id: 0, type: 'contact', source: 'agent-ia-whatsapp',
+                      name: `${firstName} ${lastName}`.trim(),
                       first_name: firstName, last_name: lastName,
                       phone: contactWaId.replace(/\D/g, ''),
                       city: decision.order.city || '', country: 'MA',
