@@ -249,8 +249,16 @@ async function addProductsToExistingDeal(existingDeal, order) {
       p = prods[0] ? Object.assign({}, prods[0], { name: item.product }) : { id: 0, name: item.product, price: '329', sku: '' };
     }
     const qty = Math.max(1, parseInt(item.quantity || 1, 10) || 1);
-    addedValue += (parseFloat(p.price) || 0) * qty;
-    newProductList.push(Object.assign({}, p, { quantity: qty, size: item.size || '', option: item.size || '' }));
+    let combId2 = '', combPrice2 = parseFloat(p.price) || 0;
+    if (item.size && Array.isArray(p.combinations) && p.combinations.length) {
+      const su = String(item.size).toUpperCase().trim();
+      const mc = p.combinations.find((c) => String(c.name || '').toUpperCase().trim() === su);
+      if (mc) { combId2 = String(mc.id); if (mc.price) combPrice2 = parseFloat(mc.price) || combPrice2; }
+    }
+    addedValue += combPrice2 * qty;
+    const pe = Object.assign({}, p, { quantity: qty, size: item.size || '', option: item.size || '' });
+    if (combId2) pe.combination = combId2;
+    newProductList.push(pe);
     matchedNames.push(`${qty}x ${p.name}${item.size ? ' taille ' + item.size : ''}`);
   }
 
@@ -508,10 +516,23 @@ async function createOrderDeal(order, contactId) {
       p = prods[0] ? Object.assign({}, prods[0], { name: item.product }) : { id: 0, name: item.product, price: '329', sku: '' };
     }
     const qty = Math.max(1, parseInt(item.quantity || 1, 10) || 1);
-    const price = parseFloat(p.price) || 0;
+    // Trouver la bonne combinaison (variante taille) pour que eGrow affiche la taille correctement
+    // eGrow attend `combination: id_variante` pour afficher la taille dans la commande
+    let combinationId = '';
+    let priceFromComb = parseFloat(p.price) || 0;
+    if (item.size && Array.isArray(p.combinations) && p.combinations.length) {
+      const sizeUpper = String(item.size).toUpperCase().trim();
+      const match = p.combinations.find((c) => String(c.name || '').toUpperCase().trim() === sizeUpper);
+      if (match) {
+        combinationId = String(match.id);
+        if (match.price) priceFromComb = parseFloat(match.price) || priceFromComb;
+      }
+    }
+    const price = priceFromComb;
     value += price * qty;
-    // FIX: inclure la taille dans l'objet produit → s'affiche sous le produit dans eGrow (comme une commande Shopify normale)
-    productList.push(Object.assign({}, p, { quantity: qty, size: item.size || '', option: item.size || '' }));
+    const prodEntry = Object.assign({}, p, { quantity: qty, size: item.size || '', option: item.size || '' });
+    if (combinationId) prodEntry.combination = combinationId;
+    productList.push(prodEntry);
     matchedNames.push(`${qty}x ${p.name}${item.size ? ' taille ' + item.size : ''}`);
   }
 
