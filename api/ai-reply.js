@@ -1262,6 +1262,8 @@ async function runPoll(q) {
 module.exports = async (req, res) => {
   const q = req.query || {};
   if (q.secret !== SECRET) return res.status(401).json({ error: 'unauthorized' });
+  // Interrupteur global — BOT_ENABLED=0 dans Vercel pour couper le bot sans toucher au code
+  if (process.env.BOT_ENABLED === '0') return res.status(200).json({ ok: true, status: 'bot_disabled' });
 
   // ── Diagnostic notif opératrice (depuis Vercel, avec le vrai egrowSend) ──
   if (q.diagop === '1') {
