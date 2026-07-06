@@ -545,12 +545,16 @@ async function createOrderDeal(order, contactId) {
     ? `${order.customer_name || ''} - ${items.length} maillots`.slice(0, 120)
     : `${order.customer_name || ''} - ${productList[0].name}`.slice(0, 120);
 
-  // FIX: ne mettre dans le champ custom "note" QUE ce qui n'a pas de champ dédié.
-  // Client/tél/ville sont déjà dans deal_customer_name / deal_phone / deal_city → pas dans la note.
+  // Note visible dans eGrow : résumé complet de la commande pour l'opératrice.
+  const prodSummaryForNote = matchedNames.join(' + ');
   const customNote = [
-    order.color ? `Couleur: ${order.color}` : null,
-    order.notes ? `Remarque: ${order.notes}` : null,
+    prodSummaryForNote,
     flocageNote ? flocageNote.replace(/^\s*\|\s*/, '') : null,
+    order.color ? `Couleur: ${order.color}` : null,
+    `Client: ${order.customer_name}`,
+    order.phone ? `Tél: ${order.phone}` : null,
+    order.address ? `Adresse: ${order.address}, ${order.city}` : (order.city ? `Ville: ${order.city}` : null),
+    order.notes ? `Remarque: ${order.notes}` : null,
   ].filter(Boolean).join(' | ');
 
   const body = {
@@ -1169,9 +1173,10 @@ async function runPoll(q) {
                     const addMsg = `➕ *Ajout sur commande existante (agent IA)*\n👤 ${o.customer_name || c.title || contactWaId} (${contactWaId})\n📦 ${prodDesc} ajouté à commande #${r.existingDealNumber}\n💵 +${r.value} dh`;
                     try { if (MERCHANT_PHONE) await sendAndQueue(integrationId, MERCHANT_PHONE, addMsg); } catch (e) {}
                   } else {
+                  const telNote = o.phone || contactWaId;
                   const noteText = isStockWait
-                    ? `⏳ EN ATTENTE DE STOCK — prise par l'agent IA. Produit : ${r.product}${o.size ? ' taille ' + o.size : ' (taille non précisée)'}. Client : ${o.customer_name} | Tél WA : ${o.phone || contactWaId}${o.city ? ' | Ville : ' + o.city : ''}${o.notes ? ' | Remarque : ' + o.notes : ''}. Notifier dès que le stock revient.`
-                    : `Commande prise par l'agent IA (WhatsApp). ${prodDesc}.${r.flocageNote || ''} Client: ${o.customer_name} | Tél WA : ${o.phone || contactWaId}. Adresse: ${o.address || ''}, ${o.city}${o.notes ? ' | Remarque : ' + o.notes : ''}. Confirmer la taille par appel.`;
+                    ? `⏳ EN ATTENTE DE STOCK — prise par l'agent IA. Produit : ${r.product}${o.size ? ' taille ' + o.size : ' (taille non précisée)'}. Client : ${o.customer_name} | Tél WA : ${telNote}${o.city ? ' | Ville : ' + o.city : ''}${o.notes ? ' | Remarque : ' + o.notes : ''}. Notifier dès que le stock revient.`
+                    : `Commande prise par l'agent IA (WhatsApp). ${prodDesc}.${r.flocageNote || ''} | Client: ${o.customer_name} | Tél WA : ${telNote} | Adresse: ${o.address || ''}, ${o.city}${o.notes ? ' | Remarque : ' + o.notes : ''} | Confirmer la taille par appel.`;
                   if (r.dealId) await addDealNote(r.dealId, noteText);
                   if (isStockWait) {
                     // Sauvegarder dans la waitlist Supabase pour surveillance automatique du stock
