@@ -225,19 +225,9 @@ function normalizeHistory(history) {
 }
 
 // Choisit le modèle Claude selon la complexité du message.
-// Règle : Sonnet par défaut (meilleure liaison commande, stock, outils).
-//         Haiku UNIQUEMENT pour les acquiescements ultra-simples (1-2 mots, aucune information).
+// Toujours Sonnet — le marchand a confirmé que Haiku n'était pas satisfaisant.
 function _pickModel(text, hasImage) {
-  if (hasImage) return MODEL_SONNET; // vision → Sonnet obligatoire
-
-  const t = String(text || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
-
-  // Haiku UNIQUEMENT si le message est un acquiescement/salutation PURE (aucune info, aucune demande).
-  // Tout ce qui pourrait impliquer stock, commande, suivi, produit, photo → Sonnet sans exception.
-  const ULTRA_SIMPLE = /^(ok|okay|oui|non|merci|شكرا|chokran|barak|wah|wakh|n3am|la|salut|bonjour|bonsoir|salam|ahlan|hi|hello|super|parfait|nickel|top|d accord|d'accord|oki|bien|bzf|bzaf|thanks|👍|❤️|😊|🙏|inchallah|inchAllah|mzn|mzien|zwina|zwine|khti|khoya)[\s!.🙏❤️😊👍]*$/.test(t);
-
-  if (ULTRA_SIMPLE) return MODEL_HAIKU;
-  return MODEL_SONNET; // défaut : Sonnet pour tout le reste (stock, commande, suivi, flocage, photo...)
+  return MODEL_SONNET;
 }
 
 // Appelle Claude. history = tours précédents. catalog = dispo. imageBase64 = photo envoyée par le client (vision). Retourne {reply, intent, usage}. Throw si erreur API.

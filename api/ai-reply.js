@@ -1125,13 +1125,15 @@ async function runPoll(q) {
             } else if (isAction) {
               entry.dealMove = deal ? 'already_there' : 'no_movable_deal';
             }
-            // Escalade → prévenir l'opératrice avec un résumé
-            if (decision.intent === 'escalate' && OPERATOR_PHONE) {
-              try {
-                const summary = `🔔 *Client à gérer (agent IA Touni)*\n👤 ${c.title || contactWaId}\n📱 ${contactWaId}\n📝 ${(decision.note || '').slice(0, 400) || 'voir la conversation'}\n💬 « ${body.slice(0, 220)} »`;
-                await sendAndQueue(integrationId, OPERATOR_PHONE, summary);
-                entry.operatorNotified = true;
-              } catch (e) { entry.operatorNotified = 'err'; }
+            // Escalade → prévenir l'opératrice + le patron
+            if (decision.intent === 'escalate') {
+              const summary = `🔔 *Client à gérer (agent IA Touni)*\n👤 ${c.title || contactWaId}\n📱 ${contactWaId}\n📝 ${(decision.note || '').slice(0, 400) || 'voir la conversation'}\n💬 « ${body.slice(0, 220)} »`;
+              if (OPERATOR_PHONE) {
+                try { await sendAndQueue(integrationId, OPERATOR_PHONE, summary); entry.operatorNotified = true; } catch (e) { entry.operatorNotified = 'err'; }
+              }
+              if (MERCHANT_PHONE && MERCHANT_PHONE !== OPERATOR_PHONE) {
+                try { await sendAndQueue(integrationId, MERCHANT_PHONE, summary); entry.merchantNotified = true; } catch (e) { entry.merchantNotified = 'err'; }
+              }
             }
             // Avis Instagram → notifier le patron pour screenshot / screen recording
             if (decision.intent === 'review_positive' && MERCHANT_PHONE) {
