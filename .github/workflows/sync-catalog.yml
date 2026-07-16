@@ -1,0 +1,52 @@
+name: touni-sync-catalog
+# Filet de sécurité du cache produits (Supabase `shopify_variants_cache`).
+#
+# Pourquoi : le cache est normalement tenu à jour par les webhooks Shopify
+# (products/create, products/update, products/delete). Mais un webhook qui échoue
+# — Vercel indisponible, timeout, réponse 500 — est perdu SANS ALERTE, et le cache
+# dérive en silence. Un produit ajouté ce jour-là devient introuvable dans la
+# recherche du gestionnaire de stock. C'est exactement ce qui s'était produit :
+# products/update n'était même plus enregistré côté Shopify.
+#
+# Ce job resynchronise donc tout le catalogue une fois par nuit. Il est idempotent
+# (upsert sur variant_id) : le relancer ne casse rien.
+#
+# Note : l'agent WhatsApp, lui, n'en dépend pas — il interroge Shopify en direct.
+on:
+  schedule:
+    - cron: '30 2 * * *' # 02h30 UTC = 03h30 Casablanca — hors trafic
+  workflow_dispatch: # relançable à la main depuis l'onglet Actions
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resynchroniser le catalogue Shopify vers Supabase
+        run: |
+          RESP=$(curl -s -w "\n%{http_code}" --max-time 120 \
+            "https://touni-retour.vercel.app/api/sync-products-cache?secret=touni-sync-2026")
+          CODE=$(echo "$RESP" | tail -1)
+          BODY=$(echo "$RESP" | sed '$d')
+          echo "HTTP $CODE"
+          echo "$BODY"
+          # Échouer bruyamment : un cache qui dérive sans que personne ne le voie
+          # est précisément le problème que ce job existe pour éviter.
+          if [ "$CODE" != "200" ]; then
+            echo "::error::Sync catalogue KO (HTTP $CODE) — le cache produits peut être obsolète"
+            exit 1
+          fi
+          echo "$BODY" | grep -q '"success":true' || {
+            echo "::error::Sync catalogue : réponse inattendue"
+            exit 1
+          }
+
+      - name: Vérifier que les webhooks Shopify sont toujours enregistrés
+        run: |
+          # Recrée les webhooks manquants. products/update avait disparu une fois,
+          # ce qui figeait les photos et les prix dans le cache.
+          RESP=$(curl -s --max-time 60 \
+            "https://touni-retour.vercel.app/api/setup-webhooks?secret=touni-sync-2026")
+          echo "$RESP"
+          echo "$RESP" | grep -q '"success":true' || {
+            echo "::error::Vérification des webhooks KO"
+            exit 1
+          }
