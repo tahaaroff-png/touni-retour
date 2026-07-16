@@ -143,7 +143,8 @@ td{padding:11px 11px;vertical-align:middle}
 .qb.qb-retour.active{background:var(--bg-soft);border-color:var(--green);color:var(--green)}
 .qb.qb-vendu.active{background:#151515;border-color:#151515;color:#fff}
 .qb.qb-mystere.active{background:var(--bg-soft);border-color:var(--ink);color:var(--ink)}
-.qb.qb-offert.active{background:var(--bg-soft);border-color:var(--signal);color:var(--signal)}
+.qb.qb-stock.active{background:var(--bg-soft);border-color:#2563eb;color:#2563eb}
+.qb.qb-autre.active{background:var(--bg-soft);border-color:var(--muted);color:var(--muted)}
 .qty-ctrl{display:flex;align-items:center;gap:0;border:1px solid var(--border);border-radius:var(--radius-btn);overflow:hidden}
 .qty-btn{background:var(--bg-soft);border:none;width:40px;height:42px;font-size:18px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--text);transition:background .2s;flex-shrink:0}
 .qty-btn:hover{background:var(--border)}
@@ -347,7 +348,8 @@ td{padding:11px 11px;vertical-align:middle}
           <option value="retour">🔄 Retour</option>
           <option value="vendu">💰 Vendu</option>
           <option value="mystere">🎁 Maillot mystère</option>
-          <option value="offert">🎀 Offert</option>
+          <option value="stock">📦 Stock</option>
+          <option value="autre">📋 Autre</option>
         </select>
       </div>
       <div class="fg"><label>Date sortie</label><input type="date" id="exit-date-add"></div>
@@ -362,7 +364,8 @@ td{padding:11px 11px;vertical-align:middle}
     <div class="fg-row"><label>Statut</label>
       <select id="f-status" onchange="render()">
         <option value="">Tous</option><option value="retour">Retour</option>
-        <option value="vendu">Vendu</option><option value="mystere">Mystère</option><option value="offert">Offert</option>
+        <option value="vendu">Vendu</option><option value="mystere">Mystère</option>
+        <option value="stock">Stock</option><option value="autre">Autre</option>
       </select>
     </div>
     <div class="fg-row"><label>Tri</label>
@@ -404,7 +407,7 @@ td{padding:11px 11px;vertical-align:middle}
     <div class="legend">
       <div class="leg-item"><div class="leg-dot" style="background:#151515"></div>Ajouts</div>
       <div class="leg-item"><div class="leg-dot" style="background:var(--green)"></div>Vendus</div>
-      <div class="leg-item"><div class="leg-dot" style="background:var(--red)"></div>Offerts/Mystère</div>
+      <div class="leg-item"><div class="leg-dot" style="background:var(--red)"></div>Mystère/Autre</div>
     </div>
   </div>
   <div class="chart-wrap">
@@ -423,7 +426,8 @@ td{padding:11px 11px;vertical-align:middle}
       <button class="qb qb-retour" onclick="qbPick('retour')"><span>🔄</span>Retour</button>
       <button class="qb qb-vendu" onclick="qbPick('vendu')"><span>💰</span>Vendu</button>
       <button class="qb qb-mystere" onclick="qbPick('mystere')"><span>🎁</span>Mystère</button>
-      <button class="qb qb-offert" onclick="qbPick('offert')"><span>🎀</span>Offert</button>
+      <button class="qb qb-stock" onclick="qbPick('stock')"><span>📦</span>Stock</button>
+      <button class="qb qb-autre" onclick="qbPick('autre')"><span>📋</span>Autre</button>
     </div>
     <div class="modal-grid">
       <div class="mf full"><label>Produit</label><input type="text" id="m-product"></div>
@@ -438,7 +442,8 @@ td{padding:11px 11px;vertical-align:middle}
       <div class="mf full" style="display:none"><label>Statut</label>
         <select id="m-status">
           <option value="retour">🔄 Retour</option><option value="vendu">💰 Vendu</option>
-          <option value="mystere">🎁 Maillot mystère</option><option value="offert">🎀 Offert</option>
+          <option value="mystere">🎁 Maillot mystère</option>
+          <option value="stock">📦 Stock</option><option value="autre">📋 Autre</option>
         </select>
       </div>
       <div class="mf"><label>Date sortie</label><input type="date" id="m-exit-date"></div>
@@ -777,7 +782,8 @@ function fmtDate(d){ if(!d) return '—'; return new Date(d).toLocaleDateString(
 function statusBadge(s){
   if(s==='vendu')   return '<span class="badge" style="background:#151515;color:#fff;border:1px solid #151515">💰 Vendu</span>';
   if(s==='mystere') return '<span class="badge" style="background:transparent;color:var(--ink);border:1px solid var(--ink)">🎁 Mystère</span>';
-  if(s==='offert')  return '<span class="badge" style="background:transparent;color:var(--signal);border:1px solid var(--signal)">🎀 Offert</span>';
+  if(s==='stock')   return '<span class="badge" style="background:transparent;color:#2563eb;border:1px solid #2563eb">📦 Stock</span>';
+  if(s==='autre')   return '<span class="badge" style="background:transparent;color:var(--muted);border:1px solid var(--muted)">📋 Autre</span>';
   return '<span class="badge" style="background:transparent;color:var(--green);border:1px solid var(--green)">🔄 Retour</span>';
 }
 function render() {
@@ -867,7 +873,7 @@ function buildChart() {
     if(!months[k]) months[k]={label:d.toLocaleDateString('fr-FR',{month:'short',year:'2-digit'}),a:0,v:0,o:0};
     months[k].a++;
     if(it.status==='vendu') months[k].v++;
-    if(it.status==='offert'||it.status==='mystere') months[k].o++;
+    if(it.status==='mystere'||it.status==='autre') months[k].o++;
   });
   var keys=Object.keys(months).sort().slice(-8);
   var chart=document.getElementById('chart');
@@ -885,10 +891,10 @@ function buildChart() {
   }).join('');
 }
 function buildBreakdown() {
-  var counts={retour:0,vendu:0,mystere:0,offert:0};
+  var counts={retour:0,vendu:0,mystere:0,stock:0,autre:0};
   stock.forEach(function(i){ if(counts[i.status]!==undefined) counts[i.status]++; });
   var total=stock.length||1;
-  var items=[{key:'retour',label:'Retours',color:'#428445',icon:'🔄'},{key:'vendu',label:'Vendus',color:'#151515',icon:'💰'},{key:'mystere',label:'Mystère',color:'#363535',icon:'🎁'},{key:'offert',label:'Offerts',color:'#f52c2c',icon:'🎀'}];
+  var items=[{key:'retour',label:'Retours',color:'#428445',icon:'🔄'},{key:'vendu',label:'Vendus',color:'#151515',icon:'💰'},{key:'mystere',label:'Mystère',color:'#363535',icon:'🎁'},{key:'stock',label:'Stock',color:'#2563eb',icon:'📦'},{key:'autre',label:'Autre',color:'#858585',icon:'📋'}];
   document.getElementById('breakdown').innerHTML=items.map(function(it){
     var pct=Math.round((counts[it.key]/total)*100);
     return '<div style="flex:1;min-width:120px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px 20px;transition:.3s ease">'

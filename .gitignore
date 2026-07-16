@@ -1,2 +1,10 @@
 .vercel
-.env*.local
+node_modules
+
+# Secrets — ne JAMAIS pousser sur GitHub (ce repo est public).
+# Avant, seul .env*.local était ignoré : .env.production, .env.vercel.pulled,
+# .env.temp et .env.vercel.prod contenaient 32 secrets et un `git add .` les
+# aurait publiés.
+.env
+.env.*
+!.env.example

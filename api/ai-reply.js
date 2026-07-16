@@ -13,7 +13,7 @@ const EGROW_BASE = 'https://api.egrow.com';
 const EGROW_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 const INTEGRATIONS = (process.env.EGROW_INTEGRATIONS || '5425').split(',').map((s) => s.trim()).filter(Boolean);
 const FRESH_WINDOW_SEC = parseInt(process.env.EGROW_FRESH_SEC || '600', 10); // ne répond qu'aux messages des 10 dernières min
-const HUMAN_HANDOVER_SEC = parseInt(process.env.EGROW_HUMAN_HANDOVER_SEC || '5400', 10); // si un humain a répondu il y a < 1h30, le bot se tait
+const HUMAN_HANDOVER_SEC = parseInt(process.env.EGROW_HUMAN_HANDOVER_SEC || '3600', 10); // si un humain (équipe) a répondu il y a < 1h, le bot se tait ; il ne reprend qu'après 1h sans réponse humaine
 const HISTORY_LIMIT = parseInt(process.env.EGROW_HISTORY_LIMIT || '8', 10);  // nb de messages d'historique lus (8 = suffisant, 20 = trop coûteux)
 const MAX_PER_RUN = parseInt(process.env.EGROW_MAX_PER_RUN || '8', 10);      // garde-fou anti-blast
 // #4 — stages pipeline : commande en attente → Confirmer Wtsp (confirm) / Annuler Wtsp (cancel)
@@ -23,8 +23,12 @@ const STAGE_STOCK_WAIT = parseInt(process.env.EGROW_STAGE_STOCK_WAIT || '60669',
 const STAGE_RUPTURE = parseInt(process.env.EGROW_STAGE_RUPTURE || '49430', 10);     // stage "Rupture"
 // On ne déplace QUE si la commande est encore dans une étape AVANT envoi (sinon expédiée → on ne touche pas).
 const MOVABLE_STAGES = (process.env.EGROW_MOVABLE_STAGES || '62357,49148,49149,60669,49430').split(',').map((s) => parseInt(s.trim(), 10)).filter(Boolean);
-// Notifications : opératrice e-commerce (Soumaya) sur escalade ; marchand sur upsell/vente.
-const OPERATOR_PHONE = (process.env.EGROW_OPERATOR_PHONE || '212672193297').replace(/\D/g, '');
+// Notifications : opératrices e-commerce sur escalade ; marchand sur upsell/vente.
+// EGROW_OPERATOR_PHONE accepte plusieurs numéros séparés par une virgule — chaque opératrice
+// reçoit l'escalade, et chacune ouvre sa propre fenêtre de rattrapage en répondant.
+const OPERATOR_PHONES = (process.env.EGROW_OPERATOR_PHONE || '212672193297')
+  .split(',').map((s) => s.replace(/\D/g, '')).filter(Boolean);
+const OPERATOR_PHONE = OPERATOR_PHONES[0] || ''; // compat : 1re opératrice (endpoint de test)
 const MERCHANT_PHONE = (process.env.EGROW_MERCHANT_PHONE || '212612717593').replace(/\D/g, '');
 
 // ───────── Lecture robuste du body (mode POST : JSON, urlencoded, multipart eGrow) ─────────
@@ -671,11 +675,19 @@ async function recentBotSent(convId) {
   return res;
 }
 // Un HUMAIN gère-t-il la conversation ? (= message sortant récent <1h30 dont le texte n'est PAS un envoi du bot).
-function humanHandling(raw, nowSec, botSent) {
+function humanHandling(raw, nowSec, botSent, contactWaId) {
   const HUMAN_TYPES = ['text', 'image', 'audio', 'voice', 'ptt', 'video', 'document'];
+  const contact = String(contactWaId || '').replace(/\D/g, '');
   const outRecent = (raw || [])
-    .filter((m) => m && (m.mine === true || m.mine === 'true') && HUMAN_TYPES.includes(String(m.type || '')))
-    .map((m) => ({ id: String(m.id || ''), body: normBody(m.body || (m.content && m.content.body) || ''), at: parseInt(m.sentAt || m.createdAt || m.timestamp || '0', 10) }))
+    // SORTANT (côté business) = mine=true OU expéditeur ≠ client (senderWaId).
+    // Le senderWaId couvre les réponses envoyées depuis l'APP WhatsApp du téléphone de l'équipe
+    // (pas seulement depuis l'interface eGrow) — sans lui, ces messages humains passaient inaperçus et le bot répondait par-dessus.
+    .filter((m) => {
+      if (!m || !HUMAN_TYPES.includes(String(m.type || ''))) return false;
+      const sw = String(m.senderWaId || '').replace(/\D/g, '');
+      return (m.mine === true || m.mine === 'true') || (sw && contact && sw !== contact);
+    })
+    .map((m) => ({ id: String(m.id || ''), body: normBody(m.body || (m.content && m.content.body) || ''), at: parseInt(m.sentAt || m.createdAt || m.timestamp || m.time || '0', 10) }))
     .filter((m) => m.at && (nowSec - m.at) <= HUMAN_HANDOVER_SEC);
   if (!outRecent.length) return false;
   // "humain" = un sortant récent qui n'est NI un id connu du bot NI un texte connu du bot.
@@ -938,11 +950,11 @@ async function runPoll(q) {
 
         // ── RATTRAPAGE NOTIFICATIONS : l'opératrice ou le patron viennent de répondre → fenêtre ouverte ──
         const _digits = contactWaId.replace(/\D/g, '');
-        if (_digits === OPERATOR_PHONE) {
-          // Opératrice : resend toutes les notifs en attente, puis skip (pas de réponse client)
-          const _count = !dry ? await resendPendingNotifications(integrationId, OPERATOR_PHONE) : 0;
+        if (OPERATOR_PHONES.includes(_digits)) {
+          // Opératrice : resend ses notifs en attente, puis skip (pas de réponse client)
+          const _count = !dry ? await resendPendingNotifications(integrationId, _digits) : 0;
           if (!dry && _count > 0) {
-            try { await egrowSend(integrationId, OPERATOR_PHONE, `✅ ${_count} notification${_count > 1 ? 's rattrapées' : ' rattrapée'} — fenêtre ouverte.`); } catch (e) {}
+            try { await egrowSend(integrationId, _digits, `✅ ${_count} notification${_count > 1 ? 's rattrapées' : ' rattrapée'} — fenêtre ouverte.`); } catch (e) {}
           }
           if (claimedMsgId) { await releaseClaim(claimedMsgId); claimedMsgId = null; }
           results.push({ conv: c.id, phone: contactWaId, decision: 'operator_catchup', caught_up: _count });
@@ -1034,7 +1046,7 @@ async function runPoll(q) {
         const _isMerchantHere = MERCHANT_PHONE && contactWaId.replace(/\D/g, '') === MERCHANT_PHONE;
         if (!_isMerchantHere) {
           let humanActive = false;
-          try { humanActive = humanHandling(raw, nowSec, botSent); } catch (e) {}
+          try { humanActive = humanHandling(raw, nowSec, botSent, contactWaId); } catch (e) {}
           if (humanActive) {
             if (!dry && claimedMsgId) { await releaseClaim(claimedMsgId); claimedMsgId = null; } // libère → on pourra répondre plus tard si l'humain reste inactif 1h30
             results.push({ conv: c.id, phone: contactWaId, msgId, body: body.slice(0, 60), decision: 'human_handover' });
@@ -1128,10 +1140,10 @@ async function runPoll(q) {
             // Escalade → prévenir l'opératrice + le patron
             if (decision.intent === 'escalate') {
               const summary = `🔔 *Client à gérer (agent IA Touni)*\n👤 ${c.title || contactWaId}\n📱 ${contactWaId}\n📝 ${(decision.note || '').slice(0, 400) || 'voir la conversation'}\n💬 « ${body.slice(0, 220)} »`;
-              if (OPERATOR_PHONE) {
-                try { await sendAndQueue(integrationId, OPERATOR_PHONE, summary); entry.operatorNotified = true; } catch (e) { entry.operatorNotified = 'err'; }
+              for (const _op of OPERATOR_PHONES) {
+                try { await sendAndQueue(integrationId, _op, summary); entry.operatorNotified = true; } catch (e) { entry.operatorNotified = 'err'; }
               }
-              if (MERCHANT_PHONE && MERCHANT_PHONE !== OPERATOR_PHONE) {
+              if (MERCHANT_PHONE && !OPERATOR_PHONES.includes(MERCHANT_PHONE)) {
                 try { await sendAndQueue(integrationId, MERCHANT_PHONE, summary); entry.merchantNotified = true; } catch (e) { entry.merchantNotified = 'err'; }
               }
             }
@@ -1269,8 +1281,14 @@ module.exports = async (req, res) => {
 
   // ── Diagnostic notif opératrice (depuis Vercel, avec le vrai egrowSend) ──
   if (q.diagop === '1') {
-    const sr = await egrowSend(INTEGRATIONS[0] || '5425', OPERATOR_PHONE, '🔔 Test notification opératrice (diagnostic système Touni).');
-    return res.status(200).json({ operator_phone: OPERATOR_PHONE, send_result: sr });
+    // Teste CHAQUE opératrice : c'est ce qui permet de vérifier qu'une nouvelle recrue
+    // reçoit bien les escalades avant de compter dessus.
+    const out = [];
+    for (const _op of OPERATOR_PHONES) {
+      try { out.push({ phone: _op, send_result: await egrowSend(INTEGRATIONS[0] || '5425', _op, '🔔 Test notification opératrice (diagnostic système Touni).') }); }
+      catch (e) { out.push({ phone: _op, error: String(e) }); }
+    }
+    return res.status(200).json({ operator_phones: OPERATOR_PHONES, results: out });
   }
 
   // ── GET PIPELINE STAGES (endpoint direct) ──
@@ -1426,15 +1444,23 @@ module.exports = async (req, res) => {
   if (q.morning_ping === '1') {
     const integrationId = INTEGRATIONS[0] || '5425';
     const SESSION_TEMPLATE = process.env.EGROW_SESSION_TEMPLATE || 'touni_session_bot';
-    const OPERATOR_NAME   = process.env.EGROW_OPERATOR_NAME   || 'Soumaya';
+    // Un prénom par opératrice, dans le même ordre que EGROW_OPERATOR_PHONE.
+    const OPERATOR_NAMES  = (process.env.EGROW_OPERATOR_NAME || 'Soumaya').split(',').map((s) => s.trim());
     const MERCHANT_NAME   = process.env.EGROW_MERCHANT_NAME   || 'Patron';
     // Date du jour en français (ex: "Samedi 21 juin")
     const dateLabel = new Intl.DateTimeFormat('fr-FR', { timeZone: 'Africa/Casablanca', weekday: 'long', day: 'numeric', month: 'long' }).format(new Date());
     const dateStr = dateLabel.charAt(0).toUpperCase() + dateLabel.slice(1);
     const results = {};
-    try {
-      results.operator = await egrowSendTemplate(integrationId, OPERATOR_PHONE, SESSION_TEMPLATE, 'en_US', [dateStr, OPERATOR_NAME]);
-    } catch (e) { results.operator = { error: String(e) }; }
+    // Chaque opératrice reçoit le template : c'est lui qui ouvre sa fenêtre WhatsApp 24h.
+    // Sans ça, ses notifications d'escalade seraient bloquées par Meta toute la journée.
+    results.operators = [];
+    for (let i = 0; i < OPERATOR_PHONES.length; i++) {
+      const phone = OPERATOR_PHONES[i];
+      const name  = OPERATOR_NAMES[i] || OPERATOR_NAMES[0] || 'Opératrice';
+      try {
+        results.operators.push({ phone, name, res: await egrowSendTemplate(integrationId, phone, SESSION_TEMPLATE, 'en_US', [dateStr, name]) });
+      } catch (e) { results.operators.push({ phone, name, error: String(e) }); }
+    }
     try {
       results.merchant = await egrowSendTemplate(integrationId, MERCHANT_PHONE, SESSION_TEMPLATE, 'en_US', [dateStr, MERCHANT_NAME]);
     } catch (e) { results.merchant = { error: String(e) }; }
@@ -1590,7 +1616,8 @@ module.exports = async (req, res) => {
         // Générer un vrai résumé de situation via Claude (pas copier-coller le message du bot)
         const note = (await genSummary(msgs)) || 'voir la conversation';
         const summary = `🔔 *[RATTRAPÉ] Client à gérer (notif manquée — fenêtre 24h)*\n👤 ${name}\n📱 ${phone}\n📝 ${note}\n💬 « ${lastMsg} »`;
-        const sr = await egrowSend(integrationId, OPERATOR_PHONE, summary);
+        let sr;
+        for (const _op of OPERATOR_PHONES) { sr = await egrowSend(integrationId, _op, summary); }
         results.push({ convId, name, phone, note, status: sr && sr.status });
       } catch (e) { results.push({ convId, status: 'err', err: String(e) }); }
     }
