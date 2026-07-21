@@ -1147,15 +1147,19 @@ async function runPoll(q) {
                 try { await sendAndQueue(integrationId, MERCHANT_PHONE, summary); entry.merchantNotified = true; } catch (e) { entry.merchantNotified = 'err'; }
               }
             }
-            // Avis Instagram → notifier le patron pour screenshot / screen recording
-            if (decision.intent === 'review_positive' && MERCHANT_PHONE) {
+            // Avis positif → patron (comme toujours) ET opératrices e-commerce (collecte / screenshot Insta)
+            if (decision.intent === 'review_positive') {
               try {
                 const clientName = c.title || contactWaId;
                 const isVocalReview = isAudio || type === 'ptt' || type === 'voice';
                 const msgType = isVocalReview ? '🎙️ *VOCAL*' : '💬 *Message*';
                 const preview = isVocalReview ? '[message vocal]' : (body.slice(0, 200) || '[avis]');
-                const notif = `📸 *Avis client pour Instagram !*\n👤 ${clientName} (${contactWaId})\n${msgType} : « ${preview} »\n→ Ouvre la conv et fais un screen (ou screen recording si vocal) 🎬`;
-                await sendAndQueue(integrationId, MERCHANT_PHONE, notif);
+                const notif = `📸 *Avis client positif (à récolter) !*\n👤 ${clientName} (${contactWaId})\n${msgType} : « ${preview} »\n→ Ouvre la conv et fais un screen (ou screen recording si vocal) pour l'Insta 🎬`;
+                const reviewTargets = [...OPERATOR_PHONES];
+                if (MERCHANT_PHONE && !reviewTargets.includes(MERCHANT_PHONE)) reviewTargets.push(MERCHANT_PHONE);
+                for (const _t of reviewTargets) {
+                  try { await sendAndQueue(integrationId, _t, notif); } catch (e) {}
+                }
                 entry.reviewNotified = true;
               } catch (e) { entry.reviewNotified = 'err'; }
             }
