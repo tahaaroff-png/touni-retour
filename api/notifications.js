@@ -81,7 +81,7 @@ async function metaMetrics(req, res) {
 
     const ads = insAd.map(r => {
       const sp = parseFloat(r.spend || 0), pur = sumActions(r.actions, PUR), val = sumActions(r.action_values, PUR);
-      return { name: r.ad_name, campaign: r.campaign_name, spend_usd: +sp.toFixed(2),
+      return { name: r.ad_name, ad_id: r.ad_id, campaign: r.campaign_name, spend_usd: +sp.toFixed(2),
         roas: sp ? +(val / sp).toFixed(1) : 0, purchases: pur, ctr: +parseFloat(r.ctr || 0).toFixed(2),
         is_test: (r.campaign_name || '').startsWith('[TEST]'),
         active: adStatus[r.ad_id] === 'ACTIVE' };
@@ -90,7 +90,7 @@ async function metaMetrics(req, res) {
     // Alertes "à couper" : SEULEMENT les créas ACTIVES (pas celles déjà coupées) au-dessus du seuil sans vente
     const alerts = ads.filter(a => a.active && a.purchases === 0 && a.spend_usd >= (a.is_test ? 6 : 8))
       .sort((a, b) => b.spend_usd - a.spend_usd)
-      .map(a => ({ name: a.name, campaign: a.campaign, spend_usd: a.spend_usd, seuil: a.is_test ? 6 : 8 }));
+      .map(a => ({ name: a.name, ad_id: a.ad_id, campaign: a.campaign, spend_usd: a.spend_usd, seuil: a.is_test ? 6 : 8 }));
     const test_abo = ads.filter(a => a.is_test && a.spend_usd > 0).sort((a, b) => b.spend_usd - a.spend_usd);
 
     return res.status(200).json({
