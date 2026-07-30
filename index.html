@@ -82,6 +82,8 @@ input:focus,select:focus{border-color:var(--border-strong)}
 input::placeholder{color:var(--muted2)}
 .sw{position:relative}
 .sw input{padding-left:36px}
+.modal .sw::before{display:none}
+.modal .sw input{padding-left:14px}
 .sw::before{content:'';position:absolute;left:11px;top:50%;transform:translateY(-50%);width:14px;height:14px;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23858585' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.35-4.35'/%3E%3C/svg%3E") center/contain no-repeat;pointer-events:none}
 .dd{position:absolute;top:calc(100% + 5px);left:0;right:0;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);max-height:320px;overflow-y:auto;z-index:400;display:none;box-shadow:0 12px 40px rgba(0,0,0,.12)}
 .dd.open{display:block}
@@ -434,9 +436,11 @@ td{padding:11px 11px;vertical-align:middle}
         <div class="sw" style="position:relative">
           <input type="text" id="m-product" autocomplete="off" placeholder="Rechercher un produit...">
           <div class="dd" id="m-dd"></div>
+          <input type="hidden" id="m-image">
         </div>
       </div>
-      <div class="mf full"><label>Taille / Couleur</label><input type="text" id="m-size"></div>
+      <div class="mf full"><label>Taille</label><select id="m-size"><option value="">— Taille —</option></select></div>
+      <div class="mf full" id="m-fg-color" style="display:none"><label>Couleur / Variante</label><select id="m-color"><option value="">— Couleur —</option></select></div>
       <div class="mf full"><label>Quantité</label>
         <div class="qty-ctrl">
           <button class="qty-btn" onclick="adjQty(-1)">−</button>
@@ -650,6 +654,23 @@ function pick(t,img,szStr,clrStr) {
 document.addEventListener('click', function(e){ if(!e.target.closest('.sw')){ dd.classList.remove('open'); var _md=document.getElementById('m-dd'); if(_md) _md.classList.remove('open'); } });
 pi.addEventListener('focus', function(){ if(pi.value.length>=2) dd.classList.add('open'); });
 
+// Remplit les listes Taille/Couleur du modal d'édition selon le produit
+function fillEditSizes(sizes, colors, curSize, curColor){
+  var ms=document.getElementById('m-size'), mc=document.getElementById('m-color'), fg=document.getElementById('m-fg-color');
+  if(!ms) return;
+  var lc=function(x){ return String(x).toLowerCase(); };
+  ms.innerHTML='<option value="">— Taille —</option>';
+  var szList=(sizes||[]).map(String).filter(Boolean);
+  if(curSize && szList.map(lc).indexOf(lc(curSize))===-1) szList.unshift(curSize);
+  szList.forEach(function(s){ var o=document.createElement('option'); o.textContent=s; if(lc(s)===lc(curSize||'')) o.selected=true; ms.appendChild(o); });
+  if(mc){
+    mc.innerHTML='<option value="">— Couleur —</option>';
+    var clList=(colors||[]).map(String).filter(Boolean);
+    if(curColor && clList.map(lc).indexOf(lc(curColor))===-1) clList.unshift(curColor);
+    if(clList.length){ clList.forEach(function(c){ var o=document.createElement('option'); o.textContent=c; if(lc(c)===lc(curColor||'')) o.selected=true; mc.appendChild(o); }); if(fg) fg.style.display=''; }
+    else if(fg) fg.style.display='none';
+  }
+}
 // AUTOCOMPLÉTION du champ Produit dans le modal d'édition (#m-product) — même catalogue CAT que l'ajout
 (function(){
   var mpi=document.getElementById('m-product'), mdd=document.getElementById('m-dd');
@@ -665,9 +686,14 @@ pi.addEventListener('focus', function(){ if(pi.value.length>=2) dd.classList.add
       var szTxt=p.sizes.slice(0,6).map(function(s){ return s.toUpperCase(); }).join(' · ');
       var clrTxt=(p.colors||[]).slice(0,4).join(' · ');
       var sub=szTxt+(clrTxt?' | '+clrTxt:'');
-      return '<div class="ddi" data-t="'+p.title.replace(/"/g,'&quot;')+'">'+imgTag+'<div class="ddi-ph" '+phStyle+'>👕</div><div class="ddi-info"><div class="ddi-name">'+p.title+'</div><div class="ddi-sizes">'+(sub||'Taille unique')+'</div></div></div>';
+      return '<div class="ddi" data-t="'+p.title.replace(/"/g,'&quot;')+'" data-img="'+(p.image||'')+'" data-sizes="'+p.sizes.join(',')+'" data-colors="'+(p.colors||[]).join(',')+'">'+imgTag+'<div class="ddi-ph" '+phStyle+'>👕</div><div class="ddi-info"><div class="ddi-name">'+p.title+'</div><div class="ddi-sizes">'+(sub||'Taille unique')+'</div></div></div>';
     }).join('');
-    mdd.querySelectorAll('.ddi').forEach(function(el){ el.addEventListener('click', function(){ mpi.value=el.dataset.t; mdd.classList.remove('open'); mpi.focus(); }); });
+    mdd.querySelectorAll('.ddi').forEach(function(el){ el.addEventListener('click', function(){
+      mpi.value=el.dataset.t;
+      var mimg=document.getElementById('m-image'); if(mimg) mimg.value=el.dataset.img||'';
+      fillEditSizes((el.dataset.sizes||'').split(',').filter(Boolean),(el.dataset.colors||'').split(',').filter(Boolean),'','');
+      mdd.classList.remove('open');
+    }); });
     mdd.classList.add('open');
   });
   mpi.addEventListener('focus', function(){ if(mpi.value.length>=2 && mdd.innerHTML) mdd.classList.add('open'); });
@@ -730,7 +756,13 @@ function openModal(id) {
   var it=stock.find(function(i){ return i.id===id; });
   if(!it) return; editId=id;
   document.getElementById('m-product').value=it.product||'';
-  document.getElementById('m-size').value=it.size||'';
+  var _mimg=document.getElementById('m-image'); if(_mimg) _mimg.value=it.image||'';
+  (function(){
+    var parts=(it.size||'').split('|');
+    var curSize=(parts[0]||'').trim(), curColor=(parts[1]||'').trim();
+    var prod=CAT.find(function(p){ return (p.title||'').toLowerCase()===(it.product||'').toLowerCase(); });
+    fillEditSizes(prod?prod.sizes:[], prod?prod.colors:[], curSize, curColor);
+  })();
   document.getElementById('m-qty').value=it.qty||0;
   document.getElementById('m-exit-date').value=it.exit_date?it.exit_date.split('T')[0]:'';
   document.getElementById('m-notes').value=it.notes||'';
@@ -746,7 +778,8 @@ async function saveModal() {
   var wasPushed=prevItem?!!prevItem.shopify_pushed_at:false;
   var changes={
     product:document.getElementById('m-product').value.trim(),
-    size:document.getElementById('m-size').value.trim(),
+    image:(document.getElementById('m-image')||{}).value||'',
+    size:buildSizeValue(document.getElementById('m-size').value, (document.getElementById('m-color')||{}).value||''),
     qty:parseInt(document.getElementById('m-qty').value)||0,
     status:document.getElementById('m-status').value,
     exit_date:document.getElementById('m-exit-date').value||null,
