@@ -430,7 +430,12 @@ td{padding:11px 11px;vertical-align:middle}
       <button class="qb qb-autre" onclick="qbPick('autre')"><span>📋</span>Autre</button>
     </div>
     <div class="modal-grid">
-      <div class="mf full"><label>Produit</label><input type="text" id="m-product"></div>
+      <div class="mf full"><label>Produit</label>
+        <div class="sw" style="position:relative">
+          <input type="text" id="m-product" autocomplete="off" placeholder="Rechercher un produit...">
+          <div class="dd" id="m-dd"></div>
+        </div>
+      </div>
       <div class="mf full"><label>Taille / Couleur</label><input type="text" id="m-size"></div>
       <div class="mf full"><label>Quantité</label>
         <div class="qty-ctrl">
@@ -642,8 +647,31 @@ function pick(t,img,szStr,clrStr) {
     fg.classList.remove('visible');
   }
 }
-document.addEventListener('click', function(e){ if(!e.target.closest('.sw')) dd.classList.remove('open'); });
+document.addEventListener('click', function(e){ if(!e.target.closest('.sw')){ dd.classList.remove('open'); var _md=document.getElementById('m-dd'); if(_md) _md.classList.remove('open'); } });
 pi.addEventListener('focus', function(){ if(pi.value.length>=2) dd.classList.add('open'); });
+
+// AUTOCOMPLÉTION du champ Produit dans le modal d'édition (#m-product) — même catalogue CAT que l'ajout
+(function(){
+  var mpi=document.getElementById('m-product'), mdd=document.getElementById('m-dd');
+  if(!mpi || !mdd) return;
+  mpi.addEventListener('input', function(){
+    var q=mpi.value.trim().toLowerCase();
+    if(q.length<2){ mdd.classList.remove('open'); return; }
+    var hits=CAT.filter(function(p){ return p.title.toLowerCase().includes(q); }).slice(0,40);
+    if(!hits.length){ mdd.innerHTML='<div class="dd-empty">Aucun résultat</div>'; mdd.classList.add('open'); return; }
+    mdd.innerHTML=hits.map(function(p){
+      var imgTag=p.image?'<img class="ddi-img" src="'+p.image+'" alt="" onerror="this.style.display=\'none\';this.nextSibling.style.display=\'flex\'">':'';
+      var phStyle=p.image?'style="display:none"':'';
+      var szTxt=p.sizes.slice(0,6).map(function(s){ return s.toUpperCase(); }).join(' · ');
+      var clrTxt=(p.colors||[]).slice(0,4).join(' · ');
+      var sub=szTxt+(clrTxt?' | '+clrTxt:'');
+      return '<div class="ddi" data-t="'+p.title.replace(/"/g,'&quot;')+'">'+imgTag+'<div class="ddi-ph" '+phStyle+'>👕</div><div class="ddi-info"><div class="ddi-name">'+p.title+'</div><div class="ddi-sizes">'+(sub||'Taille unique')+'</div></div></div>';
+    }).join('');
+    mdd.querySelectorAll('.ddi').forEach(function(el){ el.addEventListener('click', function(){ mpi.value=el.dataset.t; mdd.classList.remove('open'); mpi.focus(); }); });
+    mdd.classList.add('open');
+  });
+  mpi.addEventListener('focus', function(){ if(mpi.value.length>=2 && mdd.innerHTML) mdd.classList.add('open'); });
+})();
 
 // ADD
 async function addItem() {
