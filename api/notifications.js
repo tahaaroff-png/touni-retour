@@ -4,7 +4,28 @@
 // PATCH /api/notifications?secret=...&id=XXX → marquer comme lu/archivé
 // DELETE /api/notifications?secret=...&id=XXX → supprimer
 
-const { SB_URL, supabaseHeaders } = require('./_shopify-helpers.js');
+const { SB_URL, supabaseHeaders, shopifyAdminHeaders, SHOPIFY_DOMAIN, SHOPIFY_API_VERSION } = require('./_shopify-helpers.js');
+
+// Inscription newsletter « Le Vestiaire » (footer du site, public, sans reCAPTCHA).
+async function newsletterSignup(req, res) {
+  if (req.method !== 'POST') return res.status(405).json({ ok: false, error: 'Method not allowed' });
+  let body = req.body;
+  if (typeof body === 'string') { try { body = JSON.parse(body); } catch (e) { body = {}; } }
+  const email = ((body && body.email) || '').trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ ok: false, error: 'Email invalide' });
+  try {
+    const headers = await shopifyAdminHeaders();
+    const url = `https://${SHOPIFY_DOMAIN}/admin/api/${SHOPIFY_API_VERSION}/customers.json`;
+    const payload = { customer: { email, tags: 'newsletter', email_marketing_consent: { state: 'subscribed', opt_in_level: 'single_opt_in' } } };
+    const r = await fetch(url, { method: 'POST', headers, body: JSON.stringify(payload) });
+    if (r.ok) return res.status(200).json({ ok: true, status: 'subscribed' });
+    const txt = await r.text();
+    if (r.status === 422 && /already been taken|has already|déjà/i.test(txt)) return res.status(200).json({ ok: true, status: 'already' });
+    return res.status(502).json({ ok: false, error: 'Shopify: ' + txt.slice(0, 160) });
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+}
 
 // ════════ Métriques Meta Ads (fusionné ici pour rester sous la limite de 12 fonctions Vercel) ════════
 const GRAPH = 'https://graph.facebook.com/v21.0';
@@ -115,6 +136,9 @@ module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Methods', 'GET, PATCH, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Sync-Secret');
   if (req.method === 'OPTIONS') return res.status(204).end();
+
+  // Inscription newsletter (PUBLIC — appelé par le footer du site, avant le guard secret)
+  if (req.query?.newsletter) return newsletterSignup(req, res);
 
   // FIX: Auth guard — protect all methods (not just mutation) to avoid exposing order data
   const expectedSecret = process.env.SYNC_SECRET || 'touni-sync-2026';
