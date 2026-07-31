@@ -815,6 +815,50 @@ async function transcribeAudio(url) {
     return tj && tj.text ? String(tj.text).trim() : '';
   } catch (e) { return ''; }
 }
+// Télécharge une image WhatsApp de façon ROBUSTE. eGrow ré-héberge normalement le
+// média sur son CDN public (cdn5.egrow.com). Si l'URL directe échoue (média pas
+// encore ré-hébergé au moment du poll, URL Meta expirée, page d'erreur renvoyée à
+// la place des octets…), on retombe sur l'API officielle Meta Graph via l'ID du
+// média (URL fraîche signée + token). Valide que ce sont bien des octets d'image
+// (magic bytes) pour ne jamais envoyer une page d'erreur à la vision. Retourne
+// {base64, mime} ou null, et journalise l'échec pour diagnostic.
+function _detectImageMime(buf) {
+  if (!buf || buf.length < 12) return null;
+  if (buf[0] === 0xFF && buf[1] === 0xD8) return 'image/jpeg';
+  if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4E && buf[3] === 0x47) return 'image/png';
+  if (buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46) return 'image/gif';
+  if (buf.slice(0, 4).toString('ascii') === 'RIFF' && buf.slice(8, 12).toString('ascii') === 'WEBP') return 'image/webp';
+  return null;
+}
+async function fetchWaImage(b) {
+  const MAX = 4000000; // garde-fou coût/limite vision
+  const tryUrl = async (url, withToken) => {
+    try {
+      const headers = { 'User-Agent': EGROW_UA };
+      if (withToken && META_WA_TOKEN) headers.Authorization = 'Bearer ' + META_WA_TOKEN;
+      const r = await fetch(url, { headers });
+      if (!r.ok) return null;
+      const buf = Buffer.from(await r.arrayBuffer());
+      if (!buf.length || buf.length >= MAX) return null;
+      const mime = _detectImageMime(buf); // magic bytes → mime FIABLE pour l'API vision
+      if (!mime) return null;              // pas une image (page HTML/JSON d'erreur, octet-stream vide…)
+      return { base64: buf.toString('base64'), mime };
+    } catch (e) { return null; }
+  };
+  const isMetaHost = /lookaside\.fbsbx|whatsapp\.net|graph\.facebook/i.test(b.url || '');
+  // 1) URL directe (CDN eGrow = public ; host Meta = nécessite le token)
+  let out = b.url ? await tryUrl(b.url, isMetaHost) : null;
+  // 2) Fallback officiel Meta : media-id → URL fraîche → fetch avec token
+  if (!out && b.id && META_WA_TOKEN) {
+    try {
+      const mr = await fetch('https://graph.facebook.com/v21.0/' + encodeURIComponent(b.id), { headers: { Authorization: 'Bearer ' + META_WA_TOKEN } });
+      const mj = await mr.json().catch(() => ({}));
+      if (mj && mj.url) out = await tryUrl(mj.url, true);
+    } catch (e) {}
+  }
+  if (!out) console.warn('[vision] image non téléchargée', JSON.stringify({ url: String(b.url || '').slice(0, 90), id: b.id || '', hasMetaToken: !!META_WA_TOKEN }));
+  return out;
+}
 async function searchCatalog(text) {
   try {
     const norm = String(text || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
@@ -985,16 +1029,13 @@ async function runPoll(q) {
             if (mine) break;                                   // un message du bot coupe la rafale
             if (String(m.type || '') !== 'image') { if (burst.length) break; else continue; }
             const u = (m.content && m.content.url) || '';
-            if (u) burst.push({ url: u, mime: (m.content && m.content.mime_type) || 'image/jpeg' });
+            if (u) burst.push({ url: u, mime: (m.content && m.content.mime_type) || 'image/jpeg', id: (m.content && m.content.id) || '' });
             if (burst.length >= 4) break;                      // garde-fou coût (max 4 photos)
           }
-          if (!burst.length) { const u = (lm.content && lm.content.url) || ''; if (u) burst.push({ url: u, mime: (lm.content && lm.content.mime_type) || 'image/jpeg' }); }
+          if (!burst.length) { const u = (lm.content && lm.content.url) || ''; if (u) burst.push({ url: u, mime: (lm.content && lm.content.mime_type) || 'image/jpeg', id: (lm.content && lm.content.id) || '' }); }
           for (const b of burst.reverse()) {                   // ordre chronologique (ancienne → récente)
-            try {
-              const ir = await fetch(b.url);
-              const buf = Buffer.from(await ir.arrayBuffer());
-              if (buf.length && buf.length < 4000000) images.push({ base64: buf.toString('base64'), mime: b.mime });
-            } catch (e) {}
+            const img = await fetchWaImage(b);                 // download robuste (CDN eGrow + fallback Meta media-id + validation)
+            if (img) images.push(img);
           }
           if (!images.length) { await releaseClaim(msgId); continue; }
         }
