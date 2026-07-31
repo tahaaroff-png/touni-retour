@@ -1367,10 +1367,13 @@ var EGROW_ANNULES = new Set(['Annuler Wtsp','Annuler autres','Annuler pas de rep
 
 async function fetchEgrow(){
   // ⚠️ L'API eGrow renvoie HTTP 500 dès limit≈2000 (seuil atteint depuis que le
-  // compte a grossi) → un seul gros appel plante et met le dashboard "hors ligne".
-  // FIX : on pagine par lots de 1000 (offset supporté ; le param `page` est ignoré)
-  // en parallèle, puis on dédoublonne. egrowStats() re-filtre par période côté
-  // client, donc sur-récupérer est sans risque.
+  // compte a grossi) → l'ancien appel limit=2000 plantait et mettait le dashboard
+  // "🔴 hors ligne", ce qui bloquait au passage le calcul de la commission
+  // confirmation (0 livrée → 0 MAD).
+  // Le param `offset` est IGNORÉ par l'API (testé : les pages se dupliquent), donc
+  // la pagination n'apporte rien. FIX : on demande le plus gros lot qui répond en
+  // 200, soit limit=1500 (~1500 commandes distinctes, couvre >45j — largement au-delà
+  // du mois affiché). egrowStats() re-filtre ensuite par période côté client.
   // Fenêtre large : 45j avant filterFrom pour capturer les commandes créées avant
   // la période mais livrées dedans.
   var from='';
@@ -1379,23 +1382,10 @@ async function fetchEgrow(){
     var extTo=new Date(filterTo.getTime()+2*24*60*60*1000); // +2j buffer
     from='&from='+Math.floor(extFrom.getTime()/1000)+'&to='+Math.floor(extTo.getTime()/1000);
   }
-  var PAGE=1000, PAGES=4; // jusqu'à 4000 commandes (~130j au volume actuel)
-  var reqs=[];
-  for(var i=0;i<PAGES;i++){
-    var url='https://api.egrow.com/deal/getStageDeals.php?me='+EGROW_ME+'&dev=0&limit='+PAGE+'&offset='+(i*PAGE)+from;
-    reqs.push(
-      fetch(url,{headers:{'Account-Key':EGROW_KEY}})
-        .then(function(r){ return r.ok ? r.json() : []; })
-        .then(function(d){ return Array.isArray(d)?d:[]; })
-        .catch(function(){ return []; })
-    );
-  }
-  var pages=await Promise.all(reqs);
-  var all=[].concat.apply([],pages);
-  var seen={}, uniq=[];
-  all.forEach(function(d){ var k=d.id||d.deal_uid||d.number; if(k&&!seen[k]){seen[k]=1;uniq.push(d);} });
-  if(!uniq.length) throw new Error('eGrow: aucune donnée (API indisponible)');
-  egrowDeals=uniq;
+  var r=await fetch('https://api.egrow.com/deal/getStageDeals.php?me='+EGROW_ME+'&dev=0&limit=1500'+from,{headers:{'Account-Key':EGROW_KEY}});
+  if(!r.ok) throw new Error('eGrow HTTP '+r.status);
+  var data=await r.json();
+  egrowDeals=Array.isArray(data)?data:[];
 }
 
 // Stages comptant comme "expédié" pour le calcul des frais Ozone
