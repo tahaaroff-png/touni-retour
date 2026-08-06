@@ -4,9 +4,19 @@
 // PATCH /api/notifications?secret=...&id=XXX → marquer comme lu/archivé
 // DELETE /api/notifications?secret=...&id=XXX → supprimer
 
-const { SB_URL, supabaseHeaders, shopifyAdminHeaders, SHOPIFY_DOMAIN, SHOPIFY_API_VERSION } = require('./_shopify-helpers.js');
-// Réutilise la logique de matching du webhook (fonctions exportées) — pour rester sous la limite de 12 fonctions Vercel
-const { findMatchingStock, parseVariantTitle } = require('./shopify-order-webhook.js');
+const { SB_URL, supabaseHeaders, shopifyAdminHeaders, SHOPIFY_DOMAIN, SHOPIFY_API_VERSION, normalizeSize, normalizeColor } = require('./_shopify-helpers.js');
+// Réutilise le parsing du webhook (fonction exportée) — pour rester sous la limite de 12 fonctions Vercel
+const { parseVariantTitle } = require('./shopify-order-webhook.js');
+
+// Similarité de titres (identique au webhook) — pour le matching flou EN MÉMOIRE (évite les fetch par ligne = timeout)
+function jaccardSim(a, b) {
+  const tok = s => new Set(String(s).toLowerCase().replace(/[^a-z0-9]/g, ' ').split(/\s+/).filter(Boolean));
+  const sa = tok(a), sb = tok(b);
+  if (!sa.size || !sb.size) return 0;
+  let inter = 0; for (const t of sa) if (sb.has(t)) inter++;
+  return inter / (sa.size + sb.size - inter);
+}
+const SCAN_FUZZY_THRESHOLD = 0.55;
 
 // Inscription newsletter « Le Vestiaire » (footer du site, public, sans reCAPTCHA).
 async function newsletterSignup(req, res) {
@@ -202,6 +212,39 @@ async function scanOrdersStock(req, res) {
       pages++;
     }
 
+    // Charger TOUT le stock interne dispo UNE fois (retour + acheté, qty>0) → matching en mémoire (pas de fetch par ligne)
+    const stockRows = [];
+    for (let off = 0; ; off += 1000) {
+      const r = await fetch(`${SB_URL}/rest/v1/stock?select=id,product,size,qty,status&qty=gt.0&status=in.(retour,stock)&limit=1000&offset=${off}`, { headers: supabaseHeaders(true) });
+      if (!r.ok) break;
+      const rows = await r.json();
+      stockRows.push(...rows);
+      if (rows.length < 1000) break;
+    }
+    const stockByTitle = new Map();
+    for (const s of stockRows) { if (!s.product) continue; if (!stockByTitle.has(s.product)) stockByTitle.set(s.product, []); stockByTitle.get(s.product).push(s); }
+    const stockTitles = [...stockByTitle.keys()];
+
+    const matchStock = (productTitle, size, color) => {
+      const normSize = normalizeSize(size), normColor = normalizeColor(color);
+      const bySizeColor = rows => rows.filter(c => {
+        const parts = String(c.size || '').split('|');
+        const cSize = (parts[0] || '').trim(), cColor = (parts[1] || '').trim();
+        if (normalizeSize(cSize) !== normSize) return false;
+        if (normColor && normalizeColor(cColor) !== normColor) return false;
+        return true;
+      });
+      // 1) titre exact
+      let cand = stockByTitle.get(productTitle) || [];
+      let m = bySizeColor(cand);
+      if (m.length) return m;
+      // 2) flou (jaccard) sur les titres chargés
+      let best = null, bestScore = 0;
+      for (const t of stockTitles) { const sc = jaccardSim(productTitle, t); if (sc > bestScore) { bestScore = sc; best = t; } }
+      if (best && bestScore >= SCAN_FUZZY_THRESHOLD) return bySizeColor(stockByTitle.get(best) || []);
+      return [];
+    };
+
     const notifications = [];
     let scannedItems = 0;
     for (const order of orders) {
@@ -217,7 +260,7 @@ async function scanOrdersStock(req, res) {
         if (!productTitle) continue;
         scannedItems++;
         const { size, color } = parseVariantTitle(item.variant_title || '');
-        const matches = await findMatchingStock(productTitle, size, color);
+        const matches = matchStock(productTitle, size, color);
         if (!matches.length) continue;
         notifications.push({
           shopify_order_id: order.id,
