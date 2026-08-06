@@ -121,7 +121,11 @@ tbody tr:last-child{border-bottom:none}
 tbody tr:hover{background:var(--bg-soft)}
 td{padding:11px 11px;vertical-align:middle}
 .prod-cell{display:flex;align-items:center;gap:10px}
-.prod-thumb{width:40px;height:40px;object-fit:cover;border-radius:var(--radius-btn);border:1px solid var(--border);flex-shrink:0;background:var(--bg-soft)}
+.prod-thumb{width:40px;height:40px;object-fit:cover;border-radius:var(--radius-btn);border:1px solid var(--border);flex-shrink:0;background:var(--bg-soft);cursor:zoom-in}
+.lightbox{display:none;position:fixed;inset:0;background:rgba(0,0,0,.86);z-index:1000;align-items:center;justify-content:center;padding:20px;cursor:zoom-out}
+.lightbox.show{display:flex}
+.lightbox img{max-width:100%;max-height:100%;object-fit:contain;border-radius:10px;box-shadow:0 8px 40px rgba(0,0,0,.5)}
+.lightbox .x{position:absolute;top:12px;right:18px;color:#fff;font-size:40px;line-height:1;font-weight:300;cursor:pointer;opacity:.9;z-index:1010;width:48px;height:48px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:rgba(0,0,0,.35)}
 .prod-ph{width:40px;height:40px;border-radius:var(--radius-btn);border:1px solid var(--border);flex-shrink:0;background:var(--bg-soft);display:flex;align-items:center;justify-content:center;font-size:16px}
 .pname{font-weight:500;color:var(--text);max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
 .nnum{color:var(--muted2);font-size:11px;font-family:var(--font-main);font-variant-numeric:tabular-nums}
@@ -468,6 +472,9 @@ td{padding:11px 11px;vertical-align:middle}
 </div>
 
 <script>
+function openImg(src){ if(!src)return; document.getElementById('lightbox-img').src=src; document.getElementById('lightbox').classList.add('show'); }
+function closeImg(){ document.getElementById('lightbox').classList.remove('show'); }
+document.addEventListener('keydown',function(e){ if(e.key==='Escape')closeImg(); });
 const SB_URL = 'https://dwjjrgjbkftejdcmwpgc.supabase.co';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR3ampyZ2pia2Z0ZWpkY213cGdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU0NzI2MDYsImV4cCI6MjA5MTA0ODYwNn0.6GxM9u1Om7zP-_MEYVhdtHBESyGLDZGFofxSKGwixPo';
 const PWD_ADMIN = 'Fitfat25!';
@@ -869,7 +876,7 @@ function render() {
   tb.innerHTML=rows.map(function(it,i){
     var ok=it.qty>0;
     var badge=ok?'<span class="badge b-ok"><span class="dot dg"></span>Dispo</span>':'<span class="badge b-ko"><span class="dot dr"></span>Rupture</span>';
-    var imgHtml=it.image?'<img class="prod-thumb" src="'+it.image+'" alt="" onerror="this.style.display=\'none\'">':'<div class="prod-ph">👕</div>';
+    var imgHtml=it.image?'<img class="prod-thumb" src="'+it.image+'" alt="" onclick="openImg(this.src)" onerror="this.style.display=\'none\'">':'<div class="prod-ph">👕</div>';
     var szDisplay='<b>'+(normalizeSize(parseSizePart(it.size))||parseSizePart(it.size)||'—')+'</b>'+(parseColorPart(it.size)?'<span style="font-size:11px;color:var(--muted);margin-left:6px">'+parseColorPart(it.size)+'</span>':'');
     var id=it.id;
     // Badge Shopify push
@@ -1361,5 +1368,6 @@ if (_role === 'admin' || _role === 'staff') {
   startApp();
 }
 </script>
+<div class="lightbox" id="lightbox" onclick="closeImg()"><span class="x" onclick="event.stopPropagation();closeImg()">&times;</span><img id="lightbox-img" src="" alt="" onclick="event.stopPropagation()"></div>
 </body>
 </html>
