@@ -5,6 +5,8 @@
 // DELETE /api/notifications?secret=...&id=XXX → supprimer
 
 const { SB_URL, supabaseHeaders, shopifyAdminHeaders, SHOPIFY_DOMAIN, SHOPIFY_API_VERSION } = require('./_shopify-helpers.js');
+// Réutilise la logique de matching du webhook (fonctions exportées) — pour rester sous la limite de 12 fonctions Vercel
+const { findMatchingStock, parseVariantTitle } = require('./shopify-order-webhook.js');
 
 // Inscription newsletter « Le Vestiaire » (footer du site, public, sans reCAPTCHA).
 async function newsletterSignup(req, res) {
@@ -131,9 +133,129 @@ async function metaMetrics(req, res) {
   }
 }
 
+// ════════ Action « Expédier depuis le stock interne » (POST ?action=ship&id=...) ════════
+// Décrémente la quantité du stock interne de la quantité commandée, puis archive la notif.
+// Ex : dispo 2, commande 1 → reste 1. Si ça tombe à 0 → rupture (qty 0).
+async function shipFromStock(req, res) {
+  const notifId = req.query?.id || (req.body && req.body.id);
+  if (!notifId) return res.status(400).json({ error: 'id (notification) requis' });
+  const sb = (path, opts = {}) => fetch(`${SB_URL}/rest/v1/${path}`, { ...opts, headers: { ...supabaseHeaders(true), ...(opts.headers || {}) } });
+  try {
+    const nRes = await sb(`shopify_notifications?id=eq.${encodeURIComponent(notifId)}&select=*`);
+    if (!nRes.ok) return res.status(500).json({ error: 'lecture notif échouée', detail: await nRes.text() });
+    const notif = (await nRes.json())[0];
+    if (!notif) return res.status(404).json({ error: 'notification introuvable' });
+
+    const stockIds = Array.isArray(notif.matched_stock_ids) ? notif.matched_stock_ids : [];
+    // Décrémenter par la quantité COMMANDÉE (pas le stock dispo). Ex : stock 2, commande 1 → reste 1.
+    let toShip = Number(notif.ordered_qty) || 1;
+    if (!stockIds.length) {
+      await sb(`shopify_notifications?id=eq.${encodeURIComponent(notifId)}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ status: 'archived' }) });
+      return res.status(200).json({ ok: true, warning: 'aucun stock lié', shipped: 0 });
+    }
+
+    const updates = [];
+    for (const sid of stockIds) {
+      if (toShip <= 0) break;
+      const sRes = await sb(`stock?id=eq.${encodeURIComponent(sid)}&select=id,product,size,qty,status`);
+      if (!sRes.ok) continue;
+      const sItem = (await sRes.json())[0];
+      if (!sItem) continue;
+      const have = Number(sItem.qty) || 0;
+      if (have <= 0) continue;
+      const take = Math.min(have, toShip);
+      const newQty = have - take;
+      await sb(`stock?id=eq.${encodeURIComponent(sid)}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ qty: newQty }) });
+      updates.push({ id: sid, product: sItem.product, size: sItem.size, before: have, shipped: take, after: newQty, rupture: newQty === 0 });
+      toShip -= take;
+    }
+
+    await sb(`shopify_notifications?id=eq.${encodeURIComponent(notifId)}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ status: 'archived' }) });
+    const totalShipped = updates.reduce((s, u) => s + u.shipped, 0);
+    return res.status(200).json({ ok: true, notif_id: notifId, product: notif.product_title, customer: notif.customer_name, shipped: totalShipped, remaining_unfulfilled: Math.max(0, toShip), updates });
+  } catch (e) {
+    console.error('[ship-from-stock] Error:', e.message);
+    return res.status(500).json({ error: e.message });
+  }
+}
+
+// ════════ Action « Synchroniser » — re-scan commandes ↔ stock interne (POST ?action=scan&days=7) ════════
+// Rattrape les commandes dont un produit est dispo au stock (retour OU acheté) au cas où le webhook aurait raté.
+async function scanOrdersStock(req, res) {
+  try {
+    const days = Math.min(30, Math.max(1, Number(req.query?.days) || 7));
+    // Date de départ sans Date.now() interdit ? non — ceci tourne en runtime Vercel, Date est OK côté serveur
+    const sinceIso = new Date(Date.now() - days * 86400000).toISOString();
+
+    const orders = [];
+    let url = `https://${SHOPIFY_DOMAIN}/admin/api/${SHOPIFY_API_VERSION}/orders.json?status=any&created_at_min=${encodeURIComponent(sinceIso)}&limit=250&fields=id,name,order_number,customer,shipping_address,line_items,total_price,created_at,cancelled_at,fulfillment_status`;
+    const hdrs = await shopifyAdminHeaders();
+    let pages = 0;
+    while (url && pages < 6) {
+      const r = await fetch(url, { headers: hdrs });
+      if (!r.ok) break;
+      const d = await r.json();
+      orders.push(...(d.orders || []));
+      const link = r.headers.get('link') || '';
+      const m = link.match(/<([^>]+)>;\s*rel="next"/);
+      url = m ? m[1] : null;
+      pages++;
+    }
+
+    const notifications = [];
+    let scannedItems = 0;
+    for (const order of orders) {
+      if (order.cancelled_at) continue;
+      if (order.fulfillment_status === 'fulfilled') continue;
+      const orderName = order.name || `#${order.id}`;
+      const cust = order.customer || order.shipping_address || {};
+      const customerName = [cust.first_name, cust.last_name].filter(Boolean).join(' ') || order.shipping_address?.name || 'Client';
+      const customerCity = order.shipping_address?.city || cust.city || '';
+      const totalAmount = parseFloat(order.total_price || 0);
+      for (const item of (order.line_items || [])) {
+        const productTitle = item.title || (item.name || '').split(' - ')[0] || '';
+        if (!productTitle) continue;
+        scannedItems++;
+        const { size, color } = parseVariantTitle(item.variant_title || '');
+        const matches = await findMatchingStock(productTitle, size, color);
+        if (!matches.length) continue;
+        notifications.push({
+          shopify_order_id: order.id,
+          shopify_order_number: orderName,
+          customer_name: customerName,
+          customer_city: customerCity,
+          product_title: productTitle,
+          variant_size: size,
+          variant_color: color,
+          shopify_variant_id: item.variant_id ? String(item.variant_id) : null,
+          matched_stock_ids: matches.map(m => m.id),
+          matched_qty: matches.reduce((s, m) => s + (m.qty || 0), 0),
+          ordered_qty: Number(item.quantity) || 1,
+          total_amount_mad: totalAmount,
+        });
+      }
+    }
+
+    let created = 0;
+    if (notifications.length) {
+      const insRes = await fetch(`${SB_URL}/rest/v1/shopify_notifications?on_conflict=shopify_order_id,shopify_variant_id`, {
+        method: 'POST',
+        headers: { ...supabaseHeaders(true), Prefer: 'resolution=ignore-duplicates,return=representation' },
+        body: JSON.stringify(notifications),
+      });
+      if (insRes.ok) { const ins = await insRes.json(); created = Array.isArray(ins) ? ins.length : 0; }
+    }
+
+    return res.status(200).json({ ok: true, orders_scanned: orders.length, items_scanned: scannedItems, matches: notifications.length, new_notifications: created });
+  } catch (e) {
+    console.error('[scan-orders-stock] Error:', e.message);
+    return res.status(500).json({ error: e.message });
+  }
+}
+
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, PATCH, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Sync-Secret');
   if (req.method === 'OPTIONS') return res.status(204).end();
 
@@ -149,6 +271,10 @@ module.exports = async function handler(req, res) {
 
   // Vue Directeur Meta Ads (live)
   if (req.method === 'GET' && req.query?.meta) return metaMetrics(req, res);
+
+  // Actions « Commandes en stock » (page dédiée)
+  if (req.method === 'POST' && req.query?.action === 'ship') return shipFromStock(req, res);
+  if (req.method === 'POST' && req.query?.action === 'scan') return scanOrdersStock(req, res);
 
   try {
     if (req.method === 'GET') {

@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>📦 Commandes en stock — Touni</title>
+<link rel="icon" href="/favicon.svg">
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--text:#151515;--muted:#6b7280;--border:#e5e7eb;--green:#16a34a;--red:#dc2626;--blue:#2563eb;--radius:12px;--font:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--font);background:var(--bg);color:var(--text);padding:14px;max-width:900px;margin:0 auto}
+header{position:sticky;top:0;background:var(--bg);padding:8px 0 12px;z-index:5}
+h1{font-size:20px;display:flex;align-items:center;gap:8px}
+.sub{color:var(--muted);font-size:12px;margin-top:3px}
+.bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:12px}
+.filters{display:flex;gap:6px}
+.chip{background:var(--card);border:1px solid var(--border);border-radius:20px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer;color:var(--text)}
+.chip.active{background:var(--text);color:#fff;border-color:var(--text)}
+.btn{border:0;border-radius:10px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer}
+.btn-sync{background:var(--blue);color:#fff}
+.btn-sync:disabled{opacity:.5}
+.count{margin-left:auto;font-size:12px;color:var(--muted)}
+.list{display:flex;flex-direction:column;gap:10px;margin-top:14px}
+.card{background:var(--card);border:1px solid var(--border);border-left:4px solid var(--green);border-radius:var(--radius);padding:12px;display:flex;gap:12px;align-items:center;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+.card img{width:74px;height:98px;object-fit:cover;border-radius:8px;background:#f0f1f3;flex-shrink:0}
+.card .info{flex:1;min-width:0}
+.card .ord{font-size:11px;color:var(--muted);font-weight:700}
+.card .title{font-size:14px;font-weight:700;margin:2px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.card .meta{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:11px;color:var(--muted);margin-top:2px}
+.pill{background:#f1f5f9;padding:1px 8px;border-radius:5px;font-weight:600;color:#334155}
+.pill.qty{background:#dcfce7;color:#166534}
+.pill.client{background:#eff6ff;color:#1e40af}
+.card .act{display:flex;flex-direction:column;gap:6px;flex-shrink:0}
+.btn-ship{background:var(--green);color:#fff;white-space:nowrap}
+.btn-seen{background:transparent;color:var(--muted);border:1px solid var(--border)}
+.empty{text-align:center;color:var(--muted);padding:50px 20px;font-size:14px}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--text);color:#fff;padding:10px 18px;border-radius:10px;font-size:13px;font-weight:600;opacity:0;transition:.3s;z-index:20}
+.toast.show{opacity:1}
+@media(prefers-color-scheme:dark){:root{--bg:#0f1115;--card:#1a1d23;--text:#e5e7eb;--muted:#9ca3af;--border:#2a2e37}}
+</style>
+</head>
+<body>
+<header>
+  <h1>📦 Commandes en stock <span id="dot" style="width:9px;height:9px;border-radius:50%;background:var(--muted);display:inline-block"></span></h1>
+  <div class="sub">Commandes dont le produit est <b>disponible dans le stock interne</b> — à expédier sans racheter.</div>
+  <div class="bar">
+    <div class="filters">
+      <span class="chip active" data-range="today" onclick="setRange('today',this)">Aujourd'hui</span>
+      <span class="chip" data-range="7" onclick="setRange('7',this)">7 jours</span>
+      <span class="chip" data-range="all" onclick="setRange('all',this)">Tout</span>
+    </div>
+    <button class="btn btn-sync" id="syncBtn" onclick="syncNow()">🔄 Synchroniser</button>
+    <span class="count" id="count">—</span>
+  </div>
+</header>
+<div class="list" id="list"><div class="empty">Chargement…</div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+const SB_URL='https://dwjjrgjbkftejdcmwpgc.supabase.co';
+const SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR3ampyZ2pia2Z0ZWpkY213cGdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU0NzI2MDYsImV4cCI6MjA5MTA0ODYwNn0.6GxM9u1Om7zP-_MEYVhdtHBESyGLDZGFofxSKGwixPo';
+const SECRET='touni-sync-2026';
+let RANGE='today', notifs=[], imgMap={}, prevCount=-1, audioCtx=null;
+
+function toast(m){var t=document.getElementById('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2200);}
+function dot(s){document.getElementById('dot').style.background=s==='ok'?'var(--green)':s==='err'?'var(--red)':'var(--muted)';}
+function playSound(){try{audioCtx=audioCtx||new (window.AudioContext||window.webkitAudioContext)();var c=audioCtx;[880,1109].forEach(function(f,i){var o=c.createOscillator(),g=c.createGain();o.connect(g);g.connect(c.destination);o.type='sine';o.frequency.setValueAtTime(f,c.currentTime+i*0.18);g.gain.setValueAtTime(0,c.currentTime+i*0.18);g.gain.linearRampToValueAtTime(0.25,c.currentTime+i*0.18+0.04);g.gain.exponentialRampToValueAtTime(0.001,c.currentTime+i*0.18+0.55);o.start(c.currentTime+i*0.18);o.stop(c.currentTime+i*0.18+0.6);});}catch(e){}}
+
+// Images produits (cache Shopify) → map titre→image
+async function loadImages(){
+  try{
+    var rows=[],off=0,CH=1000;
+    for(;;){
+      var r=await fetch(SB_URL+'/rest/v1/shopify_variants_cache?select=product_title,product_image',{headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Range-Unit':'items','Range':off+'-'+(off+CH-1)}});
+      var b=await r.json(); if(!Array.isArray(b)||!b.length)break; rows=rows.concat(b); if(b.length<CH)break; off+=CH;
+    }
+    rows.forEach(function(x){ if(x.product_title&&x.product_image&&!imgMap[x.product_title]) imgMap[x.product_title]=x.product_image; });
+  }catch(e){}
+}
+function imgFor(title){
+  if(imgMap[title]) return imgMap[title];
+  // fuzzy léger : 1er titre qui contient / est contenu
+  var k=Object.keys(imgMap).find(function(t){return t.indexOf(title)>-1||title.indexOf(t)>-1;});
+  return k?imgMap[k]:'';
+}
+function inRange(ts){
+  if(RANGE==='all')return true;
+  var d=new Date(ts), now=new Date();
+  if(RANGE==='today'){return d.toDateString()===now.toDateString();}
+  return (now-d)<= Number(RANGE)*86400000;
+}
+async function load(){
+  try{
+    var r=await fetch('/api/notifications?status=unread&limit=100&secret='+SECRET);
+    var data=await r.json();
+    var SYNC=['sync_shopify','sync_dry_run','rupture_shopify','rupture_dry_run','webhook_error'];
+    notifs=(data.notifications||[]).filter(function(n){ return SYNC.indexOf(n.type)===-1 && (n.matched_stock_ids||n.product_title); });
+    dot('ok');
+    var c=notifs.filter(function(n){return inRange(n.created_at);}).length;
+    if(prevCount>=0 && c>prevCount) playSound();
+    prevCount=c;
+    render();
+  }catch(e){ dot('err'); }
+}
+function render(){
+  var visible=notifs.filter(function(n){return inRange(n.created_at);});
+  document.getElementById('count').textContent=visible.length+' commande(s)';
+  var el=document.getElementById('list');
+  if(!visible.length){ el.innerHTML='<div class="empty">✅ Aucune commande en attente pour cette période.</div>'; return; }
+  el.innerHTML=visible.map(function(n){
+    var variant=[n.variant_size,n.variant_color].filter(Boolean).join(' / ')||'—';
+    var img=imgFor(n.product_title||'');
+    var dt=n.created_at?new Date(n.created_at).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'';
+    return '<div class="card" id="c-'+n.id+'">'
+      +(img?'<img src="'+img+'" alt="">':'<img alt="">')
+      +'<div class="info">'
+      +  '<div class="ord">'+(n.shopify_order_number||'Commande')+' · '+dt+'</div>'
+      +  '<div class="title">'+(n.product_title||'—')+'</div>'
+      +  '<div class="meta">'
+      +    '<span class="pill">'+variant+'</span>'
+      +    '<span class="pill qty">Stock : '+(n.matched_qty||1)+'</span>'
+      +    (n.customer_name?'<span class="pill client">👤 '+n.customer_name+(n.customer_city?' · '+n.customer_city:'')+'</span>':'')
+      +  '</div>'
+      +'</div>'
+      +'<div class="act">'
+      +  '<button class="btn btn-ship" onclick="ship(\''+n.id+'\')">✅ Expédier</button>'
+      +  '<button class="btn btn-seen" onclick="seen(\''+n.id+'\')">Vu</button>'
+      +'</div>'
+      +'</div>';
+  }).join('');
+}
+async function ship(id){
+  var card=document.getElementById('c-'+id); if(card) card.style.opacity='.5';
+  try{
+    var r=await fetch('/api/notifications?action=ship&secret='+SECRET+'&id='+encodeURIComponent(id),{method:'POST'});
+    var d=await r.json();
+    if(!r.ok||!d.ok) throw new Error(d.error||'Erreur');
+    notifs=notifs.filter(function(n){return n.id!==id;});
+    render();
+    var msg='📦 Expédié'+(d.updates&&d.updates[0]?' · reste '+d.updates[0].after+(d.updates[0].rupture?' (rupture)':''):'');
+    toast(msg);
+  }catch(e){ if(card)card.style.opacity='1'; toast('⚠️ '+e.message); }
+}
+async function seen(id){
+  try{ await fetch('/api/notifications?id='+id+'&status=read&secret='+SECRET,{method:'PATCH'}); }catch(e){}
+  notifs=notifs.filter(function(n){return n.id!==id;}); render();
+}
+function setRange(r,el){ RANGE=r; document.querySelectorAll('.chip').forEach(function(c){c.classList.remove('active');}); el.classList.add('active'); render(); }
+async function syncNow(){
+  var b=document.getElementById('syncBtn'); b.disabled=true; var o=b.textContent; b.textContent='⏳…';
+  try{ await fetch('/api/notifications?action=scan&secret='+SECRET,{method:'POST'}).catch(function(){}); await load(); toast('🔄 Synchronisé'); }
+  catch(e){ toast('⚠️ '+e.message); }
+  finally{ b.disabled=false; b.textContent=o; }
+}
+(async function(){ await loadImages(); await load(); setInterval(load,15000); })();
+</script>
+</body>
+</html>

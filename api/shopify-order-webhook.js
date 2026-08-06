@@ -57,7 +57,7 @@ async function findMatchingStock(productTitle, size, color) {
   const normColor = normalizeColor(color);
 
   // 1) Try exact title match first (fast path)
-  const exactUrl = `${SB_URL}/rest/v1/stock?select=id,product,size,qty,status&product=eq.${encodeURIComponent(productTitle)}&qty=gt.0&status=eq.retour`;
+  const exactUrl = `${SB_URL}/rest/v1/stock?select=id,product,size,qty,status&product=eq.${encodeURIComponent(productTitle)}&qty=gt.0&status=in.(retour,stock)`;
   const exactRes = await fetch(exactUrl, { headers: supabaseHeaders(true) });
   let exactCandidates = exactRes.ok ? (await exactRes.json()) : [];
 
@@ -75,7 +75,7 @@ async function findMatchingStock(productTitle, size, color) {
   if (exactMatched.length) return exactMatched;
 
   // 2) Fuzzy fallback: fetch all retour stock items and score by title similarity
-  const allUrl = `${SB_URL}/rest/v1/stock?select=id,product,size,qty,status&qty=gt.0&status=eq.retour&limit=500`;
+  const allUrl = `${SB_URL}/rest/v1/stock?select=id,product,size,qty,status&qty=gt.0&status=in.(retour,stock)&limit=500`;
   const allRes = await fetch(allUrl, { headers: supabaseHeaders(true) });
   if (!allRes.ok) return [];
   const allStock = await allRes.json();
@@ -169,7 +169,8 @@ async function handler(req, res) {
         variant_color: color,
         shopify_variant_id: variantId ? String(variantId) : null,
         matched_stock_ids: stockIds,
-        matched_qty: totalMatchedQty,
+        matched_qty: totalMatchedQty,          // stock disponible (info)
+        ordered_qty: Number(item.quantity) || 1, // quantité commandée → à décrémenter à l'expédition
         total_amount_mad: totalAmount,
       });
     }
@@ -203,4 +204,7 @@ async function handler(req, res) {
 // MUST be set after function declaration — disables Vercel body auto-parsing
 // so we can read the raw body and verify Shopify's HMAC signature
 handler.config = { api: { bodyParser: false } };
+// Exports nommés pour réutilisation (ex : scan-orders-stock)
+handler.findMatchingStock = findMatchingStock;
+handler.parseVariantTitle = parseVariantTitle;
 module.exports = handler;
