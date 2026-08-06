@@ -27,7 +27,11 @@ h1{font-size:20px;display:flex;align-items:center;gap:8px}
 .btn-clear{background:transparent;color:var(--muted);border:1px solid var(--border)}
 .list{display:flex;flex-direction:column;gap:10px;margin-top:14px}
 .card{background:var(--card);border:1px solid var(--border);border-left:4px solid var(--green);border-radius:var(--radius);padding:12px;display:flex;gap:12px;align-items:center;box-shadow:0 1px 3px rgba(0,0,0,.04)}
-.card img{width:74px;height:98px;object-fit:cover;border-radius:8px;background:#f0f1f3;flex-shrink:0}
+.card img{width:74px;height:98px;object-fit:cover;border-radius:8px;background:#f0f1f3;flex-shrink:0;cursor:zoom-in}
+.lightbox{display:none;position:fixed;inset:0;background:rgba(0,0,0,.86);z-index:100;align-items:center;justify-content:center;padding:20px;cursor:zoom-out}
+.lightbox.show{display:flex}
+.lightbox img{max-width:100%;max-height:100%;object-fit:contain;border-radius:10px;box-shadow:0 8px 40px rgba(0,0,0,.5)}
+.lightbox .x{position:absolute;top:16px;right:20px;color:#fff;font-size:34px;line-height:1;font-weight:300;cursor:pointer;opacity:.85}
 .card .info{flex:1;min-width:0}
 .card .ord{font-size:11px;color:var(--muted);font-weight:700}
 .card .title{font-size:14px;font-weight:700;margin:2px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -68,6 +72,7 @@ h1{font-size:20px;display:flex;align-items:center;gap:8px}
 </header>
 <div class="list" id="list"><div class="empty">Chargement…</div></div>
 <div class="toast" id="toast"></div>
+<div class="lightbox" id="lightbox" onclick="closeImg()"><span class="x">&times;</span><img id="lightbox-img" src="" alt="" onclick="event.stopPropagation()"></div>
 
 <script>
 const SB_URL='https://dwjjrgjbkftejdcmwpgc.supabase.co';
@@ -76,6 +81,9 @@ const SECRET='touni-sync-2026';
 let RANGE='today', notifs=[], imgMap={}, prevCount=-1, audioCtx=null, DFROM=null, DTO=null;
 
 function toast(m){var t=document.getElementById('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2200);}
+function openImg(src){ if(!src)return; document.getElementById('lightbox-img').src=src; document.getElementById('lightbox').classList.add('show'); }
+function closeImg(){ document.getElementById('lightbox').classList.remove('show'); }
+document.addEventListener('keydown',function(e){ if(e.key==='Escape')closeImg(); });
 function dot(s){document.getElementById('dot').style.background=s==='ok'?'var(--green)':s==='err'?'var(--red)':'var(--muted)';}
 function playSound(){try{audioCtx=audioCtx||new (window.AudioContext||window.webkitAudioContext)();var c=audioCtx;[880,1109].forEach(function(f,i){var o=c.createOscillator(),g=c.createGain();o.connect(g);g.connect(c.destination);o.type='sine';o.frequency.setValueAtTime(f,c.currentTime+i*0.18);g.gain.setValueAtTime(0,c.currentTime+i*0.18);g.gain.linearRampToValueAtTime(0.25,c.currentTime+i*0.18+0.04);g.gain.exponentialRampToValueAtTime(0.001,c.currentTime+i*0.18+0.55);o.start(c.currentTime+i*0.18);o.stop(c.currentTime+i*0.18+0.6);});}catch(e){}}
 
@@ -130,7 +138,7 @@ function render(){
     var img=imgFor(n.product_title||'');
     var dt=n.created_at?new Date(n.created_at).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'';
     return '<div class="card" id="c-'+n.id+'">'
-      +(img?'<img src="'+img+'" alt="">':'<img alt="">')
+      +(img?'<img src="'+img+'" alt="" onclick="openImg(this.src)">':'<img alt="">')
       +'<div class="info">'
       +  '<div class="ord">'+(n.shopify_order_number||'Commande')+' · '+dt+'</div>'
       +  '<div class="title">'+(n.product_title||'—')+'</div>'
