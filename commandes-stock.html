@@ -20,6 +20,11 @@ h1{font-size:20px;display:flex;align-items:center;gap:8px}
 .btn-sync{background:var(--blue);color:#fff}
 .btn-sync:disabled{opacity:.5}
 .count{margin-left:auto;font-size:12px;color:var(--muted)}
+.daterow{display:none;gap:10px;flex-wrap:wrap;align-items:center;margin-top:10px;padding:10px;background:var(--card);border:1px solid var(--border);border-radius:10px}
+.daterow.show{display:flex}
+.daterow label{font-size:12px;color:var(--muted);font-weight:600;display:flex;align-items:center;gap:6px}
+.daterow input[type=date]{font-family:var(--font);font-size:12px;padding:5px 8px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text)}
+.btn-clear{background:transparent;color:var(--muted);border:1px solid var(--border)}
 .list{display:flex;flex-direction:column;gap:10px;margin-top:14px}
 .card{background:var(--card);border:1px solid var(--border);border-left:4px solid var(--green);border-radius:var(--radius);padding:12px;display:flex;gap:12px;align-items:center;box-shadow:0 1px 3px rgba(0,0,0,.04)}
 .card img{width:74px;height:98px;object-fit:cover;border-radius:8px;background:#f0f1f3;flex-shrink:0}
@@ -46,11 +51,19 @@ h1{font-size:20px;display:flex;align-items:center;gap:8px}
   <div class="bar">
     <div class="filters">
       <span class="chip active" data-range="today" onclick="setRange('today',this)">Aujourd'hui</span>
+      <span class="chip" data-range="2" onclick="setRange('2',this)">2 jours</span>
+      <span class="chip" data-range="3" onclick="setRange('3',this)">3 jours</span>
       <span class="chip" data-range="7" onclick="setRange('7',this)">7 jours</span>
       <span class="chip" data-range="all" onclick="setRange('all',this)">Tout</span>
+      <span class="chip" id="chip-custom" data-range="custom" onclick="toggleCustom(this)">📅 Personnalisé</span>
     </div>
     <button class="btn btn-sync" id="syncBtn" onclick="syncNow()">🔄 Synchroniser</button>
     <span class="count" id="count">—</span>
+  </div>
+  <div class="daterow" id="daterow">
+    <label>Du <input type="date" id="dfrom" onchange="applyCustom()"></label>
+    <label>au <input type="date" id="dto" onchange="applyCustom()"></label>
+    <button class="btn btn-clear" onclick="clearCustom()">Effacer</button>
   </div>
 </header>
 <div class="list" id="list"><div class="empty">Chargement…</div></div>
@@ -60,7 +73,7 @@ h1{font-size:20px;display:flex;align-items:center;gap:8px}
 const SB_URL='https://dwjjrgjbkftejdcmwpgc.supabase.co';
 const SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR3ampyZ2pia2Z0ZWpkY213cGdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU0NzI2MDYsImV4cCI6MjA5MTA0ODYwNn0.6GxM9u1Om7zP-_MEYVhdtHBESyGLDZGFofxSKGwixPo';
 const SECRET='touni-sync-2026';
-let RANGE='today', notifs=[], imgMap={}, prevCount=-1, audioCtx=null;
+let RANGE='today', notifs=[], imgMap={}, prevCount=-1, audioCtx=null, DFROM=null, DTO=null;
 
 function toast(m){var t=document.getElementById('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2200);}
 function dot(s){document.getElementById('dot').style.background=s==='ok'?'var(--green)':s==='err'?'var(--red)':'var(--muted)';}
@@ -86,6 +99,11 @@ function imgFor(title){
 function inRange(ts){
   if(RANGE==='all')return true;
   var d=new Date(ts), now=new Date();
+  if(RANGE==='custom'){
+    if(DFROM){ var f=new Date(DFROM+'T00:00:00'); if(d<f) return false; }
+    if(DTO){ var t=new Date(DTO+'T23:59:59'); if(d>t) return false; }
+    return !!(DFROM||DTO);
+  }
   if(RANGE==='today'){return d.toDateString()===now.toDateString();}
   return (now-d)<= Number(RANGE)*86400000;
 }
@@ -145,7 +163,10 @@ async function seen(id){
   try{ await fetch('/api/notifications?id='+id+'&status=read&secret='+SECRET,{method:'PATCH'}); }catch(e){}
   notifs=notifs.filter(function(n){return n.id!==id;}); render();
 }
-function setRange(r,el){ RANGE=r; document.querySelectorAll('.chip').forEach(function(c){c.classList.remove('active');}); el.classList.add('active'); render(); }
+function setRange(r,el){ RANGE=r; document.querySelectorAll('.chip').forEach(function(c){c.classList.remove('active');}); el.classList.add('active'); document.getElementById('daterow').classList.remove('show'); render(); }
+function toggleCustom(el){ document.querySelectorAll('.chip').forEach(function(c){c.classList.remove('active');}); el.classList.add('active'); document.getElementById('daterow').classList.add('show'); RANGE='custom'; render(); }
+function applyCustom(){ DFROM=document.getElementById('dfrom').value||null; DTO=document.getElementById('dto').value||null; RANGE='custom'; document.querySelectorAll('.chip').forEach(function(c){c.classList.remove('active');}); document.getElementById('chip-custom').classList.add('active'); document.getElementById('daterow').classList.add('show'); render(); }
+function clearCustom(){ DFROM=DTO=null; document.getElementById('dfrom').value=''; document.getElementById('dto').value=''; render(); }
 async function syncNow(){
   var b=document.getElementById('syncBtn'); b.disabled=true; var o=b.textContent; b.textContent='⏳…';
   try{ await fetch('/api/notifications?action=scan&secret='+SECRET,{method:'POST'}).catch(function(){}); await load(); toast('🔄 Synchronisé'); }
