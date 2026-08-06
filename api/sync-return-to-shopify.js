@@ -271,15 +271,32 @@ module.exports = async function handler(req, res) {
     const groupKeys = Object.keys(groups);
     console.log(`[sync-return] ${groupKeys.length} unique product/size/color groups`);
 
-    // ── ÉTAPE 3 : Pré-charger TOUS les titres du cache (1 seul appel Supabase) ─
-    const allTitlesRes = await fetch(
-      `${SB_URL}/rest/v1/shopify_variants_cache?select=product_title&limit=3000`,
-      { headers: supabaseHeaders(true) }
-    );
-    const allCacheTitles = allTitlesRes.ok
-      ? [...new Set((await allTitlesRes.json()).map(r => r.product_title).filter(Boolean))]
-      : [];
-    console.log(`[sync-return] Cache titles loaded: ${allCacheTitles.length}`);
+    // ── ÉTAPE 3 : Pré-charger TOUT le cache variantes EN MÉMOIRE (bulk paginé) ─
+    // Optimisation perf : un seul chargement bulk au lieu d'un appel Supabase PAR groupe.
+    // Évite le timeout quand le catalogue grossit ; le matching exact + fuzzy se fait ensuite
+    // 100 % en mémoire (0 appel réseau dans la boucle des groupes).
+    const cacheRows = [];
+    {
+      const PAGE = 1000;
+      for (let offset = 0; ; offset += PAGE) {
+        const r = await fetch(
+          `${SB_URL}/rest/v1/shopify_variants_cache?select=variant_id,inventory_item_id,inventory_quantity,size,color,product_title&limit=${PAGE}&offset=${offset}`,
+          { headers: supabaseHeaders(true) }
+        );
+        if (!r.ok) break;
+        const rows = await r.json();
+        cacheRows.push(...rows);
+        if (rows.length < PAGE) break;
+      }
+    }
+    const cacheByTitle = new Map(); // product_title → [variant rows]
+    for (const row of cacheRows) {
+      if (!row.product_title) continue;
+      if (!cacheByTitle.has(row.product_title)) cacheByTitle.set(row.product_title, []);
+      cacheByTitle.get(row.product_title).push(row);
+    }
+    const allCacheTitles = [...cacheByTitle.keys()];
+    console.log(`[sync-return] Cache loaded in memory: ${cacheRows.length} variants, ${allCacheTitles.length} titles`);
 
     // ── ÉTAPE 4 : Matching Supabase (0 appel Shopify à cette étape) ───────────
     const matchedGroups = []; // { key, grp, match, matchedTitle, fuzzyScore }
@@ -293,14 +310,10 @@ module.exports = async function handler(req, res) {
       let matchedTitle = grp.product;
       let fuzzyScore = null;
 
-      // Exact title match
-      const exactRes = await fetch(
-        `${SB_URL}/rest/v1/shopify_variants_cache?select=variant_id,inventory_item_id,inventory_quantity,size,color,product_title&product_title=eq.${encodeURIComponent(grp.product)}`,
-        { headers: supabaseHeaders(true) }
-      );
-      if (exactRes.ok) candidates = await exactRes.json();
+      // Exact title match (en mémoire — 0 appel réseau)
+      candidates = cacheByTitle.get(grp.product) || [];
 
-      // Fuzzy fallback (titres déjà en mémoire, 0 appel réseau supplémentaire)
+      // Fuzzy fallback (100 % en mémoire)
       if (candidates.length === 0 && allCacheTitles.length > 0) {
         let bestScore = 0, bestTitle = null;
         for (const t of allCacheTitles) {
@@ -308,16 +321,10 @@ module.exports = async function handler(req, res) {
           if (score > bestScore) { bestScore = score; bestTitle = t; }
         }
         if (bestScore >= FUZZY_THRESHOLD && bestTitle) {
-          const fuzzyRes = await fetch(
-            `${SB_URL}/rest/v1/shopify_variants_cache?select=variant_id,inventory_item_id,inventory_quantity,size,color,product_title&product_title=eq.${encodeURIComponent(bestTitle)}`,
-            { headers: supabaseHeaders(true) }
-          );
-          if (fuzzyRes.ok) {
-            candidates = await fuzzyRes.json();
-            matchedTitle = bestTitle;
-            fuzzyScore = bestScore;
-            console.log(`[sync-return] Fuzzy: "${grp.product}" → "${bestTitle}" (${(bestScore*100).toFixed(0)}%)`);
-          }
+          candidates = cacheByTitle.get(bestTitle) || [];
+          matchedTitle = bestTitle;
+          fuzzyScore = bestScore;
+          console.log(`[sync-return] Fuzzy: "${grp.product}" → "${bestTitle}" (${(bestScore*100).toFixed(0)}%)`);
         }
       }
 
