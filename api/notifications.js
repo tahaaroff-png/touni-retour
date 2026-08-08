@@ -296,6 +296,41 @@ async function scanOrdersStock(req, res) {
   }
 }
 
+// ════════ Découverte des pipelines eGrow (GET ?egrow_stages=1) — tourne en prod où le token existe ════════
+async function egrowStages(req, res) {
+  const ME = process.env.EGROW_ME || '', AK = process.env.EGROW_AK || '';
+  const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+  if (!ME || !AK) return res.status(500).json({ error: 'EGROW_ME/EGROW_AK absents en env' });
+  const post = async (path, params) => {
+    const p = Object.assign({}, params, { me: ME, dev: 0 });
+    const b = '----TouniAgent' + Math.random().toString(36).slice(2);
+    const raw = `--${b}\r\nContent-Disposition: form-data; name="data"\r\n\r\n${JSON.stringify(p)}\r\n--${b}--\r\n`;
+    const r = await fetch('https://api.egrow.com' + path, { method: 'POST', headers: { 'account-key': AK, 'User-Agent': UA, 'content-type': `multipart/form-data; boundary=${b}` }, body: raw });
+    const t = await r.text(); try { return JSON.parse(t); } catch (e) { return { __raw: t.slice(0, 200) }; }
+  };
+  try {
+    // 1) essai endpoint dédié (liste stages + counts)
+    let pls = await post('/deal/getuserPipeLineStages.php', {});
+    // 2) sinon, agréger depuis un lot de deals
+    let stages = [];
+    const norm = (arr) => arr.map(x => ({ id: x.id, name: String(x.name || x.stage_name || x.title || '').trim(), count: x.count ?? x.deals_count })).filter(s => s.id);
+    if (Array.isArray(pls) || (pls && Array.isArray(pls.data))) {
+      stages = norm(Array.isArray(pls) ? pls : pls.data);
+    } else {
+      const r = await post('/deal/getStageDeals.php', { page: 1, limit: 1500 });
+      const a = Array.isArray(r) ? r : (r && r.data) || [];
+      const m = new Map();
+      a.forEach(d => { const s = d.stage || {}; if (s.id) { const e = m.get(s.id) || { id: s.id, name: String(s.name || '').trim(), count: 0 }; e.count++; m.set(s.id, e); } });
+      stages = [...m.values()];
+      if (!a.length) return res.status(200).json({ source: 'deals', note: 'aucun deal / accès', raw: r });
+    }
+    stages.sort((x, y) => (y.count || 0) - (x.count || 0));
+    return res.status(200).json({ source: Array.isArray(pls) || pls?.data ? 'pipeline_endpoint' : 'deals_aggregate', count: stages.length, stages });
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
+  }
+}
+
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
@@ -314,6 +349,9 @@ module.exports = async function handler(req, res) {
 
   // Vue Directeur Meta Ads (live)
   if (req.method === 'GET' && req.query?.meta) return metaMetrics(req, res);
+
+  // Découverte pipelines eGrow (temporaire, pour récupérer les IDs de stages)
+  if (req.query?.egrow_stages) return egrowStages(req, res);
 
   // Actions « Commandes en stock » (page dédiée)
   if (req.method === 'POST' && req.query?.action === 'ship') return shipFromStock(req, res);
