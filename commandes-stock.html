@@ -37,6 +37,10 @@ h1{font-size:20px;display:flex;align-items:center;gap:8px}
 .card.rupt{border-left-color:var(--red)!important;opacity:.72}
 .pill.rupt{background:#fee2e2;color:#b91c1c}
 .btn-ship:disabled{opacity:.4;cursor:not-allowed}
+.card.prep{border-left-color:#2563eb!important;background:rgba(37,99,235,.06)}
+.btn-prep{background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;white-space:nowrap}
+.btn-prep.on{background:#2563eb;color:#fff;border-color:#2563eb}
+.pill.prep{background:#dbeafe;color:#1d4ed8}
 .list{display:flex;flex-direction:column;gap:10px;margin-top:14px}
 .card{background:var(--card);border:1px solid var(--border);border-left:4px solid var(--green);border-radius:var(--radius);padding:12px;display:flex;gap:12px;align-items:center;box-shadow:0 1px 3px rgba(0,0,0,.04)}
 .card img{width:74px;height:98px;object-fit:cover;border-radius:8px;background:#f0f1f3;flex-shrink:0;cursor:zoom-in}
@@ -108,6 +112,14 @@ const SECRET='touni-sync-2026';
 let RANGE='today', notifs=[], imgMap={}, prevCount=-1, audioCtx=null, DFROM=null, DTO=null;
 
 function toast(m){var t=document.getElementById('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2200);}
+// « Préparé » = j'ai trouvé/mis de côté le maillot (NE touche PAS au stock). Mémorisé dans le navigateur.
+var PREP={}; try{PREP=JSON.parse(localStorage.getItem('touni_prep')||'{}')}catch(e){}
+function savePrep(){try{localStorage.setItem('touni_prep',JSON.stringify(PREP))}catch(e){}}
+function isPrep(k){return !!PREP[k];}
+function flipPrep(k){ if(PREP[k])delete PREP[k]; else PREP[k]=1; savePrep(); }
+function prepBtn(onclick,prepped){return '<button class="btn btn-prep'+(prepped?' on':'')+'" onclick="'+onclick+'">'+(prepped?'✔ Préparé':'📥 Préparé')+'</button>';}
+function togglePrepP(i){ var o=PIPE_ORDERS[i]; if(!o)return; flipPrep('p:'+(o.deal_number||'')+'|'+(o.product||'')+'|'+(o.size||'')); renderPipe(); }
+function togglePrepN(id){ flipPrep('n:'+id); render(); }
 function openImg(src){ if(!src)return; document.getElementById('lightbox-img').src=src; document.getElementById('lightbox').classList.add('show'); }
 function closeImg(){ document.getElementById('lightbox').classList.remove('show'); }
 document.addEventListener('keydown',function(e){ if(e.key==='Escape')closeImg(); });
@@ -164,10 +176,11 @@ function render(){
     var variant=[n.variant_size,n.variant_color].filter(Boolean).join(' / ')||'—';
     var img=imgFor(n.product_title||'');
     var dt=n.created_at?new Date(n.created_at).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'';
-    return '<div class="card" id="c-'+n.id+'">'
+    var pk='n:'+n.id; var pr=isPrep(pk);
+    return '<div class="card'+(pr?' prep':'')+'" id="c-'+n.id+'">'
       +(img?'<img src="'+img+'" alt="" onclick="openImg(this.src)">':'<img alt="">')
       +'<div class="info">'
-      +  '<div class="ord">'+(n.shopify_order_number||'Commande')+' · '+dt+'</div>'
+      +  '<div class="ord">'+(n.shopify_order_number||'Commande')+' · '+dt+(pr?' · <b style="color:#1d4ed8">✔ préparé</b>':'')+'</div>'
       +  '<div class="title">'+(n.product_title||'—')+'</div>'
       +  '<div class="meta">'
       +    '<span class="pill">'+variant+'</span>'
@@ -176,6 +189,7 @@ function render(){
       +  '</div>'
       +'</div>'
       +'<div class="act">'
+      +  prepBtn("togglePrepN('"+n.id+"')",pr)
       +  '<button class="btn btn-ship" onclick="ship(\''+n.id+'\')">✅ Expédier</button>'
       +  '<button class="btn btn-seen" onclick="seen(\''+n.id+'\')">Vu</button>'
       +'</div>'
@@ -232,20 +246,22 @@ function renderPipe(availCount){
   if(!PIPE_ORDERS.length){ el.innerHTML='<div class="empty">Aucune commande dans « '+CUR_PIPE.name+' ».</div>'; return; }
   el.innerHTML=PIPE_ORDERS.map(function(o,i){
     var img=o.image||imgFor(o.product||'');
-    return '<div class="card'+(o.available?'':' rupt')+'" id="p-'+i+'">'
+    var pk='p:'+(o.deal_number||'')+'|'+(o.product||'')+'|'+(o.size||'');
+    var pr=isPrep(pk);
+    return '<div class="card'+(o.available?'':' rupt')+(pr?' prep':'')+'" id="p-'+i+'">'
       +(img?'<img src="'+img+'" alt="" onclick="openImg(this.src)">':'<img alt="">')
       +'<div class="info">'
-      +  '<div class="ord">'+(o.deal_number||'')+'</div>'
+      +  '<div class="ord">'+(o.deal_number||'')+(pr?' · <b style="color:#1d4ed8">✔ préparé</b>':'')+'</div>'
       +  '<div class="title">'+(o.product||'—')+'</div>'
       +  '<div class="meta">'
       +    '<span class="pill">'+(o.size||'—')+'</span>'
       +    (o.available?'<span class="pill qty">Dispo : '+o.avail_qty+'</span>':'<span class="pill rupt">Rupture stock</span>')
-      +    (Number(o.qty)>1?'<span class="pill">×'+o.qty+'</span>':'')
+      +    (Number(o.qty)>1?'<span class="pill" style="background:#fef3c7;color:#92400e">Commandé ×'+o.qty+'</span>':'')
       +    (o.client?'<span class="pill client">👤 '+o.client+(o.city?' · '+o.city:'')+'</span>':'')
       +  '</div>'
       +'</div>'
       +'<div class="act">'
-      +  (o.available?'<button class="btn btn-ship" onclick="shipPipe('+i+')">✅ Expédier</button>':'<button class="btn btn-ship" disabled>Indispo</button>')
+      +  (o.available?prepBtn('togglePrepP('+i+')',pr)+'<button class="btn btn-ship" onclick="shipPipe('+i+')">✅ Expédier</button>':'<button class="btn btn-ship" disabled>Indispo</button>')
       +'</div>'
       +'</div>';
   }).join('');
@@ -258,6 +274,7 @@ async function shipPipe(i){
     var r=await fetch('/api/notifications?action=ship&secret='+SECRET+'&stock_ids='+encodeURIComponent(ids)+'&qty='+(o.qty||1),{method:'POST'});
     var d=await r.json(); if(!r.ok||!d.ok) throw new Error(d.error||'Erreur');
     var reste=(d.updates&&d.updates[0])?d.updates[0].after:null;
+    var pk='p:'+(o.deal_number||'')+'|'+(o.product||'')+'|'+(o.size||''); if(PREP[pk]){delete PREP[pk];savePrep();}
     toast('📦 Expédié'+(reste!==null?' · reste '+reste+(d.updates[0].rupture?' (rupture)':''):''));
     await loadPipe(); // rafraîchit la dispo réelle
   }catch(e){ if(card)card.style.opacity='1'; toast('⚠️ '+e.message); }
