@@ -41,6 +41,21 @@ h1{font-size:20px;display:flex;align-items:center;gap:8px}
 .btn-prep{background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;white-space:nowrap}
 .btn-prep.on{background:#2563eb;color:#fff;border-color:#2563eb}
 .pill.prep{background:#dbeafe;color:#1d4ed8}
+.deal{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+.dhead{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding-bottom:10px;border-bottom:1px solid var(--border)}
+.dnum b{font-size:14px}
+.dclient{font-size:12px;color:var(--muted)}
+.prods{display:flex;flex-direction:column;gap:8px;padding:10px 0}
+.prod{display:flex;align-items:center;gap:10px;padding:6px;border-radius:9px;background:var(--bg)}
+.prod.prep{background:rgba(37,99,235,.07)}
+.pimg{width:46px;height:60px;object-fit:cover;border-radius:6px;background:#f0f1f3;flex-shrink:0;cursor:zoom-in;display:grid;place-items:center;font-size:18px}
+.pimg.ph{cursor:default}
+.pinfo{flex:1;min-width:0}
+.pn{font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pm{display:flex;flex-wrap:wrap;gap:5px;margin-top:3px}
+.mini{width:34px;height:34px;flex-shrink:0;border-radius:8px;border:1px solid #bfdbfe;background:#eff6ff;color:#1d4ed8;font-size:15px;cursor:pointer}
+.mini.on{background:#2563eb;color:#fff;border-color:#2563eb}
+.dact{display:flex;justify-content:flex-end;border-top:1px solid var(--border);padding-top:10px}
 .list{display:flex;flex-direction:column;gap:10px;margin-top:14px}
 .card{background:var(--card);border:1px solid var(--border);border-left:4px solid var(--green);border-radius:var(--radius);padding:12px;display:flex;gap:12px;align-items:center;box-shadow:0 1px 3px rgba(0,0,0,.04)}
 .card img{width:74px;height:98px;object-fit:cover;border-radius:8px;background:#f0f1f3;flex-shrink:0;cursor:zoom-in}
@@ -112,14 +127,17 @@ const SECRET='touni-sync-2026';
 let RANGE='today', notifs=[], imgMap={}, prevCount=-1, audioCtx=null, DFROM=null, DTO=null;
 
 function toast(m){var t=document.getElementById('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2200);}
-// « Préparé » = j'ai trouvé/mis de côté le maillot (NE touche PAS au stock). Mémorisé dans le navigateur.
-var PREP={}; try{PREP=JSON.parse(localStorage.getItem('touni_prep')||'{}')}catch(e){}
-function savePrep(){try{localStorage.setItem('touni_prep',JSON.stringify(PREP))}catch(e){}}
-function isPrep(k){return !!PREP[k];}
-function flipPrep(k){ if(PREP[k])delete PREP[k]; else PREP[k]=1; savePrep(); }
+// « Préparé » = j'ai trouvé/mis de côté le maillot (NE touche PAS au stock). PARTAGÉ entre tous les PC (serveur).
+var PREP=new Set();
+async function loadPrep(){ try{ var r=await fetch('/api/notifications?prepared=1&secret='+SECRET); var j=await r.json(); if(Array.isArray(j.keys)) PREP=new Set(j.keys); }catch(e){} }
+function isPrep(k){return PREP.has(k);}
+async function flipPrep(k){ var on=!PREP.has(k); if(on)PREP.add(k); else PREP.delete(k); // optimiste
+  try{ await fetch('/api/notifications?action=prep&secret='+SECRET,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:k,on:on?1:0})}); }
+  catch(e){ if(on)PREP.delete(k); else PREP.add(k); toast('⚠️ Sync préparé échouée'); }
+}
 function prepBtn(onclick,prepped){return '<button class="btn btn-prep'+(prepped?' on':'')+'" onclick="'+onclick+'">'+(prepped?'✔ Préparé':'📥 Préparé')+'</button>';}
-function togglePrepP(i){ var o=PIPE_ORDERS[i]; if(!o)return; flipPrep('p:'+(o.deal_number||'')+'|'+(o.product||'')+'|'+(o.size||'')); renderPipe(); }
-function togglePrepN(id){ flipPrep('n:'+id); render(); }
+async function togglePrepD(di,pi){ var d=PIPE_DEALS[di]; if(!d)return; var p=d.products[pi]; if(!p)return; await flipPrep('p:'+(d.deal_number||'')+'|'+(p.product||'')+'|'+(p.size||'')); renderPipe(); }
+async function togglePrepN(id){ await flipPrep('n:'+id); render(); }
 function openImg(src){ if(!src)return; document.getElementById('lightbox-img').src=src; document.getElementById('lightbox').classList.add('show'); }
 function closeImg(){ document.getElementById('lightbox').classList.remove('show'); }
 document.addEventListener('keydown',function(e){ if(e.key==='Escape')closeImg(); });
@@ -223,7 +241,7 @@ async function syncNow(){
   finally{ b.disabled=false; b.textContent=o; }
 }
 // ───── Mode PIPELINE eGrow ─────
-var MODE='stock', CUR_PIPE=null, PIPE_ORDERS=[];
+var MODE='stock', CUR_PIPE=null, PIPE_DEALS=[];
 function pipeActive(el){ document.querySelectorAll('.pipe').forEach(function(c){c.classList.remove('active');}); el.classList.add('active'); }
 function pickStock(el){ MODE='stock'; CUR_PIPE=null; pipeActive(el);
   document.querySelector('.filters').style.display=''; document.getElementById('syncBtn').style.display='';
@@ -235,52 +253,64 @@ async function loadPipe(){
   if(!CUR_PIPE) return;
   var el=document.getElementById('list'); el.innerHTML='<div class="empty">Chargement du pipeline « '+CUR_PIPE.name+' »…</div>';
   try{
+    await loadPrep();
     var r=await fetch('/api/notifications?pipeline='+CUR_PIPE.id+'&secret='+SECRET);
     var j=await r.json(); if(j.error) throw new Error(j.error);
-    PIPE_ORDERS=j.orders||[]; dot('ok'); renderPipe(j.available_count);
+    PIPE_DEALS=j.deals||[]; dot('ok'); renderPipe(j.full_available);
   }catch(e){ dot('err'); el.innerHTML='<div class="empty">⚠️ '+e.message+'</div>'; }
 }
-function renderPipe(availCount){
-  document.getElementById('count').textContent=CUR_PIPE.name+' — '+PIPE_ORDERS.length+' cmd · '+(availCount!==undefined?availCount:PIPE_ORDERS.filter(function(o){return o.available;}).length)+' dispo';
+function renderPipe(fullCount){
+  var deals=PIPE_DEALS;
+  var full=(fullCount!==undefined?fullCount:deals.filter(function(d){return d.all_available;}).length);
+  document.getElementById('count').textContent=CUR_PIPE.name+' — '+deals.length+' cmd · '+full+' complètes';
   var el=document.getElementById('list');
-  if(!PIPE_ORDERS.length){ el.innerHTML='<div class="empty">Aucune commande dans « '+CUR_PIPE.name+' ».</div>'; return; }
-  el.innerHTML=PIPE_ORDERS.map(function(o,i){
-    var img=o.image||imgFor(o.product||'');
-    var pk='p:'+(o.deal_number||'')+'|'+(o.product||'')+'|'+(o.size||'');
-    var pr=isPrep(pk);
-    return '<div class="card'+(o.available?'':' rupt')+(pr?' prep':'')+'" id="p-'+i+'">'
-      +(img?'<img src="'+img+'" alt="" onclick="openImg(this.src)">':'<img alt="">')
-      +'<div class="info">'
-      +  '<div class="ord">'+(o.deal_number||'')+(pr?' · <b style="color:#1d4ed8">✔ préparé</b>':'')+'</div>'
-      +  '<div class="title">'+(o.product||'—')+'</div>'
-      +  '<div class="meta">'
-      +    '<span class="pill">'+(o.size||'—')+'</span>'
-      +    (o.available?'<span class="pill qty">Dispo : '+o.avail_qty+'</span>':'<span class="pill rupt">Rupture stock</span>')
-      +    (Number(o.qty)>1?'<span class="pill" style="background:#fef3c7;color:#92400e">Commandé ×'+o.qty+'</span>':'')
-      +    (o.client?'<span class="pill client">👤 '+o.client+(o.city?' · '+o.city:'')+'</span>':'')
-      +  '</div>'
-      +'</div>'
-      +'<div class="act">'
-      +  (o.available?prepBtn('togglePrepP('+i+')',pr)+'<button class="btn btn-ship" onclick="shipPipe('+i+')">✅ Expédier</button>':'<button class="btn btn-ship" disabled>Indispo</button>')
-      +'</div>'
+  if(!deals.length){ el.innerHTML='<div class="empty">Aucune commande dans « '+CUR_PIPE.name+' ».</div>'; return; }
+  el.innerHTML=deals.map(function(d,di){
+    var prods=d.products.map(function(p,pi){
+      var pk='p:'+(d.deal_number||'')+'|'+(p.product||'')+'|'+(p.size||'');
+      var pr=isPrep(pk);
+      var img=p.image||imgFor(p.product||'');
+      return '<div class="prod'+(pr?' prep':'')+'">'
+        +(img?'<img class="pimg" src="'+img+'" onclick="openImg(this.src)">':'<span class="pimg ph">👕</span>')
+        +'<div class="pinfo"><div class="pn">'+(p.product||'—')+'</div>'
+        +'<div class="pm"><span class="pill">'+(p.size||'—')+'</span>'
+        +(Number(p.qty)>1?'<span class="pill" style="background:#fef3c7;color:#92400e">×'+p.qty+'</span>':'')
+        +(p.available?'<span class="pill qty">Dispo '+p.avail_qty+'</span>':'<span class="pill rupt">Rupture stock</span>')
+        +(pr?'<span class="pill prep">✔ préparé</span>':'')
+        +'</div></div>'
+        +'<button class="mini'+(pr?' on':'')+'" title="Préparé (mis de côté)" onclick="togglePrepD('+di+','+pi+')">'+(pr?'✔':'📥')+'</button>'
+        +'</div>';
+    }).join('');
+    var badge=d.all_available?'<span class="pill qty">✅ Complète</span>'
+      :(d.any_available?'<span class="pill" style="background:#fef3c7;color:#92400e">Partielle '+d.avail_count+'/'+d.product_count+'</span>'
+      :'<span class="pill rupt">Rien en stock</span>');
+    return '<div class="deal" id="d-'+di+'">'
+      +'<div class="dhead"><div class="dnum"><b>'+(d.deal_number||'')+'</b> '+badge+'</div>'
+      +'<div class="dclient">👤 '+(d.client||'Client')+(d.city?' · '+d.city:'')+(d.phone?' · '+d.phone:'')+'</div></div>'
+      +'<div class="prods">'+prods+'</div>'
+      +'<div class="dact"><button class="btn btn-ship" onclick="shipDeal('+di+')">✅ Expédier → Traité</button></div>'
       +'</div>';
   }).join('');
 }
-async function shipPipe(i){
-  var o=PIPE_ORDERS[i]; if(!o||!o.available) return;
-  var card=document.getElementById('p-'+i); if(card) card.style.opacity='.5';
+async function shipDeal(di){
+  var d=PIPE_DEALS[di]; if(!d) return;
+  var msg=d.all_available?'Expédier la commande '+d.deal_number+' et la passer à « Traiter » ?'
+    :'⚠️ '+d.avail_count+'/'+d.product_count+' article(s) trouvé(s) en stock. Expédier quand même et passer la commande à « Traiter » ?';
+  if(!confirm(msg)) return;
+  var card=document.getElementById('d-'+di); if(card) card.style.opacity='.5';
   try{
-    var ids=(o.matched_stock_ids||[]).join(',');
-    var r=await fetch('/api/notifications?action=ship&secret='+SECRET+'&stock_ids='+encodeURIComponent(ids)+'&qty='+(o.qty||1),{method:'POST'});
-    var d=await r.json(); if(!r.ok||!d.ok) throw new Error(d.error||'Erreur');
-    var reste=(d.updates&&d.updates[0])?d.updates[0].after:null;
-    var pk='p:'+(o.deal_number||'')+'|'+(o.product||'')+'|'+(o.size||''); if(PREP[pk]){delete PREP[pk];savePrep();}
-    toast('📦 Expédié'+(reste!==null?' · reste '+reste+(d.updates[0].rupture?' (rupture)':''):''));
-    await loadPipe(); // rafraîchit la dispo réelle
+    var items=d.products.filter(function(p){return p.available;}).map(function(p){return {stock_ids:p.matched_stock_ids,qty:p.qty};});
+    var r=await fetch('/api/notifications?action=ship_deal&secret='+SECRET,{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({deal_id:d.deal_id,old_stage:d.stage_id,order:d.order,move_stage:49150,items:items})});
+    var res=await r.json(); if(!r.ok||!res.ok) throw new Error(res.error||'Erreur');
+    // nettoyer les « préparé » de cette commande (serveur)
+    for(var k=0;k<d.products.length;k++){ var p=d.products[k]; var pk='p:'+(d.deal_number||'')+'|'+(p.product||'')+'|'+(p.size||''); if(PREP.has(pk)) flipPrep(pk); }
+    toast('📦 '+d.deal_number+' → Traité'+(res.moved&&res.moved.ok?' ✅':' (stock màj)'));
+    await loadPipe();
   }catch(e){ if(card)card.style.opacity='1'; toast('⚠️ '+e.message); }
 }
 function tick(){ if(MODE==='stock') load(); } // n'auto-rafraîchit QUE le stock direct (pas d'appel eGrow toutes les 15s)
-(async function(){ await loadImages(); await load(); setInterval(tick,15000); })();
+(async function(){ await loadImages(); await loadPrep(); await load(); setInterval(tick,15000); })();
 </script>
 </body>
 </html>

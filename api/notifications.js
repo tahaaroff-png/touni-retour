@@ -379,27 +379,90 @@ async function pipelineScan(req, res) {
     const r = await egrowPost('/deal/getStageDeals.php', { stage: sid, page: 1, limit: 1500 });
     const deals = Array.isArray(r) ? r : (r && r.data) || [];
     const { match } = await loadStockMatcher();
-    const orders = [];
-    for (const d of deals) {
+    // Une carte par COMMANDE (deal), avec TOUS ses produits (maillot seul / maillot + flocage / plusieurs maillots…)
+    const out = deals.map(d => {
       const c = d.contact || {};
-      for (const p of (d.products || [])) {
-        const title = String(p.name || '').trim(); if (!title) continue;
+      const products = (d.products || []).map(p => {
+        const title = String(p.name || '').trim();
         const size = egrowSize(p);
-        const matches = match(title, size, null);
+        const matches = title ? match(title, size, null) : [];
         const availQty = matches.reduce((s, m) => s + (m.qty || 0), 0);
-        orders.push({
-          deal_number: d.deal_number || String(d.id), client: c.name || 'Client', city: d.deal_city || c.city || '',
-          product: title, size: size || '—', qty: p.quantity || 1, image: p.image || '',
-          available: availQty > 0, avail_qty: availQty, matched_stock_ids: matches.map(m => m.id),
-        });
-      }
-    }
-    // Disponibles d'abord
-    orders.sort((a, b) => (b.available - a.available));
-    return res.status(200).json({ pipeline: pl.name, id: sid, deals: deals.length, orders, available_count: orders.filter(o => o.available).length });
+        return { product: title || '—', size: size || '—', qty: p.quantity || 1, image: p.image || '', available: availQty > 0, avail_qty: availQty, matched_stock_ids: matches.map(m => m.id) };
+      });
+      const availN = products.filter(x => x.available).length;
+      return {
+        deal_id: d.id, order: d.order || 1, stage_id: (d.stage && d.stage.id) || sid,
+        deal_number: d.deal_number || String(d.id), client: c.name || 'Client', city: d.deal_city || c.city || '', phone: String(c.phone || ''),
+        product_count: products.length, avail_count: availN,
+        all_available: products.length > 0 && availN === products.length, any_available: availN > 0, products,
+      };
+    });
+    // Complètes d'abord, puis partielles, puis rien
+    out.sort((a, b) => (b.all_available - a.all_available) || (b.any_available - a.any_available));
+    return res.status(200).json({ pipeline: pl.name, id: sid, deals_count: out.length, full_available: out.filter(d => d.all_available).length, deals: out });
   } catch (e) {
     return res.status(500).json({ error: e.message });
   }
+}
+
+// ════════ Expédier une COMMANDE entière (POST ?action=ship_deal) : décrémente le stock des articles trouvés + passe le deal à « Traiter » (49150) ════════
+async function shipDeal(req, res) {
+  let body = req.body; if (typeof body === 'string') { try { body = JSON.parse(body); } catch (e) { body = {}; } }
+  body = body || {};
+  const dealId = body.deal_id || req.query?.deal_id;
+  const items = Array.isArray(body.items) ? body.items : [];
+  const moveStage = parseInt(body.move_stage || req.query?.move_stage || '49150', 10); // Traiter
+  const oldStage = body.old_stage;
+  const order = body.order || 1;
+  const sb = (path, opts = {}) => fetch(`${SB_URL}/rest/v1/${path}`, { ...opts, headers: { ...supabaseHeaders(true), ...(opts.headers || {}) } });
+  const updates = [];
+  try {
+    for (const it of items) {
+      let toShip = Math.max(0, parseInt(it.qty || 1, 10));
+      for (const sid of (it.stock_ids || [])) {
+        if (toShip <= 0) break;
+        const sRes = await sb(`stock?id=eq.${encodeURIComponent(sid)}&select=id,product,size,qty`);
+        if (!sRes.ok) continue; const sItem = (await sRes.json())[0]; if (!sItem) continue;
+        const have = Number(sItem.qty) || 0; if (have <= 0) continue;
+        const take = Math.min(have, toShip); const nq = have - take;
+        await sb(`stock?id=eq.${encodeURIComponent(sid)}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ qty: nq }) });
+        updates.push({ id: sid, product: sItem.product, size: sItem.size, before: have, shipped: take, after: nq, rupture: nq === 0 });
+        toShip -= take;
+      }
+    }
+    // Déplacer la commande vers « Traiter » dans eGrow (même mécanisme que l'agent : updateDealOrderinNewStage)
+    let moved = null;
+    if (dealId && EGROW_ME && EGROW_AK) {
+      const mv = await egrowPost('/deal/updateDealOrderinNewStage.php', { new_order: 1, old_order: order, stage_id: moveStage, deal_id: dealId, old_stage: oldStage, update_stage_source: 'touni-retour ship' });
+      moved = { deal_id: dealId, to: moveStage, ok: !!(mv && (mv.status === 'success' || mv.status === true || mv.status)) , raw: mv && mv.__raw ? mv.__raw : undefined };
+    }
+    return res.status(200).json({ ok: true, shipped: updates.reduce((s, u) => s + u.shipped, 0), updates, moved });
+  } catch (e) { return res.status(500).json({ error: e.message }); }
+}
+
+// ════════ État « Préparé » PARTAGÉ (table stock_prepared) — synchronisé entre tous les PC ════════
+async function preparedList(req, res) {
+  try {
+    const r = await fetch(`${SB_URL}/rest/v1/stock_prepared?select=pkey&limit=5000`, { headers: supabaseHeaders(true) });
+    const rows = r.ok ? await r.json() : [];
+    return res.status(200).json({ keys: rows.map(x => x.pkey) });
+  } catch (e) { return res.status(500).json({ error: e.message }); }
+}
+async function prepToggle(req, res) {
+  let body = req.body; if (typeof body === 'string') { try { body = JSON.parse(body); } catch (e) { body = {}; } }
+  const key = (body && body.key) || req.query?.key;
+  const on = String((body && body.on) ?? req.query?.on ?? '1') === '1' || (body && body.on) === true;
+  if (!key) return res.status(400).json({ error: 'key requise' });
+  try {
+    if (on) {
+      const r = await fetch(`${SB_URL}/rest/v1/stock_prepared?on_conflict=pkey`, { method: 'POST', headers: { ...supabaseHeaders(true), Prefer: 'resolution=ignore-duplicates,return=minimal' }, body: JSON.stringify([{ pkey: key }]) });
+      if (!r.ok) throw new Error(await r.text());
+    } else {
+      const r = await fetch(`${SB_URL}/rest/v1/stock_prepared?pkey=eq.${encodeURIComponent(key)}`, { method: 'DELETE', headers: supabaseHeaders(true) });
+      if (!r.ok) throw new Error(await r.text());
+    }
+    return res.status(200).json({ ok: true, key, on });
+  } catch (e) { return res.status(500).json({ error: e.message }); }
 }
 
 // ════════ Découverte des pipelines eGrow (GET ?egrow_stages=1) — tourne en prod où le token existe ════════
@@ -478,6 +541,9 @@ module.exports = async function handler(req, res) {
   // Actions « Commandes en stock » (page dédiée)
   if (req.method === 'POST' && req.query?.action === 'ship') return shipFromStock(req, res);
   if (req.method === 'POST' && req.query?.action === 'scan') return scanOrdersStock(req, res);
+  if (req.method === 'POST' && req.query?.action === 'ship_deal') return shipDeal(req, res);
+  if (req.method === 'POST' && req.query?.action === 'prep') return prepToggle(req, res);
+  if (req.method === 'GET' && req.query?.prepared) return preparedList(req, res);
 
   try {
     if (req.method === 'GET') {
