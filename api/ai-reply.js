@@ -674,7 +674,7 @@ async function recentBotSent(convId) {
   } catch (e) {}
   return res;
 }
-// Un HUMAIN gère-t-il la conversation ? (= message sortant récent <1h30 dont le texte n'est PAS un envoi du bot).
+// Un HUMAIN gère-t-il la conversation ? (= message sortant récent <1h dont le texte n'est PAS un envoi du bot).
 function humanHandling(raw, nowSec, botSent, contactWaId) {
   const HUMAN_TYPES = ['text', 'image', 'audio', 'voice', 'ptt', 'video', 'document'];
   const contact = String(contactWaId || '').replace(/\D/g, '');
@@ -1089,7 +1089,7 @@ async function runPoll(q) {
           let humanActive = false;
           try { humanActive = humanHandling(raw, nowSec, botSent, contactWaId); } catch (e) {}
           if (humanActive) {
-            if (!dry && claimedMsgId) { await releaseClaim(claimedMsgId); claimedMsgId = null; } // libère → on pourra répondre plus tard si l'humain reste inactif 1h30
+            if (!dry && claimedMsgId) { await releaseClaim(claimedMsgId); claimedMsgId = null; } // libère → on pourra répondre plus tard si l'humain reste inactif 1h
             results.push({ conv: c.id, phone: contactWaId, msgId, body: body.slice(0, 60), decision: 'human_handover' });
             processed++; continue;
           }
