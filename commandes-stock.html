@@ -28,6 +28,15 @@ h1{font-size:20px;display:flex;align-items:center;gap:8px}
 .daterow label{font-size:12px;color:var(--muted);font-weight:600;display:flex;align-items:center;gap:6px}
 .daterow input[type=date]{font-family:var(--font);font-size:12px;padding:5px 8px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text)}
 .btn-clear{background:transparent;color:var(--muted);border:1px solid var(--border)}
+.pipebar{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:10px}
+.pipebar .plabel{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-right:2px}
+.pipe{background:var(--card);border:1px solid var(--border);border-radius:20px;padding:6px 13px;font-size:12px;font-weight:700;cursor:pointer;color:var(--text)}
+.pipe.conf{border-color:#16a34a;color:#16a34a}
+.pipe.active{background:var(--text);color:var(--bg);border-color:var(--text)}
+.pipe.conf.active{background:#16a34a;color:#fff;border-color:#16a34a}
+.card.rupt{border-left-color:var(--red)!important;opacity:.72}
+.pill.rupt{background:#fee2e2;color:#b91c1c}
+.btn-ship:disabled{opacity:.4;cursor:not-allowed}
 .list{display:flex;flex-direction:column;gap:10px;margin-top:14px}
 .card{background:var(--card);border:1px solid var(--border);border-left:4px solid var(--green);border-radius:var(--radius);padding:12px;display:flex;gap:12px;align-items:center;box-shadow:0 1px 3px rgba(0,0,0,.04)}
 .card img{width:74px;height:98px;object-fit:cover;border-radius:8px;background:#f0f1f3;flex-shrink:0;cursor:zoom-in}
@@ -71,6 +80,16 @@ h1{font-size:20px;display:flex;align-items:center;gap:8px}
     </div>
     <button class="btn btn-sync" id="syncBtn" onclick="syncNow()">🔄 Synchroniser</button>
     <span class="count" id="count">—</span>
+  </div>
+  <div class="pipebar" id="pipebar">
+    <span class="plabel">Pipeline eGrow :</span>
+    <button class="pipe active" data-pipe="stock" onclick="pickStock(this)">📦 Stock (direct)</button>
+    <button class="pipe conf" onclick="pickPipe(49396,'Confirmer Maillots',this)">✓ Confirmer Maillots</button>
+    <button class="pipe conf" onclick="pickPipe(63093,'Confirmer Autre',this)">✓ Confirmer Autre</button>
+    <button class="pipe conf" onclick="pickPipe(64833,'Flocage PRO Confirmer',this)">✓ Flocage PRO</button>
+    <button class="pipe" onclick="pickPipe(64835,'Commande Incomplète',this)">Commande Incomplète</button>
+    <button class="pipe" onclick="pickPipe(60669,'Rappeler le stock',this)">Rappeler le stock</button>
+    <button class="pipe" onclick="pickPipe(49430,'Rupture',this)">Rupture</button>
   </div>
   <div class="daterow" id="daterow">
     <label>Du <input type="date" id="dfrom" onchange="applyCustom()"></label>
@@ -189,7 +208,62 @@ async function syncNow(){
   catch(e){ toast('⚠️ '+e.message); }
   finally{ b.disabled=false; b.textContent=o; }
 }
-(async function(){ await loadImages(); await load(); setInterval(load,15000); })();
+// ───── Mode PIPELINE eGrow ─────
+var MODE='stock', CUR_PIPE=null, PIPE_ORDERS=[];
+function pipeActive(el){ document.querySelectorAll('.pipe').forEach(function(c){c.classList.remove('active');}); el.classList.add('active'); }
+function pickStock(el){ MODE='stock'; CUR_PIPE=null; pipeActive(el);
+  document.querySelector('.filters').style.display=''; document.getElementById('syncBtn').style.display='';
+  document.getElementById('daterow').classList.remove('show'); load(); }
+async function pickPipe(id,name,el){ MODE='pipeline'; CUR_PIPE={id:id,name:name}; pipeActive(el);
+  document.querySelector('.filters').style.display='none'; document.getElementById('syncBtn').style.display='none';
+  document.getElementById('daterow').classList.remove('show'); await loadPipe(); }
+async function loadPipe(){
+  if(!CUR_PIPE) return;
+  var el=document.getElementById('list'); el.innerHTML='<div class="empty">Chargement du pipeline « '+CUR_PIPE.name+' »…</div>';
+  try{
+    var r=await fetch('/api/notifications?pipeline='+CUR_PIPE.id+'&secret='+SECRET);
+    var j=await r.json(); if(j.error) throw new Error(j.error);
+    PIPE_ORDERS=j.orders||[]; dot('ok'); renderPipe(j.available_count);
+  }catch(e){ dot('err'); el.innerHTML='<div class="empty">⚠️ '+e.message+'</div>'; }
+}
+function renderPipe(availCount){
+  document.getElementById('count').textContent=CUR_PIPE.name+' — '+PIPE_ORDERS.length+' cmd · '+(availCount!==undefined?availCount:PIPE_ORDERS.filter(function(o){return o.available;}).length)+' dispo';
+  var el=document.getElementById('list');
+  if(!PIPE_ORDERS.length){ el.innerHTML='<div class="empty">Aucune commande dans « '+CUR_PIPE.name+' ».</div>'; return; }
+  el.innerHTML=PIPE_ORDERS.map(function(o,i){
+    var img=o.image||imgFor(o.product||'');
+    return '<div class="card'+(o.available?'':' rupt')+'" id="p-'+i+'">'
+      +(img?'<img src="'+img+'" alt="" onclick="openImg(this.src)">':'<img alt="">')
+      +'<div class="info">'
+      +  '<div class="ord">'+(o.deal_number||'')+'</div>'
+      +  '<div class="title">'+(o.product||'—')+'</div>'
+      +  '<div class="meta">'
+      +    '<span class="pill">'+(o.size||'—')+'</span>'
+      +    (o.available?'<span class="pill qty">Dispo : '+o.avail_qty+'</span>':'<span class="pill rupt">Rupture stock</span>')
+      +    (Number(o.qty)>1?'<span class="pill">×'+o.qty+'</span>':'')
+      +    (o.client?'<span class="pill client">👤 '+o.client+(o.city?' · '+o.city:'')+'</span>':'')
+      +  '</div>'
+      +'</div>'
+      +'<div class="act">'
+      +  (o.available?'<button class="btn btn-ship" onclick="shipPipe('+i+')">✅ Expédier</button>':'<button class="btn btn-ship" disabled>Indispo</button>')
+      +'</div>'
+      +'</div>';
+  }).join('');
+}
+async function shipPipe(i){
+  var o=PIPE_ORDERS[i]; if(!o||!o.available) return;
+  var card=document.getElementById('p-'+i); if(card) card.style.opacity='.5';
+  try{
+    var ids=(o.matched_stock_ids||[]).join(',');
+    var r=await fetch('/api/notifications?action=ship&secret='+SECRET+'&stock_ids='+encodeURIComponent(ids)+'&qty='+(o.qty||1),{method:'POST'});
+    var d=await r.json(); if(!r.ok||!d.ok) throw new Error(d.error||'Erreur');
+    var reste=(d.updates&&d.updates[0])?d.updates[0].after:null;
+    toast('📦 Expédié'+(reste!==null?' · reste '+reste+(d.updates[0].rupture?' (rupture)':''):''));
+    await loadPipe(); // rafraîchit la dispo réelle
+  }catch(e){ if(card)card.style.opacity='1'; toast('⚠️ '+e.message); }
+}
+function tick(){ if(MODE==='stock') load(); } // n'auto-rafraîchit QUE le stock direct (pas d'appel eGrow toutes les 15s)
+(async function(){ await loadImages(); await load(); setInterval(tick,15000); })();
 </script>
 </body>
 </html>
