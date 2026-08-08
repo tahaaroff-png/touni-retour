@@ -309,6 +309,18 @@ async function egrowStages(req, res) {
     const t = await r.text(); try { return JSON.parse(t); } catch (e) { return { __raw: t.slice(0, 200) }; }
   };
   try {
+    // Mode échantillon : dump quelques deals d'un stage pour voir la structure produit (taille, etc.)
+    if (req.query?.sample) {
+      const sid = parseInt(req.query.sample, 10);
+      const r = await post('/deal/getStageDeals.php', { stage: sid, page: 1, limit: 3 });
+      const a = Array.isArray(r) ? r : (r && r.data) || [];
+      const sample = a.map(d => ({
+        id: d.id, deal_number: d.deal_number, city: d.deal_city,
+        contact: d.contact ? { name: d.contact.name, phone: d.contact.phone } : null,
+        stage: d.stage, products: d.products,
+      }));
+      return res.status(200).json({ stage: sid, n: a.length, sample });
+    }
     // 1) essai endpoint dédié (liste stages + counts)
     let pls = await post('/deal/getuserPipeLineStages.php', {});
     // 2) sinon, agréger depuis un lot de deals
