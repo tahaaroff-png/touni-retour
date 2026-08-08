@@ -8,6 +8,35 @@ const { SB_URL, supabaseHeaders, shopifyAdminHeaders, SHOPIFY_DOMAIN, SHOPIFY_AP
 // Réutilise le parsing du webhook (fonction exportée) — pour rester sous la limite de 12 fonctions Vercel
 const { parseVariantTitle } = require('./shopify-order-webhook.js');
 
+// ── eGrow (pipelines) ──
+const EGROW_ME = process.env.EGROW_ME || '', EGROW_AK = process.env.EGROW_AK || '';
+const EGROW_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+async function egrowPost(path, params) {
+  const p = Object.assign({}, params, { me: EGROW_ME, dev: 0 });
+  const b = '----TouniAgent' + Math.random().toString(36).slice(2);
+  const raw = `--${b}\r\nContent-Disposition: form-data; name="data"\r\n\r\n${JSON.stringify(p)}\r\n--${b}--\r\n`;
+  const r = await fetch('https://api.egrow.com' + path, { method: 'POST', headers: { 'account-key': EGROW_AK, 'User-Agent': EGROW_UA, 'content-type': `multipart/form-data; boundary=${b}` }, body: raw });
+  const t = await r.text(); try { return JSON.parse(t); } catch (e) { return { __raw: t.slice(0, 200) }; }
+}
+// Les 6 pipelines eGrow que Tahar veut filtrer (id → libellé). Ordre d'affichage = ordre des clés.
+const PIPELINES = [
+  { id: 49396, name: 'Confirmer Maillots', confirmed: true },
+  { id: 63093, name: 'Confirmer Autre', confirmed: true },
+  { id: 64833, name: 'Flocage PRO Confirmer', confirmed: true },
+  { id: 64835, name: 'Commande Incomplète', confirmed: false },
+  { id: 60669, name: 'rappeler le stock', confirmed: false },
+  { id: 49430, name: 'Rupture', confirmed: false },
+];
+// Taille commandée d'un produit eGrow = la combinaison sélectionnée (`combination`) → son name.
+function egrowSize(p) {
+  const combos = Array.isArray(p.combinations) ? p.combinations : [];
+  const sel = combos.find(c => String(c.id) === String(p.combination));
+  if (sel && sel.name) return String(sel.name).trim();
+  // repli : parser depuis le nom / short_name
+  const { size } = parseVariantTitle(p.short_name || '');
+  return size;
+}
+
 // Similarité de titres (identique au webhook) — pour le matching flou EN MÉMOIRE (évite les fetch par ligne = timeout)
 function jaccardSim(a, b) {
   const tok = s => new Set(String(s).toLowerCase().replace(/[^a-z0-9]/g, ' ').split(/\s+/).filter(Boolean));
@@ -148,8 +177,30 @@ async function metaMetrics(req, res) {
 // Ex : dispo 2, commande 1 → reste 1. Si ça tombe à 0 → rupture (qty 0).
 async function shipFromStock(req, res) {
   const notifId = req.query?.id || (req.body && req.body.id);
-  if (!notifId) return res.status(400).json({ error: 'id (notification) requis' });
   const sb = (path, opts = {}) => fetch(`${SB_URL}/rest/v1/${path}`, { ...opts, headers: { ...supabaseHeaders(true), ...(opts.headers || {}) } });
+
+  // Mode PIPELINE (pas de notification) : décrémente directement des articles de stock donnés.
+  const directIds = String(req.query?.stock_ids || '').split(',').map(s => s.trim()).filter(Boolean);
+  if (!notifId && directIds.length) {
+    let toShip = Math.max(1, parseInt(req.query?.qty || '1', 10));
+    const updates = [];
+    try {
+      for (const sid of directIds) {
+        if (toShip <= 0) break;
+        const sRes = await sb(`stock?id=eq.${encodeURIComponent(sid)}&select=id,product,size,qty,status`);
+        if (!sRes.ok) continue;
+        const sItem = (await sRes.json())[0]; if (!sItem) continue;
+        const have = Number(sItem.qty) || 0; if (have <= 0) continue;
+        const take = Math.min(have, toShip); const newQty = have - take;
+        await sb(`stock?id=eq.${encodeURIComponent(sid)}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ qty: newQty }) });
+        updates.push({ id: sid, product: sItem.product, size: sItem.size, before: have, shipped: take, after: newQty, rupture: newQty === 0 });
+        toShip -= take;
+      }
+      return res.status(200).json({ ok: true, mode: 'pipeline', shipped: updates.reduce((s, u) => s + u.shipped, 0), remaining_unfulfilled: Math.max(0, toShip), updates });
+    } catch (e) { return res.status(500).json({ error: e.message }); }
+  }
+
+  if (!notifId) return res.status(400).json({ error: 'id (notification) ou stock_ids requis' });
   try {
     const nRes = await sb(`shopify_notifications?id=eq.${encodeURIComponent(notifId)}&select=*`);
     if (!nRes.ok) return res.status(500).json({ error: 'lecture notif échouée', detail: await nRes.text() });
@@ -296,6 +347,61 @@ async function scanOrdersStock(req, res) {
   }
 }
 
+// Charge tout le stock interne dispo (retour+acheté, qty>0) UNE fois → matcher en mémoire (titre+taille).
+async function loadStockMatcher() {
+  const rows = [];
+  for (let off = 0; ; off += 1000) {
+    const r = await fetch(`${SB_URL}/rest/v1/stock?select=id,product,size,qty,status&qty=gt.0&status=in.(retour,stock)&limit=1000&offset=${off}`, { headers: supabaseHeaders(true) });
+    if (!r.ok) break; const a = await r.json(); rows.push(...a); if (a.length < 1000) break;
+  }
+  const byTitle = new Map();
+  for (const s of rows) { if (!s.product) continue; if (!byTitle.has(s.product)) byTitle.set(s.product, []); byTitle.get(s.product).push(s); }
+  const titles = [...byTitle.keys()];
+  const jac = (a, b) => { const tk = s => new Set(String(s).toLowerCase().replace(/[^a-z0-9]/g, ' ').split(/\s+/).filter(Boolean)); const sa = tk(a), sb = tk(b); if (!sa.size || !sb.size) return 0; let i = 0; for (const t of sa) if (sb.has(t)) i++; return i / (sa.size + sb.size - i); };
+  const match = (title, size, color) => {
+    const nS = normalizeSize(size), nC = normalizeColor(color);
+    const bySC = arr => arr.filter(c => { const pr = String(c.size || '').split('|'); const cS = (pr[0] || '').trim(), cC = (pr[1] || '').trim(); if (normalizeSize(cS) !== nS) return false; if (nC && normalizeColor(cC) !== nC) return false; return true; });
+    let m = bySC(byTitle.get(title) || []); if (m.length) return m;
+    let best = null, bs = 0; for (const t of titles) { const sc = jac(title, t); if (sc > bs) { bs = sc; best = t; } }
+    if (best && bs >= 0.55) return bySC(byTitle.get(best) || []);
+    return [];
+  };
+  return { match };
+}
+
+// ════════ Filtre par PIPELINE eGrow (GET ?pipeline=<stageId>) → commandes du pipeline + dispo stock interne ════════
+async function pipelineScan(req, res) {
+  if (!EGROW_ME || !EGROW_AK) return res.status(500).json({ error: 'eGrow non configuré (EGROW_ME/AK)' });
+  const sid = parseInt(req.query.pipeline, 10);
+  const pl = PIPELINES.find(p => p.id === sid);
+  if (!pl) return res.status(400).json({ error: 'pipeline inconnu' });
+  try {
+    const r = await egrowPost('/deal/getStageDeals.php', { stage: sid, page: 1, limit: 1500 });
+    const deals = Array.isArray(r) ? r : (r && r.data) || [];
+    const { match } = await loadStockMatcher();
+    const orders = [];
+    for (const d of deals) {
+      const c = d.contact || {};
+      for (const p of (d.products || [])) {
+        const title = String(p.name || '').trim(); if (!title) continue;
+        const size = egrowSize(p);
+        const matches = match(title, size, null);
+        const availQty = matches.reduce((s, m) => s + (m.qty || 0), 0);
+        orders.push({
+          deal_number: d.deal_number || String(d.id), client: c.name || 'Client', city: d.deal_city || c.city || '',
+          product: title, size: size || '—', qty: p.quantity || 1, image: p.image || '',
+          available: availQty > 0, avail_qty: availQty, matched_stock_ids: matches.map(m => m.id),
+        });
+      }
+    }
+    // Disponibles d'abord
+    orders.sort((a, b) => (b.available - a.available));
+    return res.status(200).json({ pipeline: pl.name, id: sid, deals: deals.length, orders, available_count: orders.filter(o => o.available).length });
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
+  }
+}
+
 // ════════ Découverte des pipelines eGrow (GET ?egrow_stages=1) — tourne en prod où le token existe ════════
 async function egrowStages(req, res) {
   const ME = process.env.EGROW_ME || '', AK = process.env.EGROW_AK || '';
@@ -362,8 +468,12 @@ module.exports = async function handler(req, res) {
   // Vue Directeur Meta Ads (live)
   if (req.method === 'GET' && req.query?.meta) return metaMetrics(req, res);
 
-  // Découverte pipelines eGrow (temporaire, pour récupérer les IDs de stages)
+  // Découverte pipelines eGrow (admin, secret-gated)
   if (req.query?.egrow_stages) return egrowStages(req, res);
+  // Liste des 6 pipelines filtrables (pour construire les boutons côté page)
+  if (req.query?.pipelines_list) return res.status(200).json({ pipelines: PIPELINES });
+  // Commandes d'un pipeline eGrow + dispo stock interne
+  if (req.method === 'GET' && req.query?.pipeline) return pipelineScan(req, res);
 
   // Actions « Commandes en stock » (page dédiée)
   if (req.method === 'POST' && req.query?.action === 'ship') return shipFromStock(req, res);
