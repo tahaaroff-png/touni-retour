@@ -292,11 +292,10 @@ function renderPipe(fullCount){
       +'</div>';
   }).join('');
 }
+var _shipping={};
 async function shipDeal(di){
-  var d=PIPE_DEALS[di]; if(!d) return;
-  var msg=d.all_available?'Expédier la commande '+d.deal_number+' et la passer à « Traiter » ?'
-    :'⚠️ '+d.avail_count+'/'+d.product_count+' article(s) trouvé(s) en stock. Expédier quand même et passer la commande à « Traiter » ?';
-  if(!confirm(msg)) return;
+  var d=PIPE_DEALS[di]; if(!d || _shipping[d.deal_id]) return; // anti double-clic
+  _shipping[d.deal_id]=1;
   var card=document.getElementById('d-'+di); if(card) card.style.opacity='.5';
   try{
     var items=d.products.filter(function(p){return p.available;}).map(function(p){return {stock_ids:p.matched_stock_ids,qty:p.qty};});
@@ -305,9 +304,12 @@ async function shipDeal(di){
     var res=await r.json(); if(!r.ok||!res.ok) throw new Error(res.error||'Erreur');
     // nettoyer les « préparé » de cette commande (serveur)
     for(var k=0;k<d.products.length;k++){ var p=d.products[k]; var pk='p:'+(d.deal_number||'')+'|'+(p.product||'')+'|'+(p.size||''); if(PREP.has(pk)) flipPrep(pk); }
+    // retirer la commande de la liste (pas de rechargement complet → pas de flash)
+    var idx=PIPE_DEALS.indexOf(d); if(idx>-1) PIPE_DEALS.splice(idx,1);
+    renderPipe();
     toast('📦 '+d.deal_number+' → Traité'+(res.moved&&res.moved.ok?' ✅':' (stock màj)'));
-    await loadPipe();
   }catch(e){ if(card)card.style.opacity='1'; toast('⚠️ '+e.message); }
+  finally{ delete _shipping[d.deal_id]; }
 }
 function tick(){ if(MODE==='stock') load(); } // n'auto-rafraîchit QUE le stock direct (pas d'appel eGrow toutes les 15s)
 (async function(){ await loadImages(); await loadPrep(); await load(); setInterval(tick,15000); })();
