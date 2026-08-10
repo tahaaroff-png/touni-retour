@@ -18,6 +18,31 @@ async function egrowPost(path, params) {
   const r = await fetch('https://api.egrow.com' + path, { method: 'POST', headers: { 'account-key': EGROW_AK, 'User-Agent': EGROW_UA, 'content-type': `multipart/form-data; boundary=${b}` }, body: raw });
   const t = await r.text(); try { return JSON.parse(t); } catch (e) { return { __raw: t.slice(0, 200) }; }
 }
+// État FRAIS d'un deal (stage courant + position) → pour un déplacement fiable (pas de old_stage périmé) + vérification.
+async function egrowGetDealStage(dealId) {
+  try {
+    const r = await egrowPost('/deal/getDealDetails.php', { deal: dealId });
+    const d = (r && r.data && typeof r.data === 'object') ? r.data : r;
+    if (!d || typeof d !== 'object') return null;
+    const stageId = d.stage && d.stage.id ? Number(d.stage.id) : null;
+    return { stageId, order: d.order || 1 };
+  } catch (e) { return null; }
+}
+// Déplace un deal vers targetStage de façon FIABLE : lit l'état frais, déplace, VÉRIFIE, réessaie 1×.
+async function moveDealReliable(dealId, targetStage, fallbackStage, fallbackOrder) {
+  if (!dealId || !EGROW_ME || !EGROW_AK) return { ok: false, reason: 'egrow_non_configure' };
+  let cur = await egrowGetDealStage(dealId);
+  let curStage = cur && cur.stageId ? cur.stageId : (parseInt(fallbackStage, 10) || null);
+  let curOrder = cur && cur.order ? cur.order : (fallbackOrder || 1);
+  if (curStage === targetStage) return { ok: true, already: true, to: targetStage };
+  for (let a = 0; a < 2; a++) {
+    await egrowPost('/deal/updateDealOrderinNewStage.php', { new_order: 1, old_order: curOrder, stage_id: targetStage, deal_id: dealId, old_stage: curStage, update_stage_source: 'touni-retour ship' });
+    const after = await egrowGetDealStage(dealId);
+    if (after && after.stageId === targetStage) return { ok: true, to: targetStage, attempts: a + 1 };
+    if (after && after.stageId) { curStage = after.stageId; curOrder = after.order || curOrder; }
+  }
+  return { ok: false, to: targetStage, last_stage: curStage };
+}
 // Les 6 pipelines eGrow que Tahar veut filtrer (id → libellé). Ordre d'affichage = ordre des clés.
 const PIPELINES = [
   { id: 49396, name: 'Confirmer Maillots', confirmed: true },
@@ -426,35 +451,38 @@ async function shipDeal(req, res) {
   const sb = (path, opts = {}) => fetch(`${SB_URL}/rest/v1/${path}`, { ...opts, headers: { ...supabaseHeaders(true), ...(opts.headers || {}) } });
   const updates = [];
   try {
-    for (const it of items) {
-      let toShip = Math.max(0, parseInt(it.qty || 1, 10));
-      for (const sid of (it.stock_ids || [])) {
-        if (toShip <= 0) break;
-        const sRes = await sb(`stock?id=eq.${encodeURIComponent(sid)}&select=id,product,size,qty`);
-        if (!sRes.ok) continue; const sItem = (await sRes.json())[0]; if (!sItem) continue;
-        const have = Number(sItem.qty) || 0; if (have <= 0) continue;
-        const take = Math.min(have, toShip); const nq = have - take;
-        await sb(`stock?id=eq.${encodeURIComponent(sid)}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ qty: nq }) });
-        updates.push({ id: sid, product: sItem.product, size: sItem.size, before: have, shipped: take, after: nq, rupture: nq === 0 });
-        toShip -= take;
+    // 1) DÉPLACER vers « Traiter » D'ABORD, de façon vérifiée (fiabilise : plus de passage manquant).
+    const moved = await moveDealReliable(dealId, moveStage, oldStage, order);
+
+    // 2) Décrémenter le stock UNIQUEMENT si le déplacement a réussi → un nouveau clic (retry) ne double-décompte pas.
+    if (moved.ok) {
+      for (const it of items) {
+        let toShip = Math.max(0, parseInt(it.qty || 1, 10));
+        for (const sid of (it.stock_ids || [])) {
+          if (toShip <= 0) break;
+          const sRes = await sb(`stock?id=eq.${encodeURIComponent(sid)}&select=id,product,size,qty`);
+          if (!sRes.ok) continue; const sItem = (await sRes.json())[0]; if (!sItem) continue;
+          const have = Number(sItem.qty) || 0; if (have <= 0) continue;
+          const take = Math.min(have, toShip); const nq = have - take;
+          await sb(`stock?id=eq.${encodeURIComponent(sid)}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ qty: nq }) });
+          updates.push({ id: sid, product: sItem.product, size: sItem.size, before: have, shipped: take, after: nq, rupture: nq === 0 });
+          toShip -= take;
+        }
       }
     }
-    // Déplacer la commande vers « Traiter » dans eGrow (même mécanisme que l'agent : updateDealOrderinNewStage)
-    let moved = null;
-    if (dealId && EGROW_ME && EGROW_AK) {
-      const mv = await egrowPost('/deal/updateDealOrderinNewStage.php', { new_order: 1, old_order: order, stage_id: moveStage, deal_id: dealId, old_stage: oldStage, update_stage_source: 'touni-retour ship' });
-      moved = { deal_id: dealId, to: moveStage, ok: !!(mv && (mv.status === 'success' || mv.status === true || mv.status)) , raw: mv && mv.__raw ? mv.__raw : undefined };
-    }
-    // Historique : on enregistre TOUT clic Expédier (même en rupture, stock non décrémenté)
+
+    // 3) Historique : enregistré UNIQUEMENT quand le déplacement a réussi (sinon la commande n'est pas "sortie").
     const snap = body.snapshot || {};
-    try {
-      await fetch(`${SB_URL}/rest/v1/ship_history`, { method: 'POST', headers: { ...supabaseHeaders(true), Prefer: 'return=minimal' }, body: JSON.stringify([{
-        source: 'pipeline', pipeline: snap.pipeline || null, deal_id: dealId ? String(dealId) : null, deal_number: snap.deal_number || null,
-        client: snap.client || null, city: snap.city || null, phone: snap.phone || null, products: snap.products || null,
-        shipped_qty: updates.reduce((s, u) => s + u.shipped, 0), stock_decremented: updates.length > 0, moved_to_traite: !!(moved && moved.ok),
-      }]) });
-    } catch (e) {}
-    return res.status(200).json({ ok: true, shipped: updates.reduce((s, u) => s + u.shipped, 0), updates, moved });
+    if (moved.ok) {
+      try {
+        await fetch(`${SB_URL}/rest/v1/ship_history`, { method: 'POST', headers: { ...supabaseHeaders(true), Prefer: 'return=minimal' }, body: JSON.stringify([{
+          source: 'pipeline', pipeline: snap.pipeline || null, deal_id: dealId ? String(dealId) : null, deal_number: snap.deal_number || null,
+          client: snap.client || null, city: snap.city || null, phone: snap.phone || null, products: snap.products || null,
+          shipped_qty: updates.reduce((s, u) => s + u.shipped, 0), stock_decremented: updates.length > 0, moved_to_traite: true,
+        }]) });
+      } catch (e) {}
+    }
+    return res.status(200).json({ ok: true, moved, shipped: updates.reduce((s, u) => s + u.shipped, 0), updates });
   } catch (e) { return res.status(500).json({ error: e.message }); }
 }
 
@@ -501,6 +529,13 @@ async function egrowStages(req, res) {
   const ME = process.env.EGROW_ME || '', AK = process.env.EGROW_AK || '';
   const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
   if (!ME || !AK) return res.status(500).json({ error: 'EGROW_ME/EGROW_AK absents en env' });
+  // Sonde : vérifier que getDealDetails renvoie bien le stage (pour la fiabilité du déplacement)
+  if (req.query?.probe_deal) {
+    const parsed = await egrowGetDealStage(req.query.probe_deal);
+    const raw = await egrowPost('/deal/getDealDetails.php', { deal: req.query.probe_deal });
+    const d = (raw && raw.data && typeof raw.data === 'object') ? raw.data : raw;
+    return res.status(200).json({ probe_deal: req.query.probe_deal, parsed, keys: d && typeof d === 'object' ? Object.keys(d).slice(0, 40) : null, stage: d && d.stage, order: d && d.order });
+  }
   const post = async (path, params) => {
     const p = Object.assign({}, params, { me: ME, dev: 0 });
     const b = '----TouniAgent' + Math.random().toString(36).slice(2);

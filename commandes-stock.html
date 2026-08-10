@@ -140,7 +140,7 @@ async function flipPrep(k){ var on=!PREP.has(k); if(on)PREP.add(k); else PREP.de
   catch(e){ if(on)PREP.delete(k); else PREP.add(k); toast('⚠️ Sync préparé échouée'); }
 }
 function prepBtn(onclick,prepped){return '<button class="btn btn-prep'+(prepped?' on':'')+'" onclick="'+onclick+'">'+(prepped?'✔ Préparé':'📥 Préparé')+'</button>';}
-async function togglePrepD(di,pi){ var d=PIPE_DEALS[di]; if(!d)return; var p=d.products[pi]; if(!p)return; await flipPrep('p:'+(d.deal_number||'')+'|'+(p.product||'')+'|'+(p.size||'')); renderPipe(); }
+async function togglePrepD(di,pi){ var d=PIPE_DEALS[di]; if(!d)return; var p=d.products[pi]; if(!p)return; await flipPrep('p:'+(d.deal_number||'')+'|'+(p.product||'')+'|'+(p.size||'')+'|'+pi); renderPipe(); }
 async function togglePrepN(id){ await flipPrep('n:'+id); render(); }
 function openImg(src){ if(!src)return; document.getElementById('lightbox-img').src=src; document.getElementById('lightbox').classList.add('show'); }
 function closeImg(){ document.getElementById('lightbox').classList.remove('show'); }
@@ -271,7 +271,7 @@ function renderPipe(fullCount){
   if(!deals.length){ el.innerHTML='<div class="empty">Aucune commande dans « '+CUR_PIPE.name+' ».</div>'; return; }
   el.innerHTML=deals.map(function(d,di){
     var prods=d.products.map(function(p,pi){
-      var pk='p:'+(d.deal_number||'')+'|'+(p.product||'')+'|'+(p.size||'');
+      var pk='p:'+(d.deal_number||'')+'|'+(p.product||'')+'|'+(p.size||'')+'|'+pi; // index → chaque ligne unique (fix doublons)
       var pr=isPrep(pk);
       var img=p.image||imgFor(p.product||'');
       return '<div class="prod'+(pr?' prep':'')+'">'
@@ -309,13 +309,19 @@ async function shipDeal(di){
       body:JSON.stringify({deal_id:d.deal_id,old_stage:d.stage_id,order:d.order,move_stage:49150,items:items,
         snapshot:{pipeline:CUR_PIPE?CUR_PIPE.name:'',deal_number:d.deal_number,client:d.client,city:d.city,phone:d.phone,
           products:d.products.map(function(p){return {product:p.product,size:p.size,qty:p.qty,available:p.available};})}})});
-    var res=await r.json(); if(!r.ok||!res.ok) throw new Error(res.error||'Erreur');
-    // nettoyer les « préparé » de cette commande (serveur)
-    for(var k=0;k<d.products.length;k++){ var p=d.products[k]; var pk='p:'+(d.deal_number||'')+'|'+(p.product||'')+'|'+(p.size||''); if(PREP.has(pk)) flipPrep(pk); }
+    var res=await r.json(); if(!r.ok) throw new Error(res.error||'Erreur');
+    // ⚠️ Le déplacement vers Traité a-t-il VRAIMENT réussi ? Sinon on NE retire PAS la carte (l'opératrice réessaie, sans double décompte).
+    if(!res.moved || !res.moved.ok){
+      if(card)card.style.opacity='1';
+      toast('⚠️ '+d.deal_number+' : échec du passage à « Traité » — réessaie');
+      return;
+    }
+    // nettoyer les « préparé » de cette commande (serveur) — clé indexée (fix doublons)
+    for(var k=0;k<d.products.length;k++){ var p=d.products[k]; var pk='p:'+(d.deal_number||'')+'|'+(p.product||'')+'|'+(p.size||'')+'|'+k; if(PREP.has(pk)) flipPrep(pk); }
     // retirer la commande de la liste (pas de rechargement complet → pas de flash)
     var idx=PIPE_DEALS.indexOf(d); if(idx>-1) PIPE_DEALS.splice(idx,1);
     renderPipe();
-    toast('📦 '+d.deal_number+' → Traité'+(res.moved&&res.moved.ok?' ✅':' (stock màj)'));
+    toast('📦 '+d.deal_number+' → Traité ✅');
   }catch(e){ if(card)card.style.opacity='1'; toast('⚠️ '+e.message); }
   finally{ delete _shipping[d.deal_id]; }
 }
