@@ -483,12 +483,8 @@ async function egrowStages(req, res) {
       const sid = parseInt(req.query.sample, 10);
       const r = await post('/deal/getStageDeals.php', { stage: sid, page: 1, limit: 3 });
       const a = Array.isArray(r) ? r : (r && r.data) || [];
-      const sample = a.map(d => ({
-        id: d.id, deal_number: d.deal_number, city: d.deal_city,
-        contact: d.contact ? { name: d.contact.name, phone: d.contact.phone } : null,
-        stage: d.stage, products: d.products,
-      }));
-      return res.status(200).json({ stage: sid, n: a.length, sample });
+      const first = a[0] || {};
+      return res.status(200).json({ stage: sid, n: a.length, deal_keys: Object.keys(first), raw_first: first });
     }
     // 1) essai endpoint dédié (liste stages + counts)
     let pls = await post('/deal/getuserPipeLineStages.php', {});
