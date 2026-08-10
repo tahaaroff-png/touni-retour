@@ -45,6 +45,9 @@ h1{font-size:20px;display:flex;align-items:center;gap:8px}
 .dhead{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding-bottom:10px;border-bottom:1px solid var(--border)}
 .dnum b{font-size:14px}
 .dclient{font-size:12px;color:var(--muted)}
+.ddate{font-size:11px;color:var(--muted);font-weight:600;margin-left:8px}
+.dnote{font-size:12.5px;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:8px 11px;margin-bottom:10px;line-height:1.4}
+@media(prefers-color-scheme:dark){.dnote{background:#2a2410;border-color:#4a3f16;color:#fbbf24}}
 .prods{display:flex;flex-direction:column;gap:8px;padding:10px 0}
 .prod{display:flex;align-items:center;gap:10px;padding:6px;border-radius:9px;background:var(--bg)}
 .prod.prep{background:rgba(37,99,235,.07)}
@@ -284,10 +287,12 @@ function renderPipe(fullCount){
     var badge=d.all_available?'<span class="pill qty">✅ Complète</span>'
       :(d.any_available?'<span class="pill" style="background:#fef3c7;color:#92400e">Partielle '+d.avail_count+'/'+d.product_count+'</span>'
       :'<span class="pill rupt">Rien en stock</span>');
+    var dt=d.date?new Date(d.date).toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'}):'';
     return '<div class="deal" id="d-'+di+'">'
-      +'<div class="dhead"><div class="dnum"><b>'+(d.deal_number||'')+'</b> '+badge+'</div>'
+      +'<div class="dhead"><div class="dnum"><b>'+(d.deal_number||'')+'</b> '+badge+(dt?'<span class="ddate">📅 '+dt+'</span>':'')+'</div>'
       +'<div class="dclient">👤 '+(d.client||'Client')+(d.city?' · '+d.city:'')+(d.phone?' · '+d.phone:'')+'</div></div>'
       +'<div class="prods">'+prods+'</div>'
+      +(d.note?'<div class="dnote">📝 '+String(d.note).replace(/</g,'&lt;')+'</div>':'')
       +'<div class="dact"><button class="btn btn-ship" onclick="shipDeal('+di+')">✅ Expédier → Traité</button></div>'
       +'</div>';
   }).join('');

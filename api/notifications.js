@@ -393,6 +393,8 @@ async function pipelineScan(req, res) {
       return {
         deal_id: d.id, order: d.order || 1, stage_id: (d.stage && d.stage.id) || sid,
         deal_number: d.deal_number || String(d.id), client: c.name || 'Client', city: d.deal_city || c.city || '', phone: String(c.phone || ''),
+        date: d.time ? d.time * 1000 : null,                       // date de la commande (ms)
+        note: (d.last_note && d.last_note.content) ? String(d.last_note.content) : '',  // note eGrow
         product_count: products.length, avail_count: availN,
         all_available: products.length > 0 && availN === products.length, any_available: availN > 0, products,
       };
