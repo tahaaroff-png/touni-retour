@@ -27,7 +27,8 @@
     { "source": "/dashboard", "destination": "/dashboard.html" },
     { "source": "/livreur", "destination": "/livreur.html" },
     { "source": "/commandes-stock", "destination": "/commandes-stock.html" },
-    { "source": "/commandes", "destination": "/commandes-stock.html" }
+    { "source": "/commandes", "destination": "/commandes-stock.html" },
+    { "source": "/historique", "destination": "/historique.html" }
   ],
   "headers": [
     {

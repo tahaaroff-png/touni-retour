@@ -87,6 +87,7 @@ h1{font-size:20px;display:flex;align-items:center;gap:8px}
   <nav class="topnav">
     <a href="/" class="navlink back">← Gestionnaire</a>
     <a href="/" class="navlink">📦 Stock</a>
+    <a href="/historique" class="navlink">🧾 Historique</a>
     <a href="/dashboard" class="navlink">📊 Dashboard</a>
   </nav>
   <h1>📦 Commandes en stock <span id="dot" style="width:9px;height:9px;border-radius:50%;background:var(--muted);display:inline-block"></span></h1>
@@ -305,7 +306,9 @@ async function shipDeal(di){
   try{
     var items=d.products.filter(function(p){return p.available;}).map(function(p){return {stock_ids:p.matched_stock_ids,qty:p.qty};});
     var r=await fetch('/api/notifications?action=ship_deal&secret='+SECRET,{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({deal_id:d.deal_id,old_stage:d.stage_id,order:d.order,move_stage:49150,items:items})});
+      body:JSON.stringify({deal_id:d.deal_id,old_stage:d.stage_id,order:d.order,move_stage:49150,items:items,
+        snapshot:{pipeline:CUR_PIPE?CUR_PIPE.name:'',deal_number:d.deal_number,client:d.client,city:d.city,phone:d.phone,
+          products:d.products.map(function(p){return {product:p.product,size:p.size,qty:p.qty,available:p.available};})}})});
     var res=await r.json(); if(!r.ok||!res.ok) throw new Error(res.error||'Erreur');
     // nettoyer les « préparé » de cette commande (serveur)
     for(var k=0;k<d.products.length;k++){ var p=d.products[k]; var pk='p:'+(d.deal_number||'')+'|'+(p.product||'')+'|'+(p.size||''); if(PREP.has(pk)) flipPrep(pk); }

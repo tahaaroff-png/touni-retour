@@ -291,6 +291,7 @@ td{padding:11px 11px;vertical-align:middle}
     <button id="btn-sync-shopify" onclick="syncAll()" title="Synchronise les retours disponibles vers Shopify ET met en rupture les articles vendus/mystère" style="background:transparent;border:1px solid var(--border);border-radius:var(--radius-btn);padding:6px 12px;font-family:var(--font-main);font-size:11px;font-weight:600;cursor:pointer;color:var(--text);text-transform:uppercase;letter-spacing:.06em;display:none">🔄 Sync Shopify</button>
     <button id="bell-btn" onclick="toggleNotifications()" title="Notifications" style="position:relative;background:transparent;border:1px solid var(--border);border-radius:var(--radius-btn);padding:6px 10px;font-family:var(--font-main);font-size:14px;cursor:pointer;color:var(--text);display:none">🔔<span id="bell-count" style="display:none;position:absolute;top:-4px;right:-4px;background:var(--signal);color:#fff;font-size:9px;font-weight:700;padding:1px 5px;border-radius:8px;min-width:16px;text-align:center;font-family:var(--font-main)">0</span></button>
     <a id="stock-orders-btn" href="/commandes-stock" style="display:none;background:#16a34a;color:#fff;border-radius:20px;padding:5px 14px;font-family:'Jost',sans-serif;font-size:10px;font-weight:700;text-decoration:none;letter-spacing:.8px">📦 Commandes en stock</a>
+    <a id="history-btn" href="/historique" style="display:none;background:transparent;color:var(--text);border:1px solid var(--border);border-radius:20px;padding:5px 14px;font-family:'Jost',sans-serif;font-size:10px;font-weight:700;text-decoration:none;letter-spacing:.8px">🧾 Historique</a>
     <a id="admin-dashboard-btn" href="/dashboard" style="display:none;background:var(--text);color:#fff;border-radius:20px;padding:5px 14px;font-family:'Jost',sans-serif;font-size:10px;font-weight:700;text-decoration:none;letter-spacing:.8px">📊 Dashboard</a>
     <button class="btn-logout" onclick="logout()">Déconnexion</button>
   </div>
@@ -547,6 +548,7 @@ function logout() { sessionStorage.removeItem('role'); location.reload(); }
 function applyRole() {
   var role = sessionStorage.getItem('role');
   document.getElementById('stock-orders-btn').style.display = 'inline-block'; // utile aux 2 rôles
+  document.getElementById('history-btn').style.display = 'inline-block';
   if (role === 'staff') {
     document.getElementById('role-badge').style.display = 'inline-flex';
     document.getElementById('admin-dashboard-btn').style.display = 'none';

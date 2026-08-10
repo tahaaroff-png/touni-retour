@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>🧾 Historique des expéditions — Touni</title>
+<link rel="icon" href="/favicon.svg">
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--text:#151515;--muted:#6b7280;--border:#e5e7eb;--green:#16a34a;--red:#dc2626;--blue:#2563eb;--amber:#d97706;--radius:12px;--font:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--font);background:var(--bg);color:var(--text);padding:14px;max-width:940px;margin:0 auto}
+header{position:sticky;top:0;background:var(--bg);padding:8px 0 12px;z-index:5}
+.topnav{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
+.navlink{font-size:12px;font-weight:700;text-decoration:none;color:var(--text);background:var(--card);border:1px solid var(--border);border-radius:20px;padding:6px 14px}
+.navlink.back{background:var(--text);color:var(--bg)}
+h1{font-size:20px;display:flex;align-items:center;gap:8px}
+.sub{color:var(--muted);font-size:12px;margin-top:3px}
+.bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:12px}
+.chip{background:var(--card);border:1px solid var(--border);border-radius:20px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer;color:var(--text)}
+.chip.active{background:var(--text);color:#fff;border-color:var(--text)}
+.count{margin-left:auto;font-size:12px;color:var(--muted);text-align:right}
+.count b{color:var(--text)}
+.daterow{display:none;gap:10px;flex-wrap:wrap;align-items:center;margin-top:10px;padding:10px;background:var(--card);border:1px solid var(--border);border-radius:10px}
+.daterow.show{display:flex}
+.daterow label{font-size:12px;color:var(--muted);font-weight:600;display:flex;align-items:center;gap:6px}
+.daterow input[type=date]{font-family:var(--font);font-size:12px;padding:5px 8px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text)}
+.swrap{flex:1;min-width:150px}
+.swrap input{width:100%;font-family:var(--font);font-size:13px;padding:7px 12px;border:1px solid var(--border);border-radius:20px;background:var(--card);color:var(--text)}
+.dayhdr{font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:18px 2px 8px;display:flex;align-items:center;gap:8px}
+.dayhdr .n{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:1px 9px;font-size:11px;color:var(--text)}
+.list{display:flex;flex-direction:column;gap:9px}
+.h-card{background:var(--card);border:1px solid var(--border);border-left:4px solid var(--green);border-radius:var(--radius);padding:11px 13px;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+.h-card.rupt{border-left-color:var(--amber)}
+.h-top{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.h-top .num{font-size:14px;font-weight:800}
+.h-top .time{font-size:11px;color:var(--muted);font-weight:600}
+.h-client{font-size:12px;color:var(--muted);margin-top:2px}
+.h-prods{margin-top:8px;display:flex;flex-direction:column;gap:4px}
+.h-prod{font-size:13px;display:flex;gap:8px;align-items:baseline}
+.h-prod .pz{font-weight:700}
+.h-prod .qn{color:var(--muted);font-size:11px}
+.tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}
+.tag{font-size:10.5px;font-weight:800;padding:3px 9px;border-radius:999px}
+.tag.pl{background:#eef2ff;color:#4338ca}
+.tag.ok{background:#dcfce7;color:#166534}
+.tag.ru{background:#fef3c7;color:#92400e}
+.tag.tr{background:#e0e7ff;color:#3730a3}
+.empty{text-align:center;color:var(--muted);padding:50px 20px;font-size:14px}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--muted);display:inline-block}
+@media(prefers-color-scheme:dark){:root{--bg:#0f1115;--card:#1a1d23;--text:#e5e7eb;--muted:#9ca3af;--border:#2a2e37}
+.tag.pl{background:#312e81;color:#c7d2fe}.tag.ok{background:#14351f;color:#86efac}.tag.ru{background:#3a2f12;color:#fcd34d}.tag.tr{background:#26235e;color:#c7d2fe}}
+</style>
+</head>
+<body>
+<header>
+  <nav class="topnav">
+    <a href="/" class="navlink back">← Gestionnaire</a>
+    <a href="/commandes-stock" class="navlink">📦 Commandes en stock</a>
+    <a href="/dashboard" class="navlink">📊 Dashboard</a>
+  </nav>
+  <h1>🧾 Historique des expéditions <span class="dot" id="dot"></span></h1>
+  <div class="sub">Toutes les commandes <b>sorties du stock</b> (chaque clic « Expédier », rupture incluse).</div>
+  <div class="bar">
+    <span class="chip active" data-r="today" onclick="setR('today',this)">Aujourd'hui</span>
+    <span class="chip" data-r="7" onclick="setR('7',this)">7 jours</span>
+    <span class="chip" data-r="30" onclick="setR('30',this)">30 jours</span>
+    <span class="chip" data-r="all" onclick="setR('all',this)">Tout</span>
+    <span class="chip" id="chip-custom" onclick="toggleCustom(this)">📅 Personnalisé</span>
+    <span class="count" id="count">—</span>
+  </div>
+  <div class="bar">
+    <div class="swrap"><input id="q" type="text" placeholder="Rechercher (produit, client, ville, n°…)" oninput="render()"></div>
+  </div>
+  <div class="daterow" id="daterow">
+    <label>Du <input type="date" id="dfrom" onchange="applyCustom()"></label>
+    <label>au <input type="date" id="dto" onchange="applyCustom()"></label>
+  </div>
+</header>
+<div class="list" id="list"><div class="empty">Chargement…</div></div>
+
+<script>
+var SECRET='touni-sync-2026';
+var RANGE='today', DFROM=null, DTO=null, ROWS=[];
+function dot(s){document.getElementById('dot').style.background=s==='ok'?'var(--green)':s==='err'?'var(--red)':'var(--muted)';}
+function pad(n){return n<10?'0'+n:''+n;}
+function dayKey(d){return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());}
+function rangeBounds(){
+  var now=new Date(), from=null, to=null;
+  if(RANGE==='today'){ from=new Date(now.getFullYear(),now.getMonth(),now.getDate()); }
+  else if(RANGE==='7'){ from=new Date(now.getTime()-7*86400000); }
+  else if(RANGE==='30'){ from=new Date(now.getTime()-30*86400000); }
+  else if(RANGE==='custom'){ if(DFROM)from=new Date(DFROM+'T00:00:00'); if(DTO)to=new Date(DTO+'T23:59:59'); }
+  return {from:from,to:to};
+}
+async function load(){
+  var b=rangeBounds();
+  var url='/api/notifications?history=1&limit=1500&secret='+SECRET;
+  if(b.from)url+='&from='+encodeURIComponent(b.from.toISOString());
+  if(b.to)url+='&to='+encodeURIComponent(b.to.toISOString());
+  try{
+    var r=await fetch(url); var j=await r.json();
+    ROWS=j.history||[]; dot('ok'); render();
+  }catch(e){ dot('err'); document.getElementById('list').innerHTML='<div class="empty">⚠️ '+e.message+'</div>'; }
+}
+function esc(s){return String(s==null?'':s).replace(/</g,'&lt;');}
+function matchQ(row,q){
+  if(!q)return true;
+  var hay=(row.deal_number||'')+' '+(row.client||'')+' '+(row.city||'')+' '+(row.pipeline||'')+' '+(row.products||[]).map(function(p){return p.product+' '+p.size;}).join(' ');
+  return hay.toLowerCase().indexOf(q)>-1;
+}
+function render(){
+  var q=(document.getElementById('q').value||'').toLowerCase().trim();
+  var rows=ROWS.filter(function(r){return matchQ(r,q);});
+  var arts=rows.reduce(function(s,r){return s+((r.products||[]).reduce(function(a,p){return a+(Number(p.qty)||1);},0));},0);
+  document.getElementById('count').textContent=rows.length+' commande(s) · '+arts+' article(s)';
+  var el=document.getElementById('list');
+  if(!rows.length){ el.innerHTML='<div class="empty">Aucune expédition pour cette période.</div>'; return; }
+  var html='', curDay='';
+  rows.forEach(function(r){
+    var d=new Date(r.shipped_at); var dk=dayKey(d);
+    if(dk!==curDay){
+      curDay=dk;
+      var dayCount=rows.filter(function(x){return dayKey(new Date(x.shipped_at))===dk;}).length;
+      html+='<div class="dayhdr">'+d.toLocaleDateString('fr-FR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'})+' <span class="n">'+dayCount+'</span></div>';
+    }
+    var prods=(r.products||[]).map(function(p){
+      return '<div class="h-prod"><span class="pz">'+esc(p.size||'—')+'</span><span>'+esc(p.product||'—')+'</span>'+(Number(p.qty)>1?'<span class="qn">×'+p.qty+'</span>':'')+(p.available===false?'<span class="qn" style="color:var(--amber)">(rupture)</span>':'')+'</div>';
+    }).join('');
+    var tags='';
+    if(r.pipeline)tags+='<span class="tag pl">'+esc(r.pipeline)+'</span>';
+    tags+=r.stock_decremented?'<span class="tag ok">Stock décrémenté'+(r.shipped_qty?' ('+r.shipped_qty+')':'')+'</span>':'<span class="tag ru">Sans décompte stock</span>';
+    if(r.moved_to_traite)tags+='<span class="tag tr">→ Traité</span>';
+    html+='<div class="h-card'+(r.stock_decremented?'':' rupt')+'">'
+      +'<div class="h-top"><span class="num">'+esc(r.deal_number||'Commande')+'</span><span class="time">'+d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})+'</span></div>'
+      +(r.client?'<div class="h-client">👤 '+esc(r.client)+(r.city?' · '+esc(r.city):'')+(r.phone?' · '+esc(r.phone):'')+'</div>':'')
+      +'<div class="h-prods">'+prods+'</div>'
+      +'<div class="tags">'+tags+'</div>'
+      +'</div>';
+  });
+  el.innerHTML=html;
+}
+function setR(r,el){ RANGE=r; document.querySelectorAll('.chip').forEach(function(c){c.classList.remove('active');}); el.classList.add('active'); document.getElementById('daterow').classList.remove('show'); load(); }
+function toggleCustom(el){ document.querySelectorAll('.chip').forEach(function(c){c.classList.remove('active');}); el.classList.add('active'); document.getElementById('daterow').classList.add('show'); RANGE='custom'; load(); }
+function applyCustom(){ DFROM=document.getElementById('dfrom').value||null; DTO=document.getElementById('dto').value||null; RANGE='custom'; document.getElementById('chip-custom').classList.add('active'); load(); }
+load();
+setInterval(function(){ if(RANGE==='today') load(); }, 30000);
+</script>
+</body>
+</html>

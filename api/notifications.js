@@ -233,6 +233,13 @@ async function shipFromStock(req, res) {
 
     await sb(`shopify_notifications?id=eq.${encodeURIComponent(notifId)}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ status: 'archived' }) });
     const totalShipped = updates.reduce((s, u) => s + u.shipped, 0);
+    try {
+      await sb(`ship_history`, { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify([{
+        source: 'stock', deal_number: notif.shopify_order_number || null, client: notif.customer_name || null, city: notif.customer_city || null,
+        products: [{ product: notif.product_title, size: [notif.variant_size, notif.variant_color].filter(Boolean).join(' / '), qty: notif.ordered_qty || 1, available: true }],
+        shipped_qty: totalShipped, stock_decremented: totalShipped > 0, moved_to_traite: false,
+      }]) });
+    } catch (e) {}
     return res.status(200).json({ ok: true, notif_id: notifId, product: notif.product_title, customer: notif.customer_name, shipped: totalShipped, remaining_unfulfilled: Math.max(0, toShip), updates });
   } catch (e) {
     console.error('[ship-from-stock] Error:', e.message);
@@ -438,7 +445,29 @@ async function shipDeal(req, res) {
       const mv = await egrowPost('/deal/updateDealOrderinNewStage.php', { new_order: 1, old_order: order, stage_id: moveStage, deal_id: dealId, old_stage: oldStage, update_stage_source: 'touni-retour ship' });
       moved = { deal_id: dealId, to: moveStage, ok: !!(mv && (mv.status === 'success' || mv.status === true || mv.status)) , raw: mv && mv.__raw ? mv.__raw : undefined };
     }
+    // Historique : on enregistre TOUT clic Expédier (même en rupture, stock non décrémenté)
+    const snap = body.snapshot || {};
+    try {
+      await fetch(`${SB_URL}/rest/v1/ship_history`, { method: 'POST', headers: { ...supabaseHeaders(true), Prefer: 'return=minimal' }, body: JSON.stringify([{
+        source: 'pipeline', pipeline: snap.pipeline || null, deal_id: dealId ? String(dealId) : null, deal_number: snap.deal_number || null,
+        client: snap.client || null, city: snap.city || null, phone: snap.phone || null, products: snap.products || null,
+        shipped_qty: updates.reduce((s, u) => s + u.shipped, 0), stock_decremented: updates.length > 0, moved_to_traite: !!(moved && moved.ok),
+      }]) });
+    } catch (e) {}
     return res.status(200).json({ ok: true, shipped: updates.reduce((s, u) => s + u.shipped, 0), updates, moved });
+  } catch (e) { return res.status(500).json({ error: e.message }); }
+}
+
+// ════════ Historique des commandes expédiées (GET ?history=1&from=&to=&limit=) ════════
+async function historyList(req, res) {
+  try {
+    const limit = Math.min(2000, parseInt(req.query?.limit || '500', 10));
+    let url = `${SB_URL}/rest/v1/ship_history?select=*&order=shipped_at.desc&limit=${limit}`;
+    if (req.query?.from) url += `&shipped_at=gte.${encodeURIComponent(req.query.from)}`;
+    if (req.query?.to) url += `&shipped_at=lte.${encodeURIComponent(req.query.to)}`;
+    const r = await fetch(url, { headers: supabaseHeaders(true) });
+    const rows = r.ok ? await r.json() : [];
+    return res.status(200).json({ history: rows, count: rows.length });
   } catch (e) { return res.status(500).json({ error: e.message }); }
 }
 
@@ -542,6 +571,7 @@ module.exports = async function handler(req, res) {
   if (req.method === 'POST' && req.query?.action === 'ship_deal') return shipDeal(req, res);
   if (req.method === 'POST' && req.query?.action === 'prep') return prepToggle(req, res);
   if (req.method === 'GET' && req.query?.prepared) return preparedList(req, res);
+  if (req.method === 'GET' && req.query?.history) return historyList(req, res);
 
   try {
     if (req.method === 'GET') {
