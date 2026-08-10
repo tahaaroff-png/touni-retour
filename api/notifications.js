@@ -534,7 +534,7 @@ async function egrowStages(req, res) {
     const parsed = await egrowGetDealStage(req.query.probe_deal);
     const raw = await egrowPost('/deal/getDealDetails.php', { deal: req.query.probe_deal });
     const d = (raw && raw.data && typeof raw.data === 'object') ? raw.data : raw;
-    return res.status(200).json({ probe_deal: req.query.probe_deal, parsed, keys: d && typeof d === 'object' ? Object.keys(d).slice(0, 40) : null, stage: d && d.stage, order: d && d.order });
+    return res.status(200).json({ probe_deal: req.query.probe_deal, parsed, keys: d && typeof d === 'object' && !Array.isArray(d) ? Object.keys(d).slice(0, 40) : null, stage: d && d.stage, order: d && d.order, is_array: Array.isArray(raw), raw_head: JSON.stringify(raw).slice(0, 300) });
   }
   const post = async (path, params) => {
     const p = Object.assign({}, params, { me: ME, dev: 0 });
