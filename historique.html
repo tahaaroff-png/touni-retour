@@ -150,7 +150,7 @@ function render(){
     }
     var prods=(r.products||[]).map(function(p){
       var img=imgFor(p.product||'');
-      var st=p.available===false?'<span class="pst ru">✗ hors stock (racheté)</span>':'<span class="pst ok">✓ était en stock</span>';
+      var st=p.available===false?'<span class="pst ru">✗ pas en stock interne</span>':'<span class="pst ok">✓ était en stock</span>';
       return '<div class="h-prod">'
         +(img?'<img class="pth" src="'+img+'" alt="" onclick="openImg(this.src)">':'<span class="pth ph">👕</span>')
         +'<div class="pinf"><div class="pnm"><b>'+esc(p.size||'—')+'</b> '+esc(p.product||'—')+(Number(p.qty)>1?' <span class="qn">×'+p.qty+'</span>':'')+'</div>'+st+'</div>'
