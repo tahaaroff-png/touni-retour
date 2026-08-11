@@ -19,11 +19,17 @@ async function egrowPost(path, params) {
   const t = await r.text(); try { return JSON.parse(t); } catch (e) { return { __raw: t.slice(0, 200) }; }
 }
 // État FRAIS d'un deal (stage courant + position) → pour un déplacement fiable (pas de old_stage périmé) + vérification.
+// getDealDetails.php = GET (?me=&deal=), PAS le POST multipart des autres endpoints.
+async function egrowGetDeal(dealId) {
+  const url = `https://api.egrow.com/deal/getDealDetails.php?me=${encodeURIComponent(EGROW_ME)}&dev=0&deal=${encodeURIComponent(dealId)}`;
+  const r = await fetch(url, { headers: { 'account-key': EGROW_AK, 'User-Agent': EGROW_UA } });
+  const t = await r.text(); try { return JSON.parse(t); } catch (e) { return { __raw: t.slice(0, 200) }; }
+}
 async function egrowGetDealStage(dealId) {
   try {
-    const r = await egrowPost('/deal/getDealDetails.php', { deal: dealId });
-    const d = (r && r.data && typeof r.data === 'object') ? r.data : r;
-    if (!d || typeof d !== 'object') return null;
+    const j = await egrowGetDeal(dealId);
+    const d = (j && j.data && typeof j.data === 'object') ? j.data : j;
+    if (!d || typeof d !== 'object' || Array.isArray(d)) return null;
     const stageId = d.stage && d.stage.id ? Number(d.stage.id) : null;
     return { stageId, order: d.order || 1 };
   } catch (e) { return null; }
@@ -532,7 +538,7 @@ async function egrowStages(req, res) {
   // Sonde : vérifier que getDealDetails renvoie bien le stage (pour la fiabilité du déplacement)
   if (req.query?.probe_deal) {
     const parsed = await egrowGetDealStage(req.query.probe_deal);
-    const raw = await egrowPost('/deal/getDealDetails.php', { deal: req.query.probe_deal });
+    const raw = await egrowGetDeal(req.query.probe_deal);
     const d = (raw && raw.data && typeof raw.data === 'object') ? raw.data : raw;
     return res.status(200).json({ probe_deal: req.query.probe_deal, parsed, keys: d && typeof d === 'object' && !Array.isArray(d) ? Object.keys(d).slice(0, 40) : null, stage: d && d.stage, order: d && d.order, is_array: Array.isArray(raw), raw_head: JSON.stringify(raw).slice(0, 300) });
   }
