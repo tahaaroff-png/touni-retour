@@ -522,6 +522,40 @@ async function bestSellers(req, res) {
   } catch (e) { return res.status(500).json({ error: e.message }); }
 }
 
+// ════════ Produits les plus LIVRÉS (GET ?delivered=1&from=&to=) — agrège les deals eGrow des stages livrés ════════
+const DELIVERED_STAGES = [49152, 49214, 49209, 49210]; // Livrer, Reçu, Payé, Facturé
+async function deliveredSellers(req, res) {
+  if (!EGROW_ME || !EGROW_AK) return res.status(500).json({ error: 'eGrow non configuré' });
+  try {
+    const fromSec = req.query?.from ? Math.floor(new Date(req.query.from).getTime() / 1000) : 0;
+    const toSec = req.query?.to ? Math.floor(new Date(req.query.to).getTime() / 1000) : Math.floor(Date.now() / 1000) + 86400;
+    const agg = new Map();
+    let dealsInRange = 0, truncated = false;
+    for (const stage of DELIVERED_STAGES) {
+      const r = await egrowPost('/deal/getStageDeals.php', { stage, page: 1, limit: 1500 });
+      const deals = Array.isArray(r) ? r : (r && r.data) || [];
+      if (deals.length >= 1500) truncated = true;
+      for (const d of deals) {
+        const t = parseInt(d.time || 0, 10);
+        if (t && (t < fromSec || t > toSec)) continue;
+        dealsInRange++;
+        for (const p of (d.products || [])) {
+          const title = String(p.name || '').trim(); if (!title) continue;
+          const key = 't' + title;
+          const e = agg.get(key) || { title, units: 0, revenue: 0, orders: 0 };
+          const q = Number(p.quantity) || 1;
+          e.units += q;
+          e.revenue += (parseFloat(p.price || 0) * q);
+          e.orders += 1;
+          agg.set(key, e);
+        }
+      }
+    }
+    const products = [...agg.values()].map(e => ({ title: e.title, units: e.units, revenue: Math.round(e.revenue), orders: e.orders })).sort((a, b) => b.units - a.units);
+    return res.status(200).json({ mode: 'delivered', orders_scanned: dealsInRange, total_units: products.reduce((s, p) => s + p.units, 0), total_revenue: products.reduce((s, p) => s + p.revenue, 0), truncated, products: products.slice(0, 300) });
+  } catch (e) { return res.status(500).json({ error: e.message }); }
+}
+
 // ════════ Historique des commandes expédiées (GET ?history=1&from=&to=&limit=) ════════
 async function historyList(req, res) {
   try {
@@ -644,6 +678,7 @@ module.exports = async function handler(req, res) {
   if (req.method === 'GET' && req.query?.prepared) return preparedList(req, res);
   if (req.method === 'GET' && req.query?.history) return historyList(req, res);
   if (req.method === 'GET' && req.query?.bestsellers) return bestSellers(req, res);
+  if (req.method === 'GET' && req.query?.delivered) return deliveredSellers(req, res);
 
   try {
     if (req.method === 'GET') {
