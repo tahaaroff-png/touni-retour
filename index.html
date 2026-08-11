@@ -70,6 +70,35 @@ body{font-family:var(--font-main);background:var(--bg);color:var(--text);min-hei
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
 .btn-logout{background:none;border:1px solid var(--border);border-radius:var(--radius-btn);padding:7px 14px;font-family:var(--font-main);font-size:11px;font-weight:600;cursor:pointer;color:var(--muted);transition:.3s ease;text-transform:uppercase;letter-spacing:.06em}
 .btn-logout:hover{border-color:var(--signal);color:var(--signal)}
+/* ===== Refonte 11/08 : barre latérale + top bar épurée ===== */
+#app-page.shell{display:flex;min-height:100vh;align-items:stretch}
+.sidebar{width:216px;flex-shrink:0;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;padding:16px 12px;gap:2px;position:sticky;top:0;height:100vh;overflow-y:auto;z-index:200}
+.side-logo{display:flex;align-items:center;gap:9px;padding:2px 8px 12px;border-bottom:1px solid var(--border);margin-bottom:6px}
+.side-logo img{height:40px;width:auto;object-fit:contain}
+.side-ttl{font-family:var(--font-main);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.14em;color:var(--muted)}
+.side-sec{font-family:var(--font-main);font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.14em;color:var(--muted2);margin:14px 10px 5px}
+.side-link{display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:9px;font-family:var(--font-main);font-size:13px;font-weight:600;color:var(--text);text-decoration:none;cursor:pointer;border:0;background:transparent;width:100%;text-align:left;transition:background .15s,color .15s;white-space:nowrap;text-transform:none;letter-spacing:0}
+.side-link:hover{background:var(--bg-soft)}
+.side-link .ic{font-size:15px;width:20px;text-align:center;flex-shrink:0}
+.side-link.active{background:#151515;color:#fff}
+.side-link.primary{background:#16a34a;color:#fff}
+.side-link.primary:hover{background:#128a3e}
+.side-link.logout{color:var(--muted)}
+.side-link.logout:hover{background:#fff1f1;color:var(--signal)}
+.side-spacer{flex:1;min-height:14px}
+.side-role{display:none;align-items:center;gap:6px;background:#fffbef;border:1px solid var(--warning);border-radius:9px;padding:8px 11px;font-family:var(--font-main);font-size:11px;font-weight:700;color:#7a5d1e;margin:0 0 4px}
+.main{flex:1;min-width:0;display:flex;flex-direction:column}
+.topbar{position:sticky;top:0;z-index:150;background:var(--surface);border-bottom:1px solid var(--border);min-height:64px;display:flex;align-items:center;gap:12px;padding:10px 22px;flex-wrap:wrap}
+.topbar .kpis{display:flex;gap:7px;align-items:center;flex-wrap:wrap}
+.topbar-right{margin-left:auto;display:flex;gap:8px;align-items:center}
+.burger{display:none;background:transparent;border:1px solid var(--border);border-radius:9px;width:40px;height:40px;font-size:18px;cursor:pointer;color:var(--text);align-items:center;justify-content:center;flex-shrink:0}
+.scrim{display:none}
+@media(max-width:860px){
+  .sidebar{position:fixed;left:0;top:0;transform:translateX(-105%);transition:transform .25s ease;box-shadow:0 0 50px rgba(0,0,0,.25);width:258px}
+  #app-page.shell.sbopen .sidebar{transform:none}
+  #app-page.shell.sbopen .scrim{display:block;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:190}
+  .burger{display:inline-flex}
+}
 .page{display:none}.page.active{display:block}
 .wrap{max-width:1200px;margin:0 auto;padding:28px 20px}
 .panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:22px 24px;margin-bottom:16px;box-shadow:var(--shadow)}
@@ -99,7 +128,7 @@ input::placeholder{color:var(--muted2)}
 .btn-add{background:#222;color:#fff;border:none;border-radius:var(--radius-btn);padding:0 22px;font-family:var(--font-main);font-size:13px;font-weight:600;letter-spacing:.02em;cursor:pointer;height:42px;white-space:nowrap;transition:.3s ease-in-out}
 .btn-add:hover{background:#050505}.btn-add:disabled{opacity:.4;cursor:not-allowed}
 .err{color:var(--signal);font-size:12px;margin-top:8px;display:none}
-.fbar{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px 18px;margin-bottom:14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;position:sticky;top:82px;z-index:90;box-shadow:0 2px 12px rgba(0,0,0,.06)}
+.fbar{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px 18px;margin-bottom:14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;position:sticky;top:64px;z-index:90;box-shadow:0 2px 12px rgba(0,0,0,.06)}
 .fsw{flex:1;min-width:160px;position:relative}
 .fsw input{padding-left:34px;font-size:13px}
 .fsw::before{content:'';position:absolute;left:10px;top:50%;transform:translateY(-50%);width:13px;height:13px;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23aaa' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.35-4.35'/%3E%3C/svg%3E") center/contain no-repeat;pointer-events:none}
@@ -115,7 +144,7 @@ input::placeholder{color:var(--muted2)}
 .tbl-wrap{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:visible}
 table{width:100%;border-collapse:collapse;font-size:13px}
 td:last-child,th:last-child{white-space:nowrap;padding-right:14px}
-thead th{background:var(--bg-soft);padding:12px 14px;text-align:left;font-family:var(--font-main);font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);border-bottom:1px solid var(--border);white-space:nowrap;position:sticky;top:144px;z-index:80}
+thead th{background:var(--bg-soft);padding:12px 14px;text-align:left;font-family:var(--font-main);font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);border-bottom:1px solid var(--border);white-space:nowrap;position:sticky;top:118px;z-index:80}
 tbody tr{border-bottom:1px solid var(--border);transition:background .2s}
 tbody tr:last-child{border-bottom:none}
 tbody tr:hover{background:var(--bg-soft)}
@@ -272,31 +301,37 @@ td{padding:11px 11px;vertical-align:middle}
   </div>
 </div>
 
-<div id="app-page" style="display:none">
-<header class="header">
-  <img class="logo-img" src="/touni-logo.png" alt="Touni">
-  <div class="header-sep"></div>
-  <span class="header-label">Stock Retours</span>
-  <nav class="header-nav">
-    <button class="nav-btn active" onclick="showPage('stock',this)">📦 Stock</button>
-    <button class="nav-btn" onclick="showPage('stats',this)">📊 Statistiques</button>
-  </nav>
-  <div class="header-right">
-    <div class="sync-dot" id="sync-dot"></div>
-    <div class="chip chip-total">Total : <b id="s-tot">—</b></div>
-    <div class="chip chip-dispo">✓ <b id="s-dispo">—</b></div>
-    <div class="chip chip-rupture">✗ <b id="s-rup">—</b></div>
-    <div id="chip-shopify" title="Articles retours actuellement disponibles sur Shopify (poussés + non vendus)" style="display:none;align-items:center;gap:5px;background:#dcfce7;border:1px solid #bbf7d0;border-radius:var(--radius-btn);padding:5px 10px;font-family:var(--font-main);font-size:11px;font-weight:700;color:#166534">🛍 <b id="s-shopify">0</b> dispo sur Shopify</div>
-    <span id="role-badge" style="display:none;align-items:center;gap:5px;background:#fffbef;border:1px solid var(--warning);border-radius:var(--radius-btn);padding:5px 12px;font-family:var(--font-main);font-size:11px;font-weight:600;color:#7a5d1e;text-transform:uppercase;letter-spacing:.06em">👤 Confirmation</span>
-    <button id="btn-sync-shopify" onclick="syncAll()" title="Synchronise les retours disponibles vers Shopify ET met en rupture les articles vendus/mystère" style="background:transparent;border:1px solid var(--border);border-radius:var(--radius-btn);padding:6px 12px;font-family:var(--font-main);font-size:11px;font-weight:600;cursor:pointer;color:var(--text);text-transform:uppercase;letter-spacing:.06em;display:none">🔄 Sync Shopify</button>
-    <button id="bell-btn" onclick="toggleNotifications()" title="Notifications" style="position:relative;background:transparent;border:1px solid var(--border);border-radius:var(--radius-btn);padding:6px 10px;font-family:var(--font-main);font-size:14px;cursor:pointer;color:var(--text);display:none">🔔<span id="bell-count" style="display:none;position:absolute;top:-4px;right:-4px;background:var(--signal);color:#fff;font-size:9px;font-weight:700;padding:1px 5px;border-radius:8px;min-width:16px;text-align:center;font-family:var(--font-main)">0</span></button>
-    <a id="stock-orders-btn" href="/commandes-stock" style="display:none;background:#16a34a;color:#fff;border-radius:20px;padding:5px 14px;font-family:'Jost',sans-serif;font-size:10px;font-weight:700;text-decoration:none;letter-spacing:.8px">📦 Commandes en stock</a>
-    <a id="history-btn" href="/historique" style="display:none;background:transparent;color:var(--text);border:1px solid var(--border);border-radius:20px;padding:5px 14px;font-family:'Jost',sans-serif;font-size:10px;font-weight:700;text-decoration:none;letter-spacing:.8px">🧾 Historique</a>
-    <a id="best-btn" href="/top-produits" style="display:none;background:transparent;color:var(--text);border:1px solid var(--border);border-radius:20px;padding:5px 14px;font-family:'Jost',sans-serif;font-size:10px;font-weight:700;text-decoration:none;letter-spacing:.8px">🏆 Top ventes</a>
-    <a id="admin-dashboard-btn" href="/dashboard" style="display:none;background:var(--text);color:#fff;border-radius:20px;padding:5px 14px;font-family:'Jost',sans-serif;font-size:10px;font-weight:700;text-decoration:none;letter-spacing:.8px">📊 Dashboard</a>
-    <button class="btn-logout" onclick="logout()">Déconnexion</button>
+<div id="app-page" class="shell" style="display:none">
+<aside class="sidebar" id="sidebar">
+  <div class="side-logo"><img src="/touni-logo.png" alt="Touni"><span class="side-ttl">Stock Retours</span></div>
+  <div class="side-sec">Navigation</div>
+  <button class="side-link nav-btn active" onclick="showPage('stock',this);sbClose()"><span class="ic">📦</span>Stock</button>
+  <button class="side-link nav-btn" onclick="showPage('stats',this);sbClose()"><span class="ic">📊</span>Statistiques</button>
+  <div class="side-sec">Actions</div>
+  <a class="side-link primary" id="stock-orders-btn" href="/commandes-stock" style="display:none"><span class="ic">📦</span>Commandes en stock</a>
+  <a class="side-link" id="history-btn" href="/historique" style="display:none"><span class="ic">🧾</span>Historique</a>
+  <a class="side-link" id="best-btn" href="/top-produits" style="display:none"><span class="ic">🏆</span>Top ventes</a>
+  <a class="side-link" id="admin-dashboard-btn" href="/dashboard" style="display:none"><span class="ic">📊</span>Dashboard</a>
+  <button class="side-link" id="btn-sync-shopify" onclick="syncAll()" title="Synchronise les retours vers Shopify et met en rupture les vendus/mystère" style="display:none"><span class="ic">🔄</span>Sync Shopify</button>
+  <div class="side-spacer"></div>
+  <span class="side-role" id="role-badge">👤 Confirmation</span>
+  <button class="side-link logout" onclick="logout()"><span class="ic">↩</span>Déconnexion</button>
+</aside>
+<div class="scrim" id="scrim" onclick="sbClose()"></div>
+<div class="main">
+  <div class="topbar">
+    <button class="burger" onclick="sbToggle()" aria-label="Menu">☰</button>
+    <div class="kpis">
+      <div class="sync-dot" id="sync-dot"></div>
+      <div class="chip chip-total">Total : <b id="s-tot">—</b></div>
+      <div class="chip chip-dispo">✓ <b id="s-dispo">—</b></div>
+      <div class="chip chip-rupture">✗ <b id="s-rup">—</b></div>
+      <div id="chip-shopify" title="Articles retours actuellement disponibles sur Shopify" style="display:none;align-items:center;gap:5px;background:#dcfce7;border:1px solid #bbf7d0;border-radius:var(--radius-btn);padding:5px 10px;font-family:var(--font-main);font-size:11px;font-weight:700;color:#166534">🛍 <b id="s-shopify">0</b> dispo sur Shopify</div>
+    </div>
+    <div class="topbar-right">
+      <button id="bell-btn" onclick="toggleNotifications()" title="Notifications" style="position:relative;background:transparent;border:1px solid var(--border);border-radius:10px;padding:8px 12px;font-family:var(--font-main);font-size:15px;cursor:pointer;color:var(--text);display:none">🔔<span id="bell-count" style="display:none;position:absolute;top:-4px;right:-4px;background:var(--signal);color:#fff;font-size:9px;font-weight:700;padding:1px 5px;border-radius:8px;min-width:16px;text-align:center;font-family:var(--font-main)">0</span></button>
+    </div>
   </div>
-</header>
 
 <!-- Bandeau notifications (commandes Shopify qui matchent notre stock) -->
 <div id="shopify-banner" style="display:none;background:#fffbef;border-bottom:1px solid var(--warning);padding:12px 28px;font-family:var(--font-main);font-size:13px;color:#7a5d1e">
@@ -426,6 +461,7 @@ td{padding:11px 11px;vertical-align:middle}
 </div>
 </div>
 </div>
+</div>
 
 <div class="modal-bg" id="modal">
   <div class="modal">
@@ -541,24 +577,26 @@ function login() {
     return;
   }
   document.getElementById('login-page').style.display = 'none';
-  document.getElementById('app-page').style.display = 'block';
+  document.getElementById('app-page').style.display = 'flex';
   applyRole();
   startApp();
 }
 function logout() { sessionStorage.removeItem('role'); location.reload(); }
 function applyRole() {
   var role = sessionStorage.getItem('role');
-  document.getElementById('stock-orders-btn').style.display = 'inline-block'; // utile aux 2 rôles
-  document.getElementById('history-btn').style.display = 'inline-block';
-  document.getElementById('best-btn').style.display = 'inline-block';
+  document.getElementById('stock-orders-btn').style.display = ''; // utile aux 2 rôles
+  document.getElementById('history-btn').style.display = '';
+  document.getElementById('best-btn').style.display = '';
   if (role === 'staff') {
-    document.getElementById('role-badge').style.display = 'inline-flex';
+    document.getElementById('role-badge').style.display = 'flex';
     document.getElementById('admin-dashboard-btn').style.display = 'none';
   } else {
     document.getElementById('role-badge').style.display = 'none';
-    document.getElementById('admin-dashboard-btn').style.display = 'inline-block';
+    document.getElementById('admin-dashboard-btn').style.display = '';
   }
 }
+function sbToggle(){ document.getElementById('app-page').classList.toggle('sbopen'); }
+function sbClose(){ document.getElementById('app-page').classList.remove('sbopen'); }
 
 // SUPABASE
 function dot(s) { document.getElementById('sync-dot').className = 'sync-dot '+s; }
@@ -997,7 +1035,7 @@ async function startApp() {
   await dbLoad();
   setInterval(dbLoad, 30000);
   // Bouton Sync Shopify visible pour admin ET staff (opératrice)
-  var btn=document.getElementById('btn-sync-shopify'); if(btn) btn.style.display='inline-flex';
+  var btn=document.getElementById('btn-sync-shopify'); if(btn) btn.style.display='';
   document.getElementById('bell-btn').style.display='inline-flex';
   // Charge les notifications au boot puis poll toutes les 15s
   loadNotifications();
@@ -1367,7 +1405,7 @@ document.addEventListener('click',function(e){
 var _role = sessionStorage.getItem('role');
 if (_role === 'admin' || _role === 'staff') {
   document.getElementById('login-page').style.display = 'none';
-  document.getElementById('app-page').style.display = 'block';
+  document.getElementById('app-page').style.display = 'flex';
   applyRole();
   startApp();
 }
