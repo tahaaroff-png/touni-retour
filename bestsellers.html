@@ -15,6 +15,10 @@ header{position:sticky;top:0;background:var(--bg);padding:8px 0 12px;z-index:5}
 .navlink.back{background:var(--text);color:var(--bg)}
 h1{font-size:21px;display:flex;align-items:center;gap:8px}
 .sub{color:var(--muted);font-size:12px;margin-top:3px}
+.modes{display:flex;gap:8px;margin-top:12px;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:4px;width:fit-content;max-width:100%;flex-wrap:wrap}
+.mode{background:transparent;border:0;border-radius:9px;padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer;color:var(--muted);font-family:var(--font)}
+.mode.active{background:var(--text);color:var(--bg)}
+.mode.active[data-m="delivered"]{background:var(--green);color:#fff}
 .chips{display:flex;gap:7px;flex-wrap:wrap;align-items:center;margin-top:12px}
 .chip{background:var(--card);border:1px solid var(--border);border-radius:20px;padding:6px 13px;font-size:12px;font-weight:600;cursor:pointer;color:var(--text)}
 .chip.active{background:var(--text);color:#fff;border-color:var(--text)}
@@ -62,8 +66,12 @@ h1{font-size:21px;display:flex;align-items:center;gap:8px}
     <a href="/historique" class="navlink">🧾 Historique</a>
     <a href="/dashboard" class="navlink">📊 Dashboard</a>
   </nav>
-  <h1>🏆 Produits les plus vendus <span class="dot" id="dot"></span></h1>
-  <div class="sub">Classement par <b>unités vendues</b> sur la période — pour voir ce qui marche.</div>
+  <h1>🏆 Produits les plus <span id="h-word">vendus</span> <span class="dot" id="dot"></span></h1>
+  <div class="sub" id="sub">Classement par <b>unités vendues</b> sur la période — pour voir ce qui marche.</div>
+  <div class="modes">
+    <button class="mode active" data-m="sold" onclick="setMode('sold',this)">🛒 Vendus (commandés)</button>
+    <button class="mode" data-m="delivered" onclick="setMode('delivered',this)">✅ Livrés (COD réussi)</button>
+  </div>
   <div class="chips">
     <span class="chip" data-r="today" onclick="setR('today',this)">Aujourd'hui</span>
     <span class="chip" data-r="7" onclick="setR('7',this)">7 jours</span>
@@ -80,7 +88,7 @@ h1{font-size:21px;display:flex;align-items:center;gap:8px}
   <div class="tiles">
     <div class="tile"><div class="v" id="t-units">—</div><div class="l">Unités vendues</div></div>
     <div class="tile"><div class="v" id="t-orders">—</div><div class="l">Commandes</div></div>
-    <div class="tile"><div class="v" id="t-rev">—</div><div class="l">Chiffre d'affaires</div></div>
+    <div class="tile"><div class="v" id="t-rev">—</div><div class="l" id="t-rev-l">Chiffre d'affaires</div></div>
   </div>
   <div class="srch"><input id="q" type="text" placeholder="Rechercher un produit…" oninput="render()"></div>
   <div class="period" id="period"></div>
@@ -92,7 +100,15 @@ h1{font-size:21px;display:flex;align-items:center;gap:8px}
 var SECRET='touni-sync-2026';
 var SB_URL='https://dwjjrgjbkftejdcmwpgc.supabase.co';
 var SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR3ampyZ2pia2Z0ZWpkY213cGdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU0NzI2MDYsImV4cCI6MjA5MTA0ODYwNn0.6GxM9u1Om7zP-_MEYVhdtHBESyGLDZGFofxSKGwixPo';
-var imgMap={}, DATA=null, RANGE='30', DFROM=null, DTO=null;
+var imgMap={}, DATA=null, RANGE='30', DFROM=null, DTO=null, MODE='sold';
+function setMode(m,el){ MODE=m; document.querySelectorAll('.mode').forEach(function(c){c.classList.remove('active');}); el.classList.add('active');
+  var isDel=(m==='delivered');
+  document.getElementById('h-word').textContent=isDel?'livrés':'vendus';
+  document.getElementById('sub').innerHTML='Classement par <b>unités '+(isDel?'livrées':'vendues')+'</b> sur la période'+(isDel?' — ce qui arrive vraiment au client (COD réussi).':' — pour voir ce qui marche.');
+  document.querySelectorAll('.tile .l')[0].textContent=isDel?'Unités livrées':'Unités vendues';
+  document.getElementById('t-rev-l').textContent=isDel?'CA livré':"Chiffre d'affaires";
+  load();
+}
 function dot(s){document.getElementById('dot').style.background=s==='ok'?'var(--green)':s==='err'?'var(--red)':'var(--muted)';}
 function fmt(n){return Number(n||0).toLocaleString('fr-FR');}
 async function loadImages(){
@@ -125,13 +141,14 @@ function periodLabel(b){
 async function load(){
   var b=bounds();
   document.getElementById('period').textContent='Période : '+periodLabel(b);
-  document.getElementById('list').innerHTML='<div class="empty">Calcul des ventes…</div>';
-  var url='/api/notifications?bestsellers=1&secret='+SECRET;
+  document.getElementById('list').innerHTML='<div class="empty">'+(MODE==='delivered'?'Calcul des livraisons (eGrow)…':'Calcul des ventes…')+'</div>';
+  var url='/api/notifications?'+(MODE==='delivered'?'delivered=1':'bestsellers=1')+'&secret='+SECRET;
   if(b.from)url+='&from='+encodeURIComponent(b.from.toISOString());
   if(b.to)url+='&to='+encodeURIComponent(b.to.toISOString());
   try{
     var r=await fetch(url); var j=await r.json(); if(j.error)throw new Error(j.error);
     DATA=j; dot('ok');
+    if(MODE==='delivered'&&j.truncated){ document.getElementById('period').textContent+=' · ⚠️ longues périodes incomplètes (limite eGrow 1500/stage)'; }
     document.getElementById('t-units').textContent=fmt(j.total_units);
     document.getElementById('t-orders').textContent=fmt(j.orders_scanned);
     document.getElementById('t-rev').textContent=fmt(j.total_revenue)+' DH';
@@ -158,7 +175,7 @@ function render(){
       +'<div class="bar"><span style="width:'+w+'%"></span></div>'
       +'<div class="sub2"><span>💰 <b>'+fmt(p.revenue)+'</b> DH</span><span>🧾 <b>'+fmt(p.orders)+'</b> cmd</span></div>'
       +'</div>'
-      +'<div class="units"><div class="u">'+fmt(p.units)+'</div><div class="ul">vendus</div></div>'
+      +'<div class="units"><div class="u">'+fmt(p.units)+'</div><div class="ul">'+(MODE==='delivered'?'livrés':'vendus')+'</div></div>'
       +'</div>';
   }).join('');
 }
