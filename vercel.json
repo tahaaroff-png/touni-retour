@@ -28,7 +28,9 @@
     { "source": "/livreur", "destination": "/livreur.html" },
     { "source": "/commandes-stock", "destination": "/commandes-stock.html" },
     { "source": "/commandes", "destination": "/commandes-stock.html" },
-    { "source": "/historique", "destination": "/historique.html" }
+    { "source": "/historique", "destination": "/historique.html" },
+    { "source": "/top-produits", "destination": "/bestsellers.html" },
+    { "source": "/best-sellers", "destination": "/bestsellers.html" }
   ],
   "headers": [
     {

@@ -34,6 +34,12 @@ h1{font-size:20px;display:flex;align-items:center;gap:8px}
 .pipe.conf{border-color:#16a34a;color:#16a34a}
 .pipe.active{background:var(--text);color:var(--bg);border-color:var(--text)}
 .pipe.conf.active{background:#16a34a;color:#fff;border-color:#16a34a}
+.pdate{display:none;gap:6px;flex-wrap:wrap;align-items:center;margin-top:8px}
+.pdate.show{display:flex}
+.pdchip{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:5px 12px;font-size:12px;font-weight:600;cursor:pointer;color:var(--text)}
+.pdchip.active{background:var(--blue);color:#fff;border-color:var(--blue)}
+.pdinp{display:none;font-family:var(--font);font-size:12px;padding:5px 8px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text)}
+.pdinp.show{display:inline-block}
 .card.rupt{border-left-color:var(--red)!important;opacity:.72}
 .pill.rupt{background:#fee2e2;color:#b91c1c}
 .btn-ship:disabled{opacity:.4;cursor:not-allowed}
@@ -88,6 +94,7 @@ h1{font-size:20px;display:flex;align-items:center;gap:8px}
     <a href="/" class="navlink back">← Gestionnaire</a>
     <a href="/" class="navlink">📦 Stock</a>
     <a href="/historique" class="navlink">🧾 Historique</a>
+    <a href="/top-produits" class="navlink">🏆 Top ventes</a>
     <a href="/dashboard" class="navlink">📊 Dashboard</a>
   </nav>
   <h1>📦 Commandes en stock <span id="dot" style="width:9px;height:9px;border-radius:50%;background:var(--muted);display:inline-block"></span></h1>
@@ -113,6 +120,16 @@ h1{font-size:20px;display:flex;align-items:center;gap:8px}
     <button class="pipe" onclick="pickPipe(64835,'Commande Incomplète',this)">Commande Incomplète</button>
     <button class="pipe" onclick="pickPipe(60669,'Rappeler le stock',this)">Rappeler le stock</button>
     <button class="pipe" onclick="pickPipe(49430,'Rupture',this)">Rupture</button>
+  </div>
+  <div class="pdate" id="pdate">
+    <span class="plabel">📅 Date :</span>
+    <span class="pdchip active" data-pd="all" onclick="setPD('all',this)">Tout</span>
+    <span class="pdchip" data-pd="today" onclick="setPD('today',this)">Aujourd'hui</span>
+    <span class="pdchip" data-pd="7" onclick="setPD('7',this)">7 jours</span>
+    <span class="pdchip" data-pd="30" onclick="setPD('30',this)">30 jours</span>
+    <span class="pdchip" id="pd-custom" onclick="pdCustom(this)">Choisir…</span>
+    <input type="date" id="pdfrom" class="pdinp" onchange="pdApply()">
+    <input type="date" id="pdto" class="pdinp" onchange="pdApply()">
   </div>
   <div class="daterow" id="daterow">
     <label>Du <input type="date" id="dfrom" onchange="applyCustom()"></label>
@@ -249,10 +266,27 @@ var MODE='stock', CUR_PIPE=null, PIPE_DEALS=[];
 function pipeActive(el){ document.querySelectorAll('.pipe').forEach(function(c){c.classList.remove('active');}); el.classList.add('active'); }
 function pickStock(el){ MODE='stock'; CUR_PIPE=null; pipeActive(el);
   document.querySelector('.filters').style.display=''; document.getElementById('syncBtn').style.display='';
-  document.getElementById('daterow').classList.remove('show'); load(); }
+  document.getElementById('pdate').classList.remove('show'); document.getElementById('daterow').classList.remove('show'); load(); }
 async function pickPipe(id,name,el){ MODE='pipeline'; CUR_PIPE={id:id,name:name}; pipeActive(el);
   document.querySelector('.filters').style.display='none'; document.getElementById('syncBtn').style.display='none';
-  document.getElementById('daterow').classList.remove('show'); await loadPipe(); }
+  document.getElementById('daterow').classList.remove('show'); document.getElementById('pdate').classList.add('show');
+  // reset filtre date sur « Tout » à chaque ouverture de pipeline
+  PD='all'; PDF=PDT=null; document.querySelectorAll('.pdchip').forEach(function(c,i){c.classList.toggle('active',i===0);});
+  document.getElementById('pdfrom').classList.remove('show'); document.getElementById('pdto').classList.remove('show');
+  await loadPipe(); }
+// ── Filtre date pour les pipelines (basé sur la date de commande d.date) ──
+var PD='all', PDF=null, PDT=null;
+function inPD(ms){
+  if(PD==='all'||!ms) return PD==='all'?true:false;
+  var d=new Date(ms), now=new Date();
+  if(PD==='today') return d.toDateString()===now.toDateString();
+  if(PD==='custom'){ if(PDF&&d<new Date(PDF+'T00:00:00'))return false; if(PDT&&d>new Date(PDT+'T23:59:59'))return false; return !!(PDF||PDT); }
+  return (now-d)<=Number(PD)*86400000;
+}
+function pdActive(el){ document.querySelectorAll('.pdchip').forEach(function(c){c.classList.remove('active');}); if(el)el.classList.add('active'); }
+function setPD(r,el){ PD=r; pdActive(el); document.getElementById('pdfrom').classList.remove('show'); document.getElementById('pdto').classList.remove('show'); renderPipe(); }
+function pdCustom(el){ pdActive(el); document.getElementById('pdfrom').classList.add('show'); document.getElementById('pdto').classList.add('show'); PD='custom'; renderPipe(); }
+function pdApply(){ PDF=document.getElementById('pdfrom').value||null; PDT=document.getElementById('pdto').value||null; PD='custom'; document.getElementById('pd-custom').classList.add('active'); renderPipe(); }
 async function loadPipe(){
   if(!CUR_PIPE) return;
   var el=document.getElementById('list'); el.innerHTML='<div class="empty">Chargement du pipeline « '+CUR_PIPE.name+' »…</div>';
@@ -263,12 +297,13 @@ async function loadPipe(){
     PIPE_DEALS=j.deals||[]; dot('ok'); renderPipe(j.full_available);
   }catch(e){ dot('err'); el.innerHTML='<div class="empty">⚠️ '+e.message+'</div>'; }
 }
-function renderPipe(fullCount){
-  var deals=PIPE_DEALS;
-  var full=(fullCount!==undefined?fullCount:deals.filter(function(d){return d.all_available;}).length);
-  document.getElementById('count').textContent=CUR_PIPE.name+' — '+deals.length+' cmd · '+full+' complètes';
+function renderPipe(){
+  var deals=PIPE_DEALS.filter(function(d){return inPD(d.date);});
+  var full=deals.filter(function(d){return d.all_available;}).length;
+  var suffix=(PD!=='all')?' · filtre date':'';
+  document.getElementById('count').textContent=CUR_PIPE.name+' — '+deals.length+' cmd · '+full+' complètes'+suffix;
   var el=document.getElementById('list');
-  if(!deals.length){ el.innerHTML='<div class="empty">Aucune commande dans « '+CUR_PIPE.name+' ».</div>'; return; }
+  if(!deals.length){ el.innerHTML='<div class="empty">Aucune commande'+(PD!=='all'?' pour cette date':'')+' dans « '+CUR_PIPE.name+' ».</div>'; return; }
   el.innerHTML=deals.map(function(d,di){
     var prods=d.products.map(function(p,pi){
       var pk='p:'+(d.deal_number||'')+'|'+(p.product||'')+'|'+(p.size||'')+'|'+pi; // index → chaque ligne unique (fix doublons)

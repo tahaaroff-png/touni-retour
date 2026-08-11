@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>🏆 Produits les plus vendus — Touni</title>
+<link rel="icon" href="/favicon.svg">
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--text:#151515;--muted:#6b7280;--faint:#9aa1ab;--border:#e5e7eb;--green:#16a34a;--red:#dc2626;--blue:#2563eb;--gold:#d4a017;--radius:14px;--font:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--font);background:var(--bg);color:var(--text);padding:14px;max-width:980px;margin:0 auto}
+header{position:sticky;top:0;background:var(--bg);padding:8px 0 12px;z-index:5}
+.topnav{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
+.navlink{font-size:12px;font-weight:700;text-decoration:none;color:var(--text);background:var(--card);border:1px solid var(--border);border-radius:20px;padding:6px 14px}
+.navlink.back{background:var(--text);color:var(--bg)}
+h1{font-size:21px;display:flex;align-items:center;gap:8px}
+.sub{color:var(--muted);font-size:12px;margin-top:3px}
+.chips{display:flex;gap:7px;flex-wrap:wrap;align-items:center;margin-top:12px}
+.chip{background:var(--card);border:1px solid var(--border);border-radius:20px;padding:6px 13px;font-size:12px;font-weight:600;cursor:pointer;color:var(--text)}
+.chip.active{background:var(--text);color:#fff;border-color:var(--text)}
+.daterow{display:none;gap:10px;flex-wrap:wrap;align-items:center;margin-top:10px;padding:10px;background:var(--card);border:1px solid var(--border);border-radius:10px}
+.daterow.show{display:flex}
+.daterow label{font-size:12px;color:var(--muted);font-weight:600;display:flex;align-items:center;gap:6px}
+.daterow input{font-family:var(--font);font-size:12px;padding:5px 8px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text)}
+.tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:14px}
+.tile{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:13px 15px}
+.tile .v{font-size:22px;font-weight:800;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.tile .l{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-top:2px}
+.srch{margin-top:12px}
+.srch input{width:100%;font-size:13px;padding:8px 14px;border:1px solid var(--border);border-radius:20px;background:var(--card);color:var(--text)}
+.period{font-size:11px;color:var(--faint);margin-top:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em}
+.list{display:flex;flex-direction:column;gap:8px;margin-top:8px}
+.row{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px;display:flex;align-items:center;gap:12px}
+.rank{width:30px;text-align:center;font-size:15px;font-weight:800;color:var(--faint);font-variant-numeric:tabular-nums;flex-shrink:0}
+.row.top1 .rank,.row.top2 .rank,.row.top3 .rank{font-size:20px}
+.th{width:46px;height:58px;object-fit:cover;border-radius:8px;background:#eef0f3;flex-shrink:0;cursor:zoom-in;display:grid;place-items:center;font-size:17px}
+.th.ph{cursor:default}
+.mid{flex:1;min-width:0}
+.nm{font-weight:700;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bar{height:6px;border-radius:4px;background:#eef0f3;margin-top:6px;overflow:hidden}
+.bar span{display:block;height:100%;background:var(--blue);border-radius:4px}
+.row.top1 .bar span{background:var(--gold)}
+.sub2{display:flex;gap:12px;font-size:11px;color:var(--muted);margin-top:5px;flex-wrap:wrap}
+.sub2 b{color:var(--text);font-variant-numeric:tabular-nums}
+.units{text-align:right;flex-shrink:0}
+.units .u{font-size:20px;font-weight:800;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.units .ul{font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.empty{text-align:center;color:var(--muted);padding:50px 20px;font-size:14px}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--muted);display:inline-block}
+.lb{display:none;position:fixed;inset:0;background:rgba(0,0,0,.86);z-index:100;align-items:center;justify-content:center;padding:20px;cursor:zoom-out}
+.lb.show{display:flex}.lb img{max-width:100%;max-height:100%;object-fit:contain;border-radius:10px}
+.lb .x{position:absolute;top:12px;right:18px;color:#fff;font-size:40px;font-weight:300;cursor:pointer;width:48px;height:48px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:rgba(0,0,0,.35)}
+@media(max-width:620px){.tiles{grid-template-columns:1fr 1fr}.tile:last-child{grid-column:span 2}}
+@media(prefers-color-scheme:dark){:root{--bg:#0f1115;--card:#1a1d23;--text:#e5e7eb;--muted:#9ca3af;--faint:#6b7280;--border:#2a2e37}.bar,.th{background:#242833}}
+</style>
+</head>
+<body>
+<header>
+  <nav class="topnav">
+    <a href="/" class="navlink back">← Gestionnaire</a>
+    <a href="/commandes-stock" class="navlink">📦 Commandes en stock</a>
+    <a href="/historique" class="navlink">🧾 Historique</a>
+    <a href="/dashboard" class="navlink">📊 Dashboard</a>
+  </nav>
+  <h1>🏆 Produits les plus vendus <span class="dot" id="dot"></span></h1>
+  <div class="sub">Classement par <b>unités vendues</b> sur la période — pour voir ce qui marche.</div>
+  <div class="chips">
+    <span class="chip" data-r="today" onclick="setR('today',this)">Aujourd'hui</span>
+    <span class="chip" data-r="7" onclick="setR('7',this)">7 jours</span>
+    <span class="chip active" data-r="30" onclick="setR('30',this)">30 jours</span>
+    <span class="chip" data-r="month" onclick="setR('month',this)">Ce mois</span>
+    <span class="chip" data-r="lastmonth" onclick="setR('lastmonth',this)">Mois dernier</span>
+    <span class="chip" data-r="90" onclick="setR('90',this)">90 jours</span>
+    <span class="chip" id="chip-custom" onclick="toggleCustom(this)">📅 Personnalisé</span>
+  </div>
+  <div class="daterow" id="daterow">
+    <label>Du <input type="date" id="dfrom" onchange="applyCustom()"></label>
+    <label>au <input type="date" id="dto" onchange="applyCustom()"></label>
+  </div>
+  <div class="tiles">
+    <div class="tile"><div class="v" id="t-units">—</div><div class="l">Unités vendues</div></div>
+    <div class="tile"><div class="v" id="t-orders">—</div><div class="l">Commandes</div></div>
+    <div class="tile"><div class="v" id="t-rev">—</div><div class="l">Chiffre d'affaires</div></div>
+  </div>
+  <div class="srch"><input id="q" type="text" placeholder="Rechercher un produit…" oninput="render()"></div>
+  <div class="period" id="period"></div>
+</header>
+<div class="list" id="list"><div class="empty">Chargement…</div></div>
+<div class="lb" id="lb" onclick="closeLb()"><span class="x" onclick="event.stopPropagation();closeLb()">&times;</span><img id="lb-img" src="" alt="" onclick="event.stopPropagation()"></div>
+
+<script>
+var SECRET='touni-sync-2026';
+var SB_URL='https://dwjjrgjbkftejdcmwpgc.supabase.co';
+var SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR3ampyZ2pia2Z0ZWpkY213cGdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU0NzI2MDYsImV4cCI6MjA5MTA0ODYwNn0.6GxM9u1Om7zP-_MEYVhdtHBESyGLDZGFofxSKGwixPo';
+var imgMap={}, DATA=null, RANGE='30', DFROM=null, DTO=null;
+function dot(s){document.getElementById('dot').style.background=s==='ok'?'var(--green)':s==='err'?'var(--red)':'var(--muted)';}
+function fmt(n){return Number(n||0).toLocaleString('fr-FR');}
+async function loadImages(){
+  try{ var rows=[],off=0,CH=1000;
+    for(;;){ var r=await fetch(SB_URL+'/rest/v1/shopify_variants_cache?select=product_title,product_image',{headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Range-Unit':'items','Range':off+'-'+(off+CH-1)}});
+      var b=await r.json(); if(!Array.isArray(b)||!b.length)break; rows=rows.concat(b); if(b.length<CH)break; off+=CH; }
+    rows.forEach(function(x){ if(x.product_title&&x.product_image&&!imgMap[x.product_title]) imgMap[x.product_title]=x.product_image; });
+  }catch(e){}
+}
+function imgFor(t){ if(!t)return''; if(imgMap[t])return imgMap[t]; var k=Object.keys(imgMap).find(function(x){return x.indexOf(t)>-1||t.indexOf(x)>-1;}); return k?imgMap[k]:''; }
+function openLb(src){ if(!src)return; document.getElementById('lb-img').src=src; document.getElementById('lb').classList.add('show'); }
+function closeLb(){ document.getElementById('lb').classList.remove('show'); }
+document.addEventListener('keydown',function(e){ if(e.key==='Escape')closeLb(); });
+function bounds(){
+  var now=new Date(), from=null, to=null;
+  if(RANGE==='today') from=new Date(now.getFullYear(),now.getMonth(),now.getDate());
+  else if(RANGE==='7') from=new Date(now.getTime()-7*86400000);
+  else if(RANGE==='30') from=new Date(now.getTime()-30*86400000);
+  else if(RANGE==='90') from=new Date(now.getTime()-90*86400000);
+  else if(RANGE==='month') from=new Date(now.getFullYear(),now.getMonth(),1);
+  else if(RANGE==='lastmonth'){ from=new Date(now.getFullYear(),now.getMonth()-1,1); to=new Date(now.getFullYear(),now.getMonth(),0,23,59,59); }
+  else if(RANGE==='custom'){ if(DFROM)from=new Date(DFROM+'T00:00:00'); if(DTO)to=new Date(DTO+'T23:59:59'); }
+  return {from:from,to:to};
+}
+function periodLabel(b){
+  var f=b.from?b.from.toLocaleDateString('fr-FR',{day:'2-digit',month:'short',year:'numeric'}):'début';
+  var t=b.to?b.to.toLocaleDateString('fr-FR',{day:'2-digit',month:'short',year:'numeric'}):"aujourd'hui";
+  return f+' → '+t;
+}
+async function load(){
+  var b=bounds();
+  document.getElementById('period').textContent='Période : '+periodLabel(b);
+  document.getElementById('list').innerHTML='<div class="empty">Calcul des ventes…</div>';
+  var url='/api/notifications?bestsellers=1&secret='+SECRET;
+  if(b.from)url+='&from='+encodeURIComponent(b.from.toISOString());
+  if(b.to)url+='&to='+encodeURIComponent(b.to.toISOString());
+  try{
+    var r=await fetch(url); var j=await r.json(); if(j.error)throw new Error(j.error);
+    DATA=j; dot('ok');
+    document.getElementById('t-units').textContent=fmt(j.total_units);
+    document.getElementById('t-orders').textContent=fmt(j.orders_scanned);
+    document.getElementById('t-rev').textContent=fmt(j.total_revenue)+' DH';
+    render();
+  }catch(e){ dot('err'); document.getElementById('list').innerHTML='<div class="empty">⚠️ '+e.message+'</div>'; }
+}
+function esc(s){return String(s==null?'':s).replace(/</g,'&lt;');}
+function render(){
+  if(!DATA)return;
+  var q=(document.getElementById('q').value||'').toLowerCase().trim();
+  var prods=(DATA.products||[]).filter(function(p){return !q||(p.title||'').toLowerCase().indexOf(q)>-1;});
+  var el=document.getElementById('list');
+  if(!prods.length){ el.innerHTML='<div class="empty">Aucune vente sur cette période.</div>'; return; }
+  var max=prods[0]?prods[0].units:1;
+  var medal=['🥇','🥈','🥉'];
+  el.innerHTML=prods.map(function(p,i){
+    var img=imgFor(p.title||'');
+    var rk=i<3?medal[i]:(i+1);
+    var w=Math.max(3,Math.round((p.units/max)*100));
+    return '<div class="row'+(i<3?' top'+(i+1):'')+'">'
+      +'<div class="rank">'+rk+'</div>'
+      +(img?'<img class="th" src="'+img+'" alt="" onclick="openLb(this.src)">':'<span class="th ph">👕</span>')
+      +'<div class="mid"><div class="nm">'+esc(p.title)+'</div>'
+      +'<div class="bar"><span style="width:'+w+'%"></span></div>'
+      +'<div class="sub2"><span>💰 <b>'+fmt(p.revenue)+'</b> DH</span><span>🧾 <b>'+fmt(p.orders)+'</b> cmd</span></div>'
+      +'</div>'
+      +'<div class="units"><div class="u">'+fmt(p.units)+'</div><div class="ul">vendus</div></div>'
+      +'</div>';
+  }).join('');
+}
+function setR(r,el){ RANGE=r; document.querySelectorAll('.chip').forEach(function(c){c.classList.remove('active');}); el.classList.add('active'); document.getElementById('daterow').classList.remove('show'); load(); }
+function toggleCustom(el){ document.querySelectorAll('.chip').forEach(function(c){c.classList.remove('active');}); el.classList.add('active'); document.getElementById('daterow').classList.add('show'); RANGE='custom'; }
+function applyCustom(){ DFROM=document.getElementById('dfrom').value||null; DTO=document.getElementById('dto').value||null; RANGE='custom'; document.getElementById('chip-custom').classList.add('active'); load(); }
+(async function(){ await loadImages(); await load(); })();
+</script>
+</body>
+</html>
