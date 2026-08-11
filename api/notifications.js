@@ -480,6 +480,48 @@ async function shipDeal(req, res) {
   } catch (e) { return res.status(500).json({ error: e.message }); }
 }
 
+// ════════ Produits les plus vendus (GET ?bestsellers=1&from=&to=) — agrège les commandes Shopify de la période ════════
+async function bestSellers(req, res) {
+  try {
+    const from = req.query?.from, to = req.query?.to;
+    let url = `https://${SHOPIFY_DOMAIN}/admin/api/${SHOPIFY_API_VERSION}/orders.json?status=any&limit=250&fields=id,line_items,created_at,cancelled_at,financial_status`;
+    if (from) url += `&created_at_min=${encodeURIComponent(from)}`;
+    if (to) url += `&created_at_max=${encodeURIComponent(to)}`;
+    const hdrs = await shopifyAdminHeaders();
+    const agg = new Map();
+    let pages = 0, ordersScanned = 0, truncated = false;
+    while (url && pages < 14) {
+      const r = await fetch(url, { headers: hdrs });
+      if (!r.ok) break;
+      const d = await r.json();
+      for (const o of (d.orders || [])) {
+        if (o.cancelled_at) continue;
+        ordersScanned++;
+        for (const li of (o.line_items || [])) {
+          const title = li.title || '—';
+          const key = li.product_id ? 'p' + li.product_id : 't' + title;
+          const e = agg.get(key) || { product_id: li.product_id || null, title, units: 0, revenue: 0, orders: new Set() };
+          e.units += (li.quantity || 0);
+          e.revenue += (parseFloat(li.price || 0) * (li.quantity || 0));
+          e.orders.add(o.id);
+          agg.set(key, e);
+        }
+      }
+      const link = r.headers.get('link') || '';
+      const m = link.match(/<([^>]+)>;\s*rel="next"/);
+      url = m ? m[1] : null;
+      pages++;
+      if (pages >= 14 && url) truncated = true;
+    }
+    const products = [...agg.values()]
+      .map(e => ({ product_id: e.product_id, title: e.title, units: e.units, revenue: Math.round(e.revenue), orders: e.orders.size }))
+      .sort((a, b) => b.units - a.units);
+    const totalUnits = products.reduce((s, p) => s + p.units, 0);
+    const totalRevenue = products.reduce((s, p) => s + p.revenue, 0);
+    return res.status(200).json({ orders_scanned: ordersScanned, total_units: totalUnits, total_revenue: totalRevenue, truncated, products: products.slice(0, 300) });
+  } catch (e) { return res.status(500).json({ error: e.message }); }
+}
+
 // ════════ Historique des commandes expédiées (GET ?history=1&from=&to=&limit=) ════════
 async function historyList(req, res) {
   try {
@@ -601,6 +643,7 @@ module.exports = async function handler(req, res) {
   if (req.method === 'POST' && req.query?.action === 'prep') return prepToggle(req, res);
   if (req.method === 'GET' && req.query?.prepared) return preparedList(req, res);
   if (req.method === 'GET' && req.query?.history) return historyList(req, res);
+  if (req.method === 'GET' && req.query?.bestsellers) return bestSellers(req, res);
 
   try {
     if (req.method === 'GET') {
