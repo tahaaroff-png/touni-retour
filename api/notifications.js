@@ -18,36 +18,24 @@ async function egrowPost(path, params) {
   const r = await fetch('https://api.egrow.com' + path, { method: 'POST', headers: { 'account-key': EGROW_AK, 'User-Agent': EGROW_UA, 'content-type': `multipart/form-data; boundary=${b}` }, body: raw });
   const t = await r.text(); try { return JSON.parse(t); } catch (e) { return { __raw: t.slice(0, 200) }; }
 }
-// État FRAIS d'un deal (stage courant + position) → pour un déplacement fiable (pas de old_stage périmé) + vérification.
-// getDealDetails.php = GET (?me=&deal=), PAS le POST multipart des autres endpoints.
-async function egrowGetDeal(dealId) {
-  const url = `https://api.egrow.com/deal/getDealDetails.php?me=${encodeURIComponent(EGROW_ME)}&dev=0&deal=${encodeURIComponent(dealId)}`;
-  const r = await fetch(url, { headers: { 'account-key': EGROW_AK, 'User-Agent': EGROW_UA } });
-  const t = await r.text(); try { return JSON.parse(t); } catch (e) { return { __raw: t.slice(0, 200) }; }
-}
-async function egrowGetDealStage(dealId) {
+// Le deal est-il DANS ce stage ? (via getStageDeals qui fonctionne de façon fiable — getDealDetails renvoie null).
+async function egrowDealInStage(dealId, stageId) {
   try {
-    const j = await egrowGetDeal(dealId);
-    const d = (j && j.data && typeof j.data === 'object') ? j.data : j;
-    if (!d || typeof d !== 'object' || Array.isArray(d)) return null;
-    const stageId = d.stage && d.stage.id ? Number(d.stage.id) : null;
-    return { stageId, order: d.order || 1 };
-  } catch (e) { return null; }
+    const r = await egrowPost('/deal/getStageDeals.php', { stage: stageId, page: 1, limit: 1500 });
+    const a = Array.isArray(r) ? r : (r && r.data) || [];
+    return a.some(d => String(d.id) === String(dealId));
+  } catch (e) { return null; } // null = on n'a pas pu vérifier
 }
-// Déplace un deal vers targetStage de façon FIABLE : lit l'état frais, déplace, VÉRIFIE, réessaie 1×.
-async function moveDealReliable(dealId, targetStage, fallbackStage, fallbackOrder) {
+// Déplace un deal vers targetStage de façon FIABLE : déplace, VÉRIFIE la présence dans le stage cible, réessaie 1×.
+async function moveDealReliable(dealId, targetStage, oldStage, order) {
   if (!dealId || !EGROW_ME || !EGROW_AK) return { ok: false, reason: 'egrow_non_configure' };
-  let cur = await egrowGetDealStage(dealId);
-  let curStage = cur && cur.stageId ? cur.stageId : (parseInt(fallbackStage, 10) || null);
-  let curOrder = cur && cur.order ? cur.order : (fallbackOrder || 1);
-  if (curStage === targetStage) return { ok: true, already: true, to: targetStage };
+  // Déjà à destination ? (idempotent : un retry après succès partiel ne re-déplace pas)
+  if (await egrowDealInStage(dealId, targetStage) === true) return { ok: true, already: true, to: targetStage };
   for (let a = 0; a < 2; a++) {
-    await egrowPost('/deal/updateDealOrderinNewStage.php', { new_order: 1, old_order: curOrder, stage_id: targetStage, deal_id: dealId, old_stage: curStage, update_stage_source: 'touni-retour ship' });
-    const after = await egrowGetDealStage(dealId);
-    if (after && after.stageId === targetStage) return { ok: true, to: targetStage, attempts: a + 1 };
-    if (after && after.stageId) { curStage = after.stageId; curOrder = after.order || curOrder; }
+    await egrowPost('/deal/updateDealOrderinNewStage.php', { new_order: 1, old_order: order || 1, stage_id: targetStage, deal_id: dealId, old_stage: oldStage, update_stage_source: 'touni-retour ship' });
+    if (await egrowDealInStage(dealId, targetStage) === true) return { ok: true, to: targetStage, attempts: a + 1 };
   }
-  return { ok: false, to: targetStage, last_stage: curStage };
+  return { ok: false, to: targetStage };
 }
 // Les 6 pipelines eGrow que Tahar veut filtrer (id → libellé). Ordre d'affichage = ordre des clés.
 const PIPELINES = [
@@ -537,10 +525,10 @@ async function egrowStages(req, res) {
   if (!ME || !AK) return res.status(500).json({ error: 'EGROW_ME/EGROW_AK absents en env' });
   // Sonde : vérifier que getDealDetails renvoie bien le stage (pour la fiabilité du déplacement)
   if (req.query?.probe_deal) {
-    const parsed = await egrowGetDealStage(req.query.probe_deal);
-    const raw = await egrowGetDeal(req.query.probe_deal);
-    const d = (raw && raw.data && typeof raw.data === 'object') ? raw.data : raw;
-    return res.status(200).json({ probe_deal: req.query.probe_deal, parsed, keys: d && typeof d === 'object' && !Array.isArray(d) ? Object.keys(d).slice(0, 40) : null, stage: d && d.stage, order: d && d.order, is_array: Array.isArray(raw), raw_head: JSON.stringify(raw).slice(0, 300) });
+    const src = parseInt(req.query.src_stage || '63093', 10);
+    const inSrc = await egrowDealInStage(req.query.probe_deal, src);
+    const inTraiter = await egrowDealInStage(req.query.probe_deal, 49150);
+    return res.status(200).json({ probe_deal: req.query.probe_deal, in_source_stage: inSrc, in_traiter: inTraiter });
   }
   const post = async (path, params) => {
     const p = Object.assign({}, params, { me: ME, dev: 0 });
