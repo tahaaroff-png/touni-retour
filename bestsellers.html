@@ -53,7 +53,7 @@ h1{font-size:21px;display:flex;align-items:center;gap:8px}
 .dot{width:9px;height:9px;border-radius:50%;background:var(--muted);display:inline-block}
 .lb{display:none;position:fixed;inset:0;background:rgba(0,0,0,.86);z-index:100;align-items:center;justify-content:center;padding:20px;cursor:zoom-out}
 .lb.show{display:flex}.lb img{max-width:100%;max-height:100%;object-fit:contain;border-radius:10px}
-.lb .x{position:absolute;top:12px;right:18px;color:#fff;font-size:40px;font-weight:300;cursor:pointer;width:48px;height:48px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:rgba(0,0,0,.35)}
+.lb .x{position:absolute;top:12px;right:18px;z-index:110;color:#fff;font-size:40px;font-weight:300;cursor:pointer;width:48px;height:48px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:rgba(0,0,0,.35)}
 @media(max-width:620px){.tiles{grid-template-columns:1fr 1fr}.tile:last-child{grid-column:span 2}}
 @media(prefers-color-scheme:dark){:root{--bg:#0f1115;--card:#1a1d23;--text:#e5e7eb;--muted:#9ca3af;--faint:#6b7280;--border:#2a2e37}.bar,.th{background:#242833}}
 </style>
@@ -94,7 +94,7 @@ h1{font-size:21px;display:flex;align-items:center;gap:8px}
   <div class="period" id="period"></div>
 </header>
 <div class="list" id="list"><div class="empty">Chargement…</div></div>
-<div class="lb" id="lb" onclick="closeLb()"><span class="x" onclick="event.stopPropagation();closeLb()">&times;</span><img id="lb-img" src="" alt="" onclick="event.stopPropagation()"></div>
+<div class="lb" id="lb" onclick="closeLb()"><span class="x" onclick="closeLb()">&times;</span><img id="lb-img" src="" alt=""></div>
 
 <script>
 var SECRET='touni-sync-2026';

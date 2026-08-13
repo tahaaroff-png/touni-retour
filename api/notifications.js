@@ -4,7 +4,7 @@
 // PATCH /api/notifications?secret=...&id=XXX → marquer comme lu/archivé
 // DELETE /api/notifications?secret=...&id=XXX → supprimer
 
-const { SB_URL, supabaseHeaders, shopifyAdminHeaders, SHOPIFY_DOMAIN, SHOPIFY_API_VERSION, normalizeSize, normalizeColor } = require('./_shopify-helpers.js');
+const { SB_URL, supabaseHeaders, shopifyAdminHeaders, SHOPIFY_DOMAIN, SHOPIFY_API_VERSION, normalizeSize, normalizeColor, fetchShopifyProductsAdmin } = require('./_shopify-helpers.js');
 // Réutilise le parsing du webhook (fonction exportée) — pour rester sous la limite de 12 fonctions Vercel
 const { parseVariantTitle } = require('./shopify-order-webhook.js');
 
@@ -644,6 +644,57 @@ async function egrowStages(req, res) {
   }
 }
 
+// ════════ Produits en RUPTURE de stock (GET ?rupture=1) — live Shopify ════════
+// Renvoie 2 listes : produits totalement en rupture (toutes tailles suivies à 0)
+// et produits partiellement en rupture (certaines tailles à 0). Données live à
+// chaque appel → toujours synchronisé avec Shopify (ajout produit / stock à 0).
+async function ruptureStock(req, res) {
+  try {
+    const products = await fetchShopifyProductsAdmin();
+    const slug = String(SHOPIFY_DOMAIN || '').replace('.myshopify.com', '');
+    const sizeOf = (v) => { const t = String(v.title || '').trim(); return (!t || t === 'Default Title') ? '—' : t; };
+    const fully = [], partial = [];
+    let scanned = 0, trackedProducts = 0;
+    for (const p of products) {
+      if (p.status !== 'active') continue;            // seulement les produits en ligne
+      scanned++;
+      const variants = p.variants || [];
+      // On ne considère QUE les variantes dont le stock est suivi par Shopify.
+      // (Mystère/Flocage/Packs = non suivis = toujours dispo → ignorés.)
+      const tracked = variants.filter(v => v.inventory_management === 'shopify');
+      if (!tracked.length) continue;
+      trackedProducts++;
+      const out = tracked.filter(v => Number(v.inventory_quantity || 0) <= 0);
+      if (!out.length) continue;                      // tout en stock → rien à signaler
+      const img = (p.images && p.images[0] && p.images[0].src) || '';
+      const base = {
+        id: p.id, title: p.title, image: img,
+        admin_url: slug ? `https://admin.shopify.com/store/${slug}/products/${p.id}` : '',
+        total: tracked.length, out: out.length,
+      };
+      if (out.length === tracked.length) {
+        fully.push(base);                             // toutes les tailles à 0
+      } else {
+        base.out_sizes = out.map(sizeOf);
+        base.in_sizes = tracked
+          .filter(v => Number(v.inventory_quantity || 0) > 0)
+          .map(v => ({ size: sizeOf(v), qty: Number(v.inventory_quantity || 0) }));
+        partial.push(base);
+      }
+    }
+    fully.sort((a, b) => String(a.title).localeCompare(String(b.title)));
+    partial.sort((a, b) => String(a.title).localeCompare(String(b.title)));
+    return res.status(200).json({
+      generated_at: new Date().toISOString(),
+      scanned, tracked_products: trackedProducts,
+      fully_count: fully.length, partial_count: partial.length,
+      fully, partial,
+    });
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
+  }
+}
+
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
@@ -662,6 +713,9 @@ module.exports = async function handler(req, res) {
 
   // Vue Directeur Meta Ads (live)
   if (req.method === 'GET' && req.query?.meta) return metaMetrics(req, res);
+
+  // Produits en rupture de stock (live Shopify)
+  if (req.method === 'GET' && req.query?.rupture) return ruptureStock(req, res);
 
   // Découverte pipelines eGrow (admin, secret-gated)
   if (req.query?.egrow_stages) return egrowStages(req, res);

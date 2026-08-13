@@ -30,7 +30,8 @@
     { "source": "/commandes", "destination": "/commandes-stock.html" },
     { "source": "/historique", "destination": "/historique.html" },
     { "source": "/top-produits", "destination": "/bestsellers.html" },
-    { "source": "/best-sellers", "destination": "/bestsellers.html" }
+    { "source": "/best-sellers", "destination": "/bestsellers.html" },
+    { "source": "/rupture", "destination": "/rupture.html" }
   ],
   "headers": [
     {

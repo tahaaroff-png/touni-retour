@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>📉 Ruptures de stock — Touni</title>
+<link rel="icon" href="/favicon.svg">
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--text:#151515;--muted:#6b7280;--faint:#9aa1ab;--border:#e5e7eb;--green:#16a34a;--red:#dc2626;--orange:#ea580c;--blue:#2563eb;--radius:14px;--font:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--font);background:var(--bg);color:var(--text);padding:14px;max-width:980px;margin:0 auto}
+header{position:sticky;top:0;background:var(--bg);padding:8px 0 12px;z-index:5}
+.topnav{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
+.navlink{font-size:12px;font-weight:700;text-decoration:none;color:var(--text);background:var(--card);border:1px solid var(--border);border-radius:20px;padding:6px 14px}
+.navlink.back{background:var(--text);color:var(--bg)}
+h1{font-size:21px;display:flex;align-items:center;gap:8px}
+.sub{color:var(--muted);font-size:12px;margin-top:3px}
+.tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:14px}
+.tile{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:13px 15px}
+.tile .v{font-size:22px;font-weight:800;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.tile.red .v{color:var(--red)}.tile.orange .v{color:var(--orange)}
+.tile .l{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-top:2px}
+.toolbar{display:flex;gap:10px;align-items:center;margin-top:12px;flex-wrap:wrap}
+.srch{flex:1;min-width:180px}
+.srch input{width:100%;font-size:13px;padding:8px 14px;border:1px solid var(--border);border-radius:20px;background:var(--card);color:var(--text)}
+.refresh{font-size:12px;font-weight:700;border:1px solid var(--border);background:var(--card);color:var(--text);border-radius:20px;padding:8px 14px;cursor:pointer;font-family:var(--font)}
+.refresh:active{transform:scale(.97)}
+.period{font-size:11px;color:var(--faint);margin-top:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;display:flex;align-items:center;gap:7px}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--muted);display:inline-block}
+.sect{margin-top:18px}
+.sect-h{font-size:14px;font-weight:800;display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.sect-h .cnt{font-size:12px;font-weight:700;color:var(--muted)}
+.list{display:flex;flex-direction:column;gap:8px}
+.row{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px;display:flex;align-items:flex-start;gap:12px}
+.row.full{border-left:4px solid var(--red)}
+.row.part{border-left:4px solid var(--orange)}
+.th{width:46px;height:58px;object-fit:cover;border-radius:8px;background:#eef0f3;flex-shrink:0;cursor:zoom-in;display:grid;place-items:center;font-size:17px}
+.th.ph{cursor:default}
+.mid{flex:1;min-width:0}
+.nm{font-weight:700;font-size:13.5px}
+.meta{font-size:11px;color:var(--muted);margin-top:3px}
+.chips{display:flex;gap:5px;flex-wrap:wrap;margin-top:7px}
+.sz{font-size:11px;font-weight:700;border-radius:7px;padding:3px 8px;font-variant-numeric:tabular-nums}
+.sz.out{background:rgba(220,38,38,.12);color:var(--red)}
+.sz.in{background:rgba(22,163,74,.12);color:var(--green)}
+.lnk{font-size:11px;font-weight:700;color:var(--blue);text-decoration:none;white-space:nowrap;flex-shrink:0;margin-top:2px}
+.empty{text-align:center;color:var(--muted);padding:34px 20px;font-size:13px;background:var(--card);border:1px dashed var(--border);border-radius:var(--radius)}
+.big-empty{text-align:center;color:var(--muted);padding:50px 20px;font-size:14px}
+.lb{display:none;position:fixed;inset:0;background:rgba(0,0,0,.86);z-index:100;align-items:center;justify-content:center;padding:20px;cursor:zoom-out}
+.lb.show{display:flex}.lb img{max-width:100%;max-height:100%;object-fit:contain;border-radius:10px}
+.lb .x{position:absolute;top:12px;right:18px;z-index:110;color:#fff;font-size:40px;font-weight:300;cursor:pointer;width:48px;height:48px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:rgba(0,0,0,.35)}
+@media(max-width:620px){.tiles{grid-template-columns:1fr 1fr}.tile:last-child{grid-column:span 2}}
+@media(prefers-color-scheme:dark){:root{--bg:#0f1115;--card:#1a1d23;--text:#e5e7eb;--muted:#9ca3af;--faint:#6b7280;--border:#2a2e37}.th{background:#242833}}
+</style>
+</head>
+<body>
+<header>
+  <nav class="topnav">
+    <a href="/" class="navlink back">← Gestionnaire</a>
+    <a href="/commandes-stock" class="navlink">📦 Commandes en stock</a>
+    <a href="/top-produits" class="navlink">🏆 Top ventes</a>
+    <a href="/dashboard" class="navlink">📊 Dashboard</a>
+  </nav>
+  <h1>📉 Ruptures de stock <span class="dot" id="dot"></span></h1>
+  <div class="sub">Données <b>live Shopify</b> — mises à jour à chaque chargement (ajout de produit ou stock mis à 0).</div>
+  <div class="tiles">
+    <div class="tile red"><div class="v" id="t-full">—</div><div class="l">Totalement en rupture</div></div>
+    <div class="tile orange"><div class="v" id="t-part">—</div><div class="l">Tailles en rupture</div></div>
+    <div class="tile"><div class="v" id="t-scan">—</div><div class="l">Produits actifs scannés</div></div>
+  </div>
+  <div class="toolbar">
+    <div class="srch"><input id="q" type="text" placeholder="Rechercher un produit…" oninput="render()"></div>
+    <button class="refresh" onclick="load()">↻ Actualiser</button>
+  </div>
+  <div class="period" id="period"></div>
+</header>
+
+<div id="content"><div class="big-empty">Chargement…</div></div>
+
+<div class="lb" id="lb" onclick="closeLb()"><span class="x" onclick="closeLb()">&times;</span><img id="lb-img" src="" alt=""></div>
+
+<script>
+var SECRET='touni-sync-2026';
+var DATA=null;
+function dot(s){document.getElementById('dot').style.background=s==='ok'?'var(--green)':s==='err'?'var(--red)':'var(--muted)';}
+function fmt(n){return Number(n||0).toLocaleString('fr-FR');}
+function esc(s){return String(s==null?'':s).replace(/</g,'&lt;');}
+function openLb(src){ if(!src)return; document.getElementById('lb-img').src=src; document.getElementById('lb').classList.add('show'); }
+function closeLb(){ document.getElementById('lb').classList.remove('show'); }
+document.addEventListener('keydown',function(e){ if(e.key==='Escape')closeLb(); });
+
+async function load(){
+  document.getElementById('content').innerHTML='<div class="big-empty">Lecture du stock Shopify…</div>';
+  document.getElementById('period').textContent='';
+  try{
+    var r=await fetch('/api/notifications?rupture=1&secret='+SECRET);
+    var j=await r.json(); if(j.error)throw new Error(j.error);
+    DATA=j; dot('ok');
+    document.getElementById('t-full').textContent=fmt(j.fully_count);
+    document.getElementById('t-part').textContent=fmt(j.partial_count);
+    document.getElementById('t-scan').textContent=fmt(j.scanned);
+    var d=new Date(j.generated_at);
+    document.getElementById('period').innerHTML='<span class="dot" style="background:var(--green)"></span>Synchronisé à '+d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})+' · '+fmt(j.tracked_products)+' produits à stock suivi';
+    render();
+  }catch(e){ dot('err'); document.getElementById('content').innerHTML='<div class="big-empty">⚠️ '+esc(e.message)+'</div>'; }
+}
+
+function thumb(p){
+  return p.image
+    ? '<img class="th" src="'+esc(p.image)+'" alt="" onclick="openLb(this.src)">'
+    : '<span class="th ph">👕</span>';
+}
+function link(p){ return p.admin_url?'<a class="lnk" href="'+esc(p.admin_url)+'" target="_blank" rel="noopener">Modifier ↗</a>':''; }
+
+function render(){
+  if(!DATA)return;
+  var q=(document.getElementById('q').value||'').toLowerCase().trim();
+  var flt=function(p){return !q||(p.title||'').toLowerCase().indexOf(q)>-1;};
+  var full=(DATA.fully||[]).filter(flt);
+  var part=(DATA.partial||[]).filter(flt);
+  var html='';
+
+  html+='<div class="sect"><div class="sect-h">🔴 Totalement en rupture <span class="cnt">('+full.length+')</span></div><div class="list">';
+  if(!full.length){ html+='<div class="empty">Aucun produit totalement en rupture 🎉</div>'; }
+  else { html+=full.map(function(p){
+    return '<div class="row full">'+thumb(p)
+      +'<div class="mid"><div class="nm">'+esc(p.title)+'</div>'
+      +'<div class="meta">Toutes les <b>'+p.total+'</b> taille(s) suivie(s) à 0</div></div>'
+      +link(p)+'</div>';
+  }).join(''); }
+  html+='</div></div>';
+
+  html+='<div class="sect"><div class="sect-h">🟠 Certaines tailles en rupture <span class="cnt">('+part.length+')</span></div><div class="list">';
+  if(!part.length){ html+='<div class="empty">Aucune taille isolée en rupture.</div>'; }
+  else { html+=part.map(function(p){
+    var outc=(p.out_sizes||[]).map(function(s){return '<span class="sz out">'+esc(s)+'</span>';}).join('');
+    var inc=(p.in_sizes||[]).map(function(v){return '<span class="sz in">'+esc(v.size)+' · '+v.qty+'</span>';}).join('');
+    return '<div class="row part">'+thumb(p)
+      +'<div class="mid"><div class="nm">'+esc(p.title)+'</div>'
+      +'<div class="meta"><b>'+p.out+'</b>/'+p.total+' taille(s) en rupture</div>'
+      +'<div class="chips">'+outc+inc+'</div></div>'
+      +link(p)+'</div>';
+  }).join(''); }
+  html+='</div></div>';
+
+  document.getElementById('content').innerHTML=html;
+}
+load();
+</script>
+</body>
+</html>

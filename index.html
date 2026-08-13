@@ -311,6 +311,7 @@ td{padding:11px 11px;vertical-align:middle}
   <a class="side-link primary" id="stock-orders-btn" href="/commandes-stock" style="display:none"><span class="ic">📦</span>Commandes en stock</a>
   <a class="side-link" id="history-btn" href="/historique" style="display:none"><span class="ic">🧾</span>Historique</a>
   <a class="side-link" id="best-btn" href="/top-produits" style="display:none"><span class="ic">🏆</span>Top ventes</a>
+  <a class="side-link" id="rupture-btn" href="/rupture" style="display:none"><span class="ic">📉</span>Ruptures stock</a>
   <a class="side-link" id="admin-dashboard-btn" href="/dashboard" style="display:none"><span class="ic">📊</span>Dashboard</a>
   <button class="side-link" id="btn-sync-shopify" onclick="syncAll()" title="Synchronise les retours vers Shopify et met en rupture les vendus/mystère" style="display:none"><span class="ic">🔄</span>Sync Shopify</button>
   <div class="side-spacer"></div>
@@ -587,6 +588,7 @@ function applyRole() {
   document.getElementById('stock-orders-btn').style.display = ''; // utile aux 2 rôles
   document.getElementById('history-btn').style.display = '';
   document.getElementById('best-btn').style.display = '';
+  document.getElementById('rupture-btn').style.display = '';
   if (role === 'staff') {
     document.getElementById('role-badge').style.display = 'flex';
     document.getElementById('admin-dashboard-btn').style.display = 'none';
