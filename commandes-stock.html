@@ -114,11 +114,15 @@ h1{font-size:20px;display:flex;align-items:center;gap:8px}
   <div class="pipebar" id="pipebar">
     <span class="plabel">Pipeline eGrow :</span>
     <button class="pipe active" data-pipe="stock" onclick="pickStock(this)">📦 Stock (direct)</button>
-    <button class="pipe conf" onclick="pickPipe('49396,63093,64833,64835','Confirmer',this)">✓ Confirmer</button>
-    <button class="pipe" onclick="pickPipe('51500,60599,55207,49397','Rappel',this)">📞 Rappel</button>
-    <button class="pipe" onclick="pickPipe('65365','En attente',this)">En attente</button>
+    <button class="pipe conf" onclick="pickPipe('49396','Confirmer Maillots',this)">✓ Confirmer Maillots</button>
+    <button class="pipe conf" onclick="pickPipe('63093','Confirmer Autre',this)">✓ Confirmer Autre</button>
+    <button class="pipe conf" onclick="pickPipe('64833','Flocage PRO Confirmer',this)">✓ Flocage PRO</button>
+    <button class="pipe" onclick="pickPipe('64835','Commande Incomplète',this)">Commande Incomplète</button>
     <button class="pipe" onclick="pickPipe('60669','Rappeler le stock',this)">Rappeler le stock</button>
     <button class="pipe" onclick="pickPipe('49430','Rupture',this)">Rupture</button>
+    <button class="pipe conf" onclick="pickPipe('49396,63093,64833,64835','Confirmer',this)">✓ Confirmer (tout)</button>
+    <button class="pipe" onclick="pickPipe('51500,60599,55207,49397','Rappel',this)">📞 Rappel</button>
+    <button class="pipe" onclick="pickPipe('65365','En attente',this)">En attente</button>
   </div>
   <div class="pdate" id="pdate">
     <span class="plabel">📅 Date :</span>
