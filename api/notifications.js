@@ -29,11 +29,19 @@ async function egrowDealInStage(dealId, stageId) {
 // Déplace un deal vers targetStage de façon FIABLE : déplace, VÉRIFIE la présence dans le stage cible, réessaie 1×.
 async function moveDealReliable(dealId, targetStage, oldStage, order) {
   if (!dealId || !EGROW_ME || !EGROW_AK) return { ok: false, reason: 'egrow_non_configure' };
-  // Déjà à destination ? (idempotent : un retry après succès partiel ne re-déplace pas)
-  if (await egrowDealInStage(dealId, targetStage) === true) return { ok: true, already: true, to: targetStage };
+  // Le deal a-t-il AVANCÉ ? = présent dans la cible (Traiter) OU parti de l'ancien stage.
+  // ⚠️ L'automatisation eGrow → Ozone sort le deal de « Traiter » AUSSITÔT (vers Success/Failed
+  // Ozone). Vérifier seulement « est-il encore dans Traiter ? » donnait un FAUX échec. On accepte
+  // donc aussi « a quitté la source » comme preuve de déplacement réussi. Idempotent (retry safe).
+  async function advanced() {
+    if (await egrowDealInStage(dealId, targetStage) === true) return true;           // dans Traiter
+    if (oldStage && await egrowDealInStage(dealId, oldStage) === false) return true;  // parti de la source → avancé (Ozone)
+    return false;
+  }
+  if (await advanced()) return { ok: true, already: true, to: targetStage };
   for (let a = 0; a < 2; a++) {
     await egrowPost('/deal/updateDealOrderinNewStage.php', { new_order: 1, old_order: order || 1, stage_id: targetStage, deal_id: dealId, old_stage: oldStage, update_stage_source: 'touni-retour ship' });
-    if (await egrowDealInStage(dealId, targetStage) === true) return { ok: true, to: targetStage, attempts: a + 1 };
+    if (await advanced()) return { ok: true, to: targetStage, attempts: a + 1 };
   }
   return { ok: false, to: targetStage };
 }
