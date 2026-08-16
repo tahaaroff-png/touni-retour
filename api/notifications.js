@@ -398,12 +398,20 @@ async function loadStockMatcher() {
 // ════════ Filtre par PIPELINE eGrow (GET ?pipeline=<stageId>) → commandes du pipeline + dispo stock interne ════════
 async function pipelineScan(req, res) {
   if (!EGROW_ME || !EGROW_AK) return res.status(500).json({ error: 'eGrow non configuré (EGROW_ME/AK)' });
-  const sid = parseInt(req.query.pipeline, 10);
-  const pl = PIPELINES.find(p => p.id === sid);
-  if (!pl) return res.status(400).json({ error: 'pipeline inconnu' });
+  // Un OU plusieurs stages (séparés par virgule) pour les filtres groupés « Confirmer », « Rappel »…
+  const ALLOWED_STAGES = new Set([49396, 63093, 64833, 64835, 60669, 49430, 51500, 60599, 55207, 49397, 65365]);
+  const stages = String(req.query.pipeline || '').split(',').map(s => parseInt(s.trim(), 10)).filter(id => ALLOWED_STAGES.has(id));
+  if (!stages.length) return res.status(400).json({ error: 'pipeline inconnu' });
   try {
-    const r = await egrowPost('/deal/getStageDeals.php', { stage: sid, page: 1, limit: 1500 });
-    const deals = Array.isArray(r) ? r : (r && r.data) || [];
+    // Fusionne les deals de tous les stages du groupe (dédupliqués par id).
+    let raw = [];
+    for (const sid of stages) {
+      const rr = await egrowPost('/deal/getStageDeals.php', { stage: sid, page: 1, limit: 1500 });
+      const arr = Array.isArray(rr) ? rr : (rr && rr.data) || [];
+      arr.forEach(d => { d._srcStage = sid; raw.push(d); });
+    }
+    const _seen = new Set();
+    const deals = raw.filter(d => { const k = String(d.id); if (_seen.has(k)) return false; _seen.add(k); return true; });
     const { match } = await loadStockMatcher();
     // Une carte par COMMANDE (deal), avec TOUS ses produits (maillot seul / maillot + flocage / plusieurs maillots…)
     const out = deals.map(d => {
@@ -417,7 +425,7 @@ async function pipelineScan(req, res) {
       });
       const availN = products.filter(x => x.available).length;
       return {
-        deal_id: d.id, order: d.order || 1, stage_id: (d.stage && d.stage.id) || sid,
+        deal_id: d.id, order: d.order || 1, stage_id: (d.stage && d.stage.id) || d._srcStage,
         deal_number: d.deal_number || String(d.id), client: c.name || 'Client', city: d.deal_city || c.city || '', phone: String(c.phone || ''),
         date: d.time ? d.time * 1000 : null,                       // date de la commande (ms)
         note: (d.last_note && d.last_note.content) ? String(d.last_note.content) : '',  // note eGrow
@@ -427,7 +435,7 @@ async function pipelineScan(req, res) {
     });
     // Complètes d'abord, puis partielles, puis rien
     out.sort((a, b) => (b.all_available - a.all_available) || (b.any_available - a.any_available));
-    return res.status(200).json({ pipeline: pl.name, id: sid, deals_count: out.length, full_available: out.filter(d => d.all_available).length, deals: out });
+    return res.status(200).json({ pipeline: req.query.pipeline, id: req.query.pipeline, deals_count: out.length, full_available: out.filter(d => d.all_available).length, deals: out });
   } catch (e) {
     return res.status(500).json({ error: e.message });
   }
