@@ -337,31 +337,29 @@ function renderPipe(){
   }).join('');
 }
 var _shipping={};
-async function shipDeal(di){
+function shipDeal(di){
   var d=PIPE_DEALS[di]; if(!d || _shipping[d.deal_id]) return; // anti double-clic
   _shipping[d.deal_id]=1;
-  var card=document.getElementById('d-'+di); if(card) card.style.opacity='.5';
-  try{
-    var items=d.products.filter(function(p){return p.available;}).map(function(p){return {stock_ids:p.matched_stock_ids,qty:p.qty};});
-    var r=await fetch('/api/notifications?action=ship_deal&secret='+SECRET,{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({deal_id:d.deal_id,old_stage:d.stage_id,order:d.order,move_stage:49150,items:items,
-        snapshot:{pipeline:CUR_PIPE?CUR_PIPE.name:'',deal_number:d.deal_number,client:d.client,city:d.city,phone:d.phone,
-          products:d.products.map(function(p){return {product:p.product,size:p.size,qty:p.qty,available:p.available};})}})});
-    var res=await r.json(); if(!r.ok) throw new Error(res.error||'Erreur');
-    // ⚠️ Le déplacement vers Traité a-t-il VRAIMENT réussi ? Sinon on NE retire PAS la carte (l'opératrice réessaie, sans double décompte).
-    if(!res.moved || !res.moved.ok){
-      if(card)card.style.opacity='1';
-      toast('⚠️ '+d.deal_number+' : échec du passage à « Traité » — réessaie');
-      return;
-    }
-    // nettoyer les « préparé » de cette commande (serveur) — clé indexée (fix doublons)
-    for(var k=0;k<d.products.length;k++){ var p=d.products[k]; var pk='p:'+(d.deal_number||'')+'|'+(p.product||'')+'|'+(p.size||'')+'|'+k; if(PREP.has(pk)) flipPrep(pk); }
-    // retirer la commande de la liste (pas de rechargement complet → pas de flash)
-    var idx=PIPE_DEALS.indexOf(d); if(idx>-1) PIPE_DEALS.splice(idx,1);
-    renderPipe();
-    toast('📦 '+d.deal_number+' → Traité ✅');
-  }catch(e){ if(card)card.style.opacity='1'; toast('⚠️ '+e.message); }
-  finally{ delete _shipping[d.deal_id]; }
+  var items=d.products.filter(function(p){return p.available;}).map(function(p){return {stock_ids:p.matched_stock_ids,qty:p.qty};});
+  var payload={deal_id:d.deal_id,old_stage:d.stage_id,order:d.order,move_stage:49150,items:items,
+    snapshot:{pipeline:CUR_PIPE?CUR_PIPE.name:'',deal_number:d.deal_number,client:d.client,city:d.city,phone:d.phone,
+      products:d.products.map(function(p){return {product:p.product,size:p.size,qty:p.qty,available:p.available};})}};
+  // ── OPTIMISTE : la carte part TOUT DE SUITE, l'envoi eGrow se fait en arrière-plan ──
+  for(var k=0;k<d.products.length;k++){ var p=d.products[k]; var pk='p:'+(d.deal_number||'')+'|'+(p.product||'')+'|'+(p.size||'')+'|'+k; if(PREP.has(pk)) flipPrep(pk); }
+  var idx=PIPE_DEALS.indexOf(d); if(idx>-1) PIPE_DEALS.splice(idx,1);
+  renderPipe();
+  toast('📦 '+d.deal_number+' → Traité');
+  fetch('/api/notifications?action=ship_deal&secret='+SECRET,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
+    .then(function(r){ return r.json().then(function(res){ return {ok:r.ok,res:res}; }); })
+    .then(function(o){
+      // Échec réel du déplacement → on REMET la carte dans la liste (l'opératrice réessaie, sans double décompte).
+      if(!o.ok || !o.res || !o.res.moved || !o.res.moved.ok){
+        if(PIPE_DEALS.indexOf(d)<0){ PIPE_DEALS.push(d); renderPipe(); }
+        toast('⚠️ '+d.deal_number+' : échec — remis dans la liste, réessaie');
+      }
+    })
+    .catch(function(e){ if(PIPE_DEALS.indexOf(d)<0){ PIPE_DEALS.push(d); renderPipe(); } toast('⚠️ '+d.deal_number+' : '+e.message); })
+    .finally(function(){ delete _shipping[d.deal_id]; });
 }
 function tick(){ if(MODE==='stock') load(); } // n'auto-rafraîchit QUE le stock direct (pas d'appel eGrow toutes les 15s)
 (async function(){ await loadImages(); await loadPrep(); await load(); setInterval(tick,15000); })();
