@@ -895,7 +895,7 @@ async function searchCatalog(text) {
     const queryTerms = [...queryTermSet].filter((t) => !GENERIC_MODIFIERS.has(t));
     const qstr = (queryTerms.length ? queryTerms : [...queryTermSet]).join(' ');
     // inventoryManagement: SHOPIFY = suivi (quantité réelle) ; NOT_MANAGED = non-suivi = TOUJOURS disponible même à 0.
-    const gql = 'query($q:String!){ products(first:40, query:$q){ edges{ node{ title handle status variants(first:25){ edges{ node{ title price inventoryQuantity inventoryManagement } } } } } } }';
+    const gql = 'query($q:String!){ products(first:40, query:$q){ edges{ node{ title handle status tags variants(first:25){ edges{ node{ title price inventoryQuantity inventoryManagement } } } } } } }';
     const doShopifySearch = async (q) => {
       try {
         const gr = await fetch(`https://${SHOPIFY_DOMAIN}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`, {
@@ -932,7 +932,9 @@ async function searchCatalog(text) {
       const price = avail[0].price;
       // Lien DIRECT de la fiche produit (/products/<handle>) — vérifié 200. Fallback recherche si pas de handle.
       const link = p.handle ? `https://touni.ma/products/${p.handle}` : `https://touni.ma/search?q=${encodeURIComponent(String(p.title).replace(/[–—|]/g, ' ').replace(/\s+/g, ' ').trim())}`;
-      lines.push(`- ${p.title} : ~${price} dh — EN STOCK${sizes.length ? ' [tailles ' + sizes.join(',') + ']' : ''} | lien: ${link}`);
+      // Produit taillant PETIT (tag Shopify "taille-petite") → marqueur pour que le bot sécurise systématiquement 1 taille au-dessus.
+      const smallFit = Array.isArray(p.tags) && p.tags.some((t) => String(t).toLowerCase() === 'taille-petite');
+      lines.push(`- ${p.title} : ~${price} dh — EN STOCK${sizes.length ? ' [tailles ' + sizes.join(',') + ']' : ''}${smallFit ? ' ⚠️TAILLE PETITE(conseiller 1 taille AU-DESSUS)' : ''} | lien: ${link}`);
     }
     // Le choix du LIEN de collection est délégué à Claude via le bloc « NOS PAGES » (injecté à part). Ici on ne renvoie
     // que la dispo produit EN DIRECT (stock/tailles/prix) pour les questions précises.
