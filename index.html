@@ -309,6 +309,7 @@ td{padding:11px 11px;vertical-align:middle}
   <button class="side-link nav-btn" onclick="showPage('stats',this);sbClose()"><span class="ic">📊</span>Statistiques</button>
   <div class="side-sec">Actions</div>
   <a class="side-link primary" id="stock-orders-btn" href="/commandes-stock" style="display:none"><span class="ic">📦</span>Commandes en stock</a>
+  <a class="side-link" id="inventaire-btn" href="/inventaire" style="display:none"><span class="ic">📋</span>Inventaire</a>
   <a class="side-link" id="history-btn" href="/historique" style="display:none"><span class="ic">🧾</span>Historique</a>
   <a class="side-link" id="best-btn" href="/top-produits" style="display:none"><span class="ic">🏆</span>Top ventes</a>
   <a class="side-link" id="rupture-btn" href="/rupture" style="display:none"><span class="ic">📉</span>Ruptures stock</a>
@@ -586,6 +587,7 @@ function logout() { sessionStorage.removeItem('role'); location.reload(); }
 function applyRole() {
   var role = sessionStorage.getItem('role');
   document.getElementById('stock-orders-btn').style.display = ''; // utile aux 2 rôles
+  document.getElementById('inventaire-btn').style.display = '';
   document.getElementById('history-btn').style.display = '';
   document.getElementById('best-btn').style.display = '';
   document.getElementById('rupture-btn').style.display = '';
