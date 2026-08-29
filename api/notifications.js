@@ -711,6 +711,80 @@ async function ruptureStock(req, res) {
   }
 }
 
+// ════════ INVENTAIRE PHYSIQUE — réconciliation stock ↔ dépôt ════════
+// Compteur par ligne (produit+taille) : counted_qty s'incrémente à chaque unité physique trouvée.
+async function invList(req, res) {
+  try {
+    const all = [];
+    for (let off = 0; ; off += 1000) {
+      const r = await fetch(`${SB_URL}/rest/v1/stock?select=id,product,size,qty,counted_qty,counted_at,image,status&status=in.(retour,stock)&order=product.asc,size.asc&limit=1000&offset=${off}`, { headers: supabaseHeaders(true) });
+      if (!r.ok) throw new Error(await r.text());
+      const rows = await r.json();
+      all.push(...rows);
+      if (rows.length < 1000) break;
+    }
+    const counted = all.filter((s) => s.counted_at).length;
+    const countedUnits = all.reduce((a, s) => a + (s.counted_qty || 0), 0);
+    const recordedUnits = all.reduce((a, s) => a + (s.qty || 0), 0);
+    const phantoms = all.filter((s) => (s.qty || 0) > 0 && !s.counted_at).length;
+    const ecarts = all.filter((s) => s.counted_at && (s.counted_qty || 0) !== (s.qty || 0)).length;
+    const products = [...new Set(all.map((s) => s.product).filter(Boolean))].sort();
+    return res.status(200).json({ rows: all, products, summary: { lines: all.length, counted, countedUnits, recordedUnits, phantoms, ecarts } });
+  } catch (e) { return res.status(500).json({ error: e.message }); }
+}
+
+async function invCount(req, res) {
+  let body = req.body; if (typeof body === 'string') { try { body = JSON.parse(body); } catch (e) { body = {}; } }
+  const id = (body && body.id) || req.query?.id;
+  const delta = parseInt((body && body.delta) ?? req.query?.delta ?? '1', 10);
+  if (!id) return res.status(400).json({ error: 'id requis' });
+  try {
+    const g = await fetch(`${SB_URL}/rest/v1/stock?id=eq.${encodeURIComponent(id)}&select=counted_qty`, { headers: supabaseHeaders(true) });
+    const rows = await g.json();
+    if (!rows.length) return res.status(404).json({ error: 'ligne introuvable' });
+    const next = Math.max(0, (rows[0].counted_qty || 0) + delta);
+    const r = await fetch(`${SB_URL}/rest/v1/stock?id=eq.${encodeURIComponent(id)}`, { method: 'PATCH', headers: { ...supabaseHeaders(true), Prefer: 'return=minimal' }, body: JSON.stringify({ counted_qty: next, counted_at: new Date().toISOString() }) });
+    if (!r.ok) throw new Error(await r.text());
+    return res.status(200).json({ ok: true, id, counted_qty: next });
+  } catch (e) { return res.status(500).json({ error: e.message }); }
+}
+
+async function invAdd(req, res) {
+  let body = req.body; if (typeof body === 'string') { try { body = JSON.parse(body); } catch (e) { body = {}; } }
+  const product = String((body && body.product) || '').trim();
+  const size = String((body && body.size) || '').trim();
+  const qty = Math.max(1, parseInt((body && body.qty) ?? 1, 10));
+  const image = (body && body.image) || null;
+  if (!product) return res.status(400).json({ error: 'produit requis' });
+  try {
+    const row = { product, size: size || null, qty, counted_qty: qty, counted_at: new Date().toISOString(), status: 'stock', notes: 'ajout inventaire', image };
+    const r = await fetch(`${SB_URL}/rest/v1/stock`, { method: 'POST', headers: { ...supabaseHeaders(true), Prefer: 'return=representation' }, body: JSON.stringify([row]) });
+    if (!r.ok) throw new Error(await r.text());
+    const created = await r.json();
+    return res.status(200).json({ ok: true, row: created[0] });
+  } catch (e) { return res.status(500).json({ error: e.message }); }
+}
+
+async function invAdjust(req, res) {
+  let body = req.body; if (typeof body === 'string') { try { body = JSON.parse(body); } catch (e) { body = {}; } }
+  const id = (body && body.id) || req.query?.id;
+  const qty = parseInt((body && body.qty) ?? req.query?.qty, 10);
+  if (!id || Number.isNaN(qty)) return res.status(400).json({ error: 'id et qty requis' });
+  try {
+    const r = await fetch(`${SB_URL}/rest/v1/stock?id=eq.${encodeURIComponent(id)}`, { method: 'PATCH', headers: { ...supabaseHeaders(true), Prefer: 'return=minimal' }, body: JSON.stringify({ qty: Math.max(0, qty) }) });
+    if (!r.ok) throw new Error(await r.text());
+    return res.status(200).json({ ok: true, id, qty: Math.max(0, qty) });
+  } catch (e) { return res.status(500).json({ error: e.message }); }
+}
+
+async function invReset(req, res) {
+  try {
+    const r = await fetch(`${SB_URL}/rest/v1/stock?status=in.(retour,stock)`, { method: 'PATCH', headers: { ...supabaseHeaders(true), Prefer: 'return=minimal' }, body: JSON.stringify({ counted_qty: 0, counted_at: null }) });
+    if (!r.ok) throw new Error(await r.text());
+    return res.status(200).json({ ok: true });
+  } catch (e) { return res.status(500).json({ error: e.message }); }
+}
+
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
@@ -749,6 +823,13 @@ module.exports = async function handler(req, res) {
   if (req.method === 'GET' && req.query?.history) return historyList(req, res);
   if (req.method === 'GET' && req.query?.bestsellers) return bestSellers(req, res);
   if (req.method === 'GET' && req.query?.delivered) return deliveredSellers(req, res);
+
+  // Inventaire physique (réconciliation stock ↔ dépôt)
+  if (req.query?.inv === 'list') return invList(req, res);
+  if (req.method === 'POST' && req.query?.action === 'inv_count') return invCount(req, res);
+  if (req.method === 'POST' && req.query?.action === 'inv_add') return invAdd(req, res);
+  if (req.method === 'POST' && req.query?.action === 'inv_adjust') return invAdjust(req, res);
+  if (req.method === 'POST' && req.query?.action === 'inv_reset') return invReset(req, res);
 
   try {
     if (req.method === 'GET') {
