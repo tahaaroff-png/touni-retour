@@ -777,6 +777,15 @@ async function invAdjust(req, res) {
   } catch (e) { return res.status(500).json({ error: e.message }); }
 }
 
+async function invMerge(req, res) {
+  try {
+    const r = await fetch(`${SB_URL}/rest/v1/rpc/merge_stock_duplicates`, { method: 'POST', headers: { ...supabaseHeaders(true), 'Content-Type': 'application/json' }, body: '{}' });
+    if (!r.ok) throw new Error(await r.text());
+    const removed = await r.json();
+    return res.status(200).json({ ok: true, removed });
+  } catch (e) { return res.status(500).json({ error: e.message }); }
+}
+
 async function invReset(req, res) {
   try {
     const r = await fetch(`${SB_URL}/rest/v1/stock?status=in.(retour,stock)`, { method: 'PATCH', headers: { ...supabaseHeaders(true), Prefer: 'return=minimal' }, body: JSON.stringify({ counted_qty: 0, counted_at: null }) });
@@ -829,6 +838,7 @@ module.exports = async function handler(req, res) {
   if (req.method === 'POST' && req.query?.action === 'inv_count') return invCount(req, res);
   if (req.method === 'POST' && req.query?.action === 'inv_add') return invAdd(req, res);
   if (req.method === 'POST' && req.query?.action === 'inv_adjust') return invAdjust(req, res);
+  if (req.method === 'POST' && req.query?.action === 'inv_merge') return invMerge(req, res);
   if (req.method === 'POST' && req.query?.action === 'inv_reset') return invReset(req, res);
 
   try {

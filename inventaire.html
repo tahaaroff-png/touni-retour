@@ -72,6 +72,7 @@ input.f,select.f{width:100%;padding:11px;font-size:15px;border:1px solid var(--b
   <div class="actions">
     <button class="btn add" id="addBtn">➕ Ajouter (introuvable)</button>
     <button class="btn rec" id="recBtn">✅ Clôturer / Écarts</button>
+    <button class="btn ghost" id="mergeBtn" title="Fusionner les lignes en double (même produit + même taille)">🧹</button>
     <button class="btn ghost" id="resetBtn" title="Réinitialiser le comptage">↺</button>
   </div>
 </header>
@@ -254,8 +255,18 @@ async function resetAll(){
   toast('↺ Comptage réinitialisé'); load();
 }
 
+async function mergeDup(){
+  if(!confirm('Fusionner les lignes en double (même produit + même taille) en une seule, en additionnant les quantités ?'))return;
+  try{
+    const r=await fetch(`${API}?action=inv_merge&secret=${SECRET}`,{method:'POST'});
+    const j=await r.json();
+    toast(j.removed>0?`🧹 ${j.removed} lignes rangées`:'✅ Aucun doublon');
+    await load();
+  }catch(e){toast('⚠️ échec');}
+}
 $('#q').addEventListener('input',render);
 $('#addBtn').onclick=openAdd;
+$('#mergeBtn').onclick=mergeDup;
 $('#recBtn').onclick=openRec;
 $('#resetBtn').onclick=resetAll;
 load();
