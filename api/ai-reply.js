@@ -26,7 +26,7 @@ const MOVABLE_STAGES = (process.env.EGROW_MOVABLE_STAGES || '62357,49148,49149,6
 // Notifications : opératrices e-commerce sur escalade ; marchand sur upsell/vente.
 // EGROW_OPERATOR_PHONE accepte plusieurs numéros séparés par une virgule — chaque opératrice
 // reçoit l'escalade, et chacune ouvre sa propre fenêtre de rattrapage en répondant.
-const OPERATOR_PHONES = (process.env.EGROW_OPERATOR_PHONE || '212672193297')
+const OPERATOR_PHONES = (process.env.EGROW_OPERATOR_PHONE || '212764378596')
   .split(',').map((s) => s.replace(/\D/g, '')).filter(Boolean);
 const OPERATOR_PHONE = OPERATOR_PHONES[0] || ''; // compat : 1re opératrice (endpoint de test)
 const MERCHANT_PHONE = (process.env.EGROW_MERCHANT_PHONE || '212612717593').replace(/\D/g, '');
@@ -1492,7 +1492,7 @@ module.exports = async (req, res) => {
     const integrationId = INTEGRATIONS[0] || '5425';
     const SESSION_TEMPLATE = process.env.EGROW_SESSION_TEMPLATE || 'touni_session_bot';
     // Un prénom par opératrice, dans le même ordre que EGROW_OPERATOR_PHONE.
-    const OPERATOR_NAMES  = (process.env.EGROW_OPERATOR_NAME || 'Soumaya').split(',').map((s) => s.trim());
+    const OPERATOR_NAMES  = (process.env.EGROW_OPERATOR_NAME || 'Chaimae').split(',').map((s) => s.trim());
     const MERCHANT_NAME   = process.env.EGROW_MERCHANT_NAME   || 'Patron';
     // Date du jour en français (ex: "Samedi 21 juin")
     const dateLabel = new Intl.DateTimeFormat('fr-FR', { timeZone: 'Africa/Casablanca', weekday: 'long', day: 'numeric', month: 'long' }).format(new Date());
