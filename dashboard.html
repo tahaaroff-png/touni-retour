@@ -311,6 +311,20 @@ td{padding:12px 14px;vertical-align:middle}
   <div id="snapshot-banner" style="display:none;margin-top:-14px;margin-bottom:14px;padding:10px 18px;background:#fffbef;border:1px solid var(--warning);border-radius:var(--radius-btn);font-size:12px;color:#7a5d1e;display:flex;justify-content:space-between;align-items:center"></div>
   <div id="result-perso-info" style="display:none;margin-top:-14px;margin-bottom:22px;padding:10px 18px;background:var(--bg-soft);border:1px solid var(--border);border-radius:var(--radius-btn)"></div>
 
+  <!-- BLOC 1 : Trésorerie (cash réel) -->
+  <div class="card" id="tresorerie-card" style="margin-bottom:22px;border:1px solid var(--border)">
+    <div class="section-title" style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap">💵 Trésorerie du mois <span style="font-size:11px;font-weight:500;color:var(--muted);text-transform:none;letter-spacing:0">— le cash réel qui entre / sort de ta poche</span></div>
+    <div class="alert" style="background:var(--bg-soft);border:1px solid var(--border);border-radius:10px;padding:11px 13px;display:flex;gap:8px;align-items:flex-start;font-size:12px;margin:6px 0 14px"><span>💡</span><span><b>Bénéfice ≠ trésorerie.</b> Tu peux être rentable et avoir peu de cash en banque si tu réinvestis en stock. Cette vue explique ton compte bancaire.</span></div>
+    <div class="pl-row"><span class="pl-lbl">Encaissé (CA)</span><span class="pl-amt" style="color:var(--green);font-weight:700" id="tr-in">+0</span></div>
+    <div class="pl-row"><span class="pl-lbl">Pub (Meta Ads)</span><span class="pl-amt neg" id="tr-pub">−0</span></div>
+    <div class="pl-row"><span class="pl-lbl">Salaires &amp; charges fixes</span><span class="pl-amt neg" id="tr-charges">−0</span></div>
+    <div class="pl-row"><span class="pl-lbl">Prélèvements perso</span><span class="pl-amt neg" id="tr-perso">−0</span></div>
+    <div class="pl-row" style="border-top:2px solid var(--border)"><span class="pl-lbl" style="font-weight:800">= Cash opérationnel <span style="font-size:10px;font-weight:500;color:var(--muted)">(avant réappro stock)</span></span><span class="pl-amt" id="tr-ope" style="font-weight:800">0</span></div>
+    <div class="pl-row"><span class="pl-lbl">Stock acheté (réappro fournisseurs)</span><span class="pl-amt neg" id="tr-stock">−0</span></div>
+    <div class="pl-row" style="border-top:2px solid var(--ink)"><span class="pl-lbl" style="font-weight:900">= FLUX NET DE TRÉSORERIE</span><span class="pl-amt" id="tr-net" style="font-weight:900;font-size:16px">0</span></div>
+    <div id="tr-explain" style="margin-top:12px;padding:11px 14px;background:var(--bg-soft);border-radius:10px;font-size:12.5px;line-height:1.55"></div>
+  </div>
+
   <!-- KPIs -->
   <div class="kpi-grid">
     <div class="kpi">
@@ -1605,7 +1619,7 @@ function initDefaultChargesIfNeeded(){
   var existingIds=existing.map(function(i){return i.id;});
   var defaults=[
     {id:'def_livreur',     name:'🚗 Livreur acheteur',    amount:3000},
-    {id:'def_confirmation',name:'👩 Confirmation (fixe)', amount:2500},
+    {id:'def_confirmation',name:'👩 Salaire opératrice (fixe)', amount:3000},
     {id:'def_shopify',     name:'🛒 Shopify',              amount:850}
   ];
   defaults.forEach(function(d){
@@ -1953,11 +1967,39 @@ function renderOverview(){
       'Valeur auto eGrow : '+Math.round(eg.ca).toLocaleString('fr-FR')+' MAD COD − '+Math.round(fraisOzoneInfo).toLocaleString('fr-FR')+' MAD frais Ozone = '+autoCA.toLocaleString('fr-FR')+' MAD net');
   }
 
-  var commission=(eg.livreesHigh||0)*(cfg.commHigh||3)+(eg.livreesLow||0)*(cfg.commLow||3);
+  var commission=0; // Opératrice = SALAIRE FIXE (charge fixe mensuelle), plus de commission par commande
   var revenus=totalVirements||autoCA;
   var depenses=totalFourn+totalMeta+customFixedTotal+customVarTotal+commission;
   var net=revenus-depenses;
   var marge=revenus>0?((net/revenus)*100):0;
+
+  // ── BLOC 1 : TRÉSORERIE (cash réel) ──
+  var trStock=totalFourn, trPub=totalMeta, trCharges=customFixedTotal+customVarTotal, trPerso=persoTotal;
+  var trOpe=revenus - trPub - trCharges - trPerso;   // cash généré avant réappro stock
+  var trFlux=trOpe - trStock;                         // impact réel sur la banque
+  var trInEl=document.getElementById('tr-in');
+  if(trInEl){
+    trInEl.textContent='+'+Math.round(revenus).toLocaleString('fr-FR');
+    document.getElementById('tr-pub').textContent='−'+Math.round(trPub).toLocaleString('fr-FR');
+    document.getElementById('tr-charges').textContent='−'+Math.round(trCharges).toLocaleString('fr-FR');
+    document.getElementById('tr-perso').textContent='−'+Math.round(trPerso).toLocaleString('fr-FR');
+    var opeEl=document.getElementById('tr-ope');
+    opeEl.textContent=(trOpe>=0?'+':'')+Math.round(trOpe).toLocaleString('fr-FR')+' MAD';
+    opeEl.style.color=trOpe>=0?'var(--green)':'var(--red)';
+    document.getElementById('tr-stock').textContent='−'+Math.round(trStock).toLocaleString('fr-FR');
+    var trNetEl=document.getElementById('tr-net');
+    trNetEl.textContent=(trFlux>=0?'+':'')+Math.round(trFlux).toLocaleString('fr-FR')+' MAD';
+    trNetEl.style.color=trFlux>=0?'var(--green)':'var(--red)';
+    var expl=document.getElementById('tr-explain');
+    if(expl){
+      if(trOpe>=0 && trFlux<0)
+        expl.innerHTML='✅ Ton activité a <b>généré '+Math.round(trOpe).toLocaleString('fr-FR')+' MAD de cash</b> ce mois (hors stock). Mais tu as <b>réinvesti '+Math.round(trStock).toLocaleString('fr-FR')+' MAD en stock</b> → ta banque baisse de '+Math.round(-trFlux).toLocaleString('fr-FR')+' MAD. <b>Ce n\'est PAS une perte</b> : cet argent est en inventaire, il revient quand le stock se vend.';
+      else if(trFlux>=0)
+        expl.innerHTML='✅ Trésorerie positive : tu as encaissé plus que tout ce que tu as sorti (stock inclus). Bonne liquidité.';
+      else
+        expl.innerHTML='⚠️ Même hors stock, tu sors plus que tu n\'encaisses. À surveiller — mais attention : le CA du mois en cours est <b>partiel</b> (livraisons COD en retard), il va remonter.';
+    }
+  }
 
   // KPIs
   document.getElementById('kpi-ca').textContent=Math.round(revenus).toLocaleString('fr-FR');
