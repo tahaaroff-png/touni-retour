@@ -179,6 +179,7 @@ td{padding:11px 11px;vertical-align:middle}
 .qb.qb-vendu.active{background:#151515;border-color:#151515;color:#fff}
 .qb.qb-mystere.active{background:var(--bg-soft);border-color:var(--ink);color:var(--ink)}
 .qb.qb-stock.active{background:var(--bg-soft);border-color:#2563eb;color:#2563eb}
+.qb.qb-flocage.active{background:var(--bg-soft);border-color:#7c3aed;color:#7c3aed}
 .qb.qb-autre.active{background:var(--bg-soft);border-color:var(--muted);color:var(--muted)}
 .qty-ctrl{display:flex;align-items:center;gap:0;border:1px solid var(--border);border-radius:var(--radius-btn);overflow:hidden}
 .qty-btn{background:var(--bg-soft);border:none;width:40px;height:42px;font-size:18px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--text);transition:background .2s;flex-shrink:0}
@@ -395,6 +396,7 @@ td{padding:11px 11px;vertical-align:middle}
           <option value="vendu">💰 Vendu</option>
           <option value="mystere">🎁 Maillot mystère</option>
           <option value="stock">📦 Stock</option>
+          <option value="flocage">🖋️ Flocage</option>
           <option value="autre">📋 Autre</option>
         </select>
       </div>
@@ -411,7 +413,7 @@ td{padding:11px 11px;vertical-align:middle}
       <select id="f-status" onchange="render()">
         <option value="">Tous</option><option value="retour">Retour</option>
         <option value="vendu">Vendu</option><option value="mystere">Mystère</option>
-        <option value="stock">Stock</option><option value="autre">Autre</option>
+        <option value="stock">Stock</option><option value="flocage">Flocage</option><option value="autre">Autre</option>
       </select>
     </div>
     <div class="fg-row"><label>Tri</label>
@@ -476,6 +478,7 @@ td{padding:11px 11px;vertical-align:middle}
       <button class="qb qb-vendu" onclick="qbPick('vendu')"><span>💰</span>Vendu</button>
       <button class="qb qb-mystere" onclick="qbPick('mystere')"><span>🎁</span>Mystère</button>
       <button class="qb qb-stock" onclick="qbPick('stock')"><span>📦</span>Stock</button>
+      <button class="qb qb-flocage" onclick="qbPick('flocage')"><span>🖋️</span>Flocage</button>
       <button class="qb qb-autre" onclick="qbPick('autre')"><span>📋</span>Autre</button>
     </div>
     <div class="modal-grid">
@@ -499,7 +502,7 @@ td{padding:11px 11px;vertical-align:middle}
         <select id="m-status">
           <option value="retour">🔄 Retour</option><option value="vendu">💰 Vendu</option>
           <option value="mystere">🎁 Maillot mystère</option>
-          <option value="stock">📦 Stock</option><option value="autre">📋 Autre</option>
+          <option value="stock">📦 Stock</option><option value="flocage">🖋️ Flocage</option><option value="autre">📋 Autre</option>
         </select>
       </div>
       <div class="mf"><label>Date sortie</label><input type="date" id="m-exit-date"></div>
@@ -1022,6 +1025,7 @@ function statusBadge(s){
   if(s==='mystere') return '<span class="badge" style="background:transparent;color:var(--ink);border:1px solid var(--ink)">🎁 Mystère</span>';
   if(s==='stock')   return '<span class="badge" style="background:transparent;color:#2563eb;border:1px solid #2563eb">📦 Stock</span>';
   if(s==='autre')   return '<span class="badge" style="background:transparent;color:var(--muted);border:1px solid var(--muted)">📋 Autre</span>';
+  if(s==='flocage') return '<span class="badge" style="background:transparent;color:#7c3aed;border:1px solid #7c3aed">🖋️ Flocage</span>';
   return '<span class="badge" style="background:transparent;color:var(--green);border:1px solid var(--green)">🔄 Retour</span>';
 }
 function render() {
