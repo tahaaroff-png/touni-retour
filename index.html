@@ -805,11 +805,12 @@ async function addItem() {
 async function del(id) {
   var idx=stock.findIndex(function(i){ return i.id===id; }); if(idx<0) return;
   var removed=stock[idx];
-  // retrait visuel IMMÉDIAT (optimiste) — sync serveur en arrière-plan
+  // retrait DIRECT de la ligne du DOM = instantané (pas de re-render complet), sync serveur en arrière-plan
   stock.splice(idx,1); delete selectedIds[id];
-  render(); updateStats(); updateSelBar(); toast('🗑 Déplacé dans la corbeille');
+  var node=document.getElementById('row_'+id); if(node) node.remove();
+  updateStats(); toast('🗑 Déplacé dans la corbeille');
   try { await dbSoftDelete(id); updateTrashBtn(); }
-  catch(e){ stock.splice(idx,0,removed); render(); updateStats(); updateSelBar(); dot('err'); toast('⚠️ Échec — article restauré'); }
+  catch(e){ stock.splice(idx,0,removed); render(); updateStats(); dot('err'); toast('⚠️ Échec — article restauré'); }
 }
 async function delFromModal() {
   if(!editId) return;
@@ -853,7 +854,7 @@ async function bulkHardDelete(){
   if(!confirm('Supprimer DÉFINITIVEMENT '+ids.length+' article(s) ? (irréversible)')) return;
   try{ for(var i=0;i<ids.length;i++){ await dbDelete(ids[i]); } stock=stock.filter(function(x){ return !selectedIds[x.id]; }); selectedIds={}; render(); updateSelBar(); updateTrashBtn(); toast('Supprimés définitivement'); }catch(e){ dot('err'); }
 }
-async function restore(id){ try{ await dbRestore(id); stock=stock.filter(function(i){ return i.id!==id; }); delete selectedIds[id]; render(); updateSelBar(); updateTrashBtn(); toast('♻ Restauré'); }catch(e){ dot('err'); } }
+async function restore(id){ var idx=stock.findIndex(function(i){ return i.id===id; }); if(idx<0) return; var removed=stock[idx]; stock.splice(idx,1); delete selectedIds[id]; var node=document.getElementById('row_'+id); if(node) node.remove(); updateStats(); toast('♻ Restauré'); try{ await dbRestore(id); updateTrashBtn(); }catch(e){ stock.splice(idx,0,removed); render(); dot('err'); toast('⚠️ Échec — annulé'); } }
 
 // ── Corbeille (bascule de vue) ──
 function toggleCorbeille(){ viewMode = viewMode==='trash' ? 'stock' : 'trash'; dbLoad(); }
@@ -985,7 +986,8 @@ function render() {
   });
   if(fSz) rows=rows.filter(function(i){ return normalizeSize(parseSizePart(i.size))===fSz; });
   if(fSt) rows=rows.filter(function(i){ return i.status===fSt; });
-  rows.sort(function(a,b){ var da=new Date(a.created_at||0),db=new Date(b.created_at||0); return fSort==='asc'?da-db:db-da; });
+  if(viewMode==='trash'){ rows.sort(function(a,b){ return new Date(b.deleted_at||0)-new Date(a.deleted_at||0); }); }
+  else { rows.sort(function(a,b){ var da=new Date(a.created_at||0),db=new Date(b.created_at||0); return fSort==='asc'?da-db:db-da; }); }
   var tb=document.getElementById('tb');
   if(!rows.length){ tb.innerHTML='<tr><td colspan="11"><div class="empty"><div class="ic">📦</div><p>Aucun article trouvé</p></div></td></tr>'; return; }
   tb.innerHTML=rows.map(function(it,i){
@@ -1009,7 +1011,7 @@ function render() {
         +'</div>'
         +'</div>';
     }
-    return '<tr class="mob-card" onclick="openModal(\''+id+'\')">'
+    return '<tr class="mob-card" id="row_'+id+'" onclick="openModal(\''+id+'\')">'
       +'<td class="nnum">'+(i+1)+'</td>'
       +'<td data-label="Produit"><div class="prod-cell">'+imgHtml+'<span class="pname" title="'+it.product+'">'+it.product+'</span></div></td>'
       +'<td data-label="Taille">'+szDisplay+'</td>'
