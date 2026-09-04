@@ -423,13 +423,9 @@ td{padding:11px 11px;vertical-align:middle}
       <button class="fb fb-all" onclick="setF('all',this)">Tous</button>
       <button class="fb" onclick="setF('dispo',this)" style="border-color:var(--green-border);color:var(--green)">● Dispo</button>
       <button class="fb" onclick="setF('rupture',this)" style="border-color:var(--red-border);color:var(--red)">● Rupture</button>
-      <button class="fb" id="btn-corbeille" onclick="toggleCorbeille()">🗑 Corbeille</button>
+      <button class="fb" id="btn-select" onclick="toggleSelectMode()">☑ Sélectionner</button>
+      <button class="fb" id="btn-corbeille" onclick="openTrash()">🗑 Corbeille</button>
     </div>
-  </div>
-  <div id="sel-bar" style="display:none;align-items:center;gap:12px;flex-wrap:wrap;background:var(--surface,#fff);border:1px solid var(--border);border-radius:10px;padding:9px 14px;margin:0 0 8px">
-    <span style="font-weight:700;font-size:13px"><span id="sel-count">0 sélectionné</span></span>
-    <span id="sel-actions" style="display:flex;gap:8px;flex-wrap:wrap"></span>
-    <button class="fb" style="margin-left:auto" onclick="clearSel()">Désélectionner tout</button>
   </div>
   <div class="tbl-wrap">
     <table>
@@ -611,13 +607,13 @@ function sbClose(){ document.getElementById('app-page').classList.remove('sbopen
 // SUPABASE
 function dot(s) { document.getElementById('sync-dot').className = 'sync-dot '+s; }
 
-var viewMode = 'stock';   // 'stock' (actifs) | 'trash' (corbeille)
+var selectMode = false;   // mode multi-sélection actif ?
 var selectedIds = {};     // ids cochés (multi-sélection)
 async function dbLoad() {
   dot('loading');
   try {
-    var flt = viewMode==='trash' ? '&deleted_at=not.is.null&order=deleted_at.desc' : '&deleted_at=is.null&order=created_at.desc';
-    var r = await fetch(SB_URL+'/rest/v1/stock?select=*'+flt, {headers:H});
+    // Le tableau principal ne montre QUE le stock actif (jamais la corbeille)
+    var r = await fetch(SB_URL+'/rest/v1/stock?select=*&deleted_at=is.null&order=created_at.desc', {headers:H});
     if (!r.ok) throw new Error(await r.text());
     stock = await r.json();
     selectedIds = {};
@@ -823,46 +819,90 @@ async function delFromModal() {
   catch(e){ stock.splice(idx,0,removed); render(); updateStats(); dot('err'); toast('⚠️ Échec — article restauré'); }
 }
 
-// ── Multi-sélection ──
+// ── Multi-sélection (désactivée par défaut, activée par le bouton « Sélectionner ») ──
+function toggleSelectMode(){
+  selectMode=!selectMode; selectedIds={};
+  var btn=document.getElementById('btn-select');
+  if(btn){ btn.textContent = selectMode?'✕ Annuler la sélection':'☑ Sélectionner'; btn.classList.toggle('fb-all', selectMode); }
+  render(); updateSelBar();
+}
 function toggleSel(id, ev){ if(ev) ev.stopPropagation(); if(selectedIds[id]) delete selectedIds[id]; else selectedIds[id]=1; updateSelBar(); }
-function selAllVisible(){ var boxes=document.querySelectorAll('.rowchk'); var allOn=Object.keys(selectedIds).length>=boxes.length && boxes.length>0; selectedIds={}; if(!allOn) boxes.forEach(function(b){ selectedIds[b.dataset.id]=1; }); render(); updateSelBar(); }
-function clearSel(){ selectedIds={}; render(); updateSelBar(); }
+function selAllVisible(){
+  var boxes=document.querySelectorAll('.rowchk');
+  var allOn=Object.keys(selectedIds).length>=boxes.length && boxes.length>0;
+  selectedIds={}; if(!allOn) boxes.forEach(function(b){ selectedIds[b.dataset.id]=1; });
+  render(); updateSelBar();
+}
 function updateSelBar(){
-  var n=Object.keys(selectedIds).length; var bar=document.getElementById('sel-bar');
-  if(!bar) return;
-  bar.style.display = n? 'flex':'none';
+  var bar=document.getElementById('sel-bar'); if(!bar) return;
+  if(!selectMode){ bar.style.display='none'; return; }
+  bar.style.display='flex';
+  var n=Object.keys(selectedIds).length;
   var lbl=document.getElementById('sel-count'); if(lbl) lbl.textContent=n+' sélectionné'+(n>1?'s':'');
-  var act=document.getElementById('sel-actions');
-  if(act) act.innerHTML = viewMode==='trash'
-    ? '<button class="fb" style="border-color:var(--green-border);color:var(--green)" onclick="bulkRestore()">♻ Restaurer</button><button class="fb" style="border-color:var(--red-border);color:var(--red)" onclick="bulkHardDelete()">🗑 Supprimer définitivement</button>'
-    : '<button class="fb" style="border-color:var(--red-border);color:var(--red)" onclick="bulkDelete()">🗑 Supprimer la sélection</button>';
+  var boxes=document.querySelectorAll('.rowchk');
+  var allOn=n>=boxes.length && boxes.length>0;
+  var ab=document.getElementById('sel-all-btn'); if(ab) ab.textContent=allOn?'☐ Tout désélectionner':'☑ Tout sélectionner';
 }
 async function bulkDelete(){
-  var ids=Object.keys(selectedIds); if(!ids.length) return;
+  var ids=Object.keys(selectedIds); if(!ids.length){ toast('Aucun article sélectionné'); return; }
   var removed=stock.filter(function(i){ return selectedIds[i.id]; });
   stock=stock.filter(function(i){ return !selectedIds[i.id]; }); selectedIds={};
-  render(); updateStats(); updateSelBar(); toast('🗑 '+ids.length+' article(s) → corbeille');
+  render(); updateStats(); updateSelBar(); updateTrashBtn(); toast('🗑 '+ids.length+' article(s) → corbeille');
   try{ await dbSoftDelete(ids); updateTrashBtn(); }
   catch(e){ stock=stock.concat(removed); render(); updateStats(); updateSelBar(); dot('err'); toast('⚠️ Échec — articles restaurés'); }
 }
-async function bulkRestore(){
-  var ids=Object.keys(selectedIds); if(!ids.length) return;
-  try{ await dbRestore(ids); stock=stock.filter(function(i){ return !selectedIds[i.id]; }); selectedIds={}; render(); updateSelBar(); updateTrashBtn(); toast('♻ '+ids.length+' article(s) restauré(s)'); }catch(e){ dot('err'); }
-}
-async function bulkHardDelete(){
-  var ids=Object.keys(selectedIds); if(!ids.length) return;
-  if(!confirm('Supprimer DÉFINITIVEMENT '+ids.length+' article(s) ? (irréversible)')) return;
-  try{ for(var i=0;i<ids.length;i++){ await dbDelete(ids[i]); } stock=stock.filter(function(x){ return !selectedIds[x.id]; }); selectedIds={}; render(); updateSelBar(); updateTrashBtn(); toast('Supprimés définitivement'); }catch(e){ dot('err'); }
-}
-async function restore(id){ var idx=stock.findIndex(function(i){ return i.id===id; }); if(idx<0) return; var removed=stock[idx]; stock.splice(idx,1); delete selectedIds[id]; var node=document.getElementById('row_'+id); if(node) node.remove(); updateStats(); toast('♻ Restauré'); try{ await dbRestore(id); updateTrashBtn(); }catch(e){ stock.splice(idx,0,removed); render(); dot('err'); toast('⚠️ Échec — annulé'); } }
 
-// ── Corbeille (bascule de vue) ──
-function toggleCorbeille(){ viewMode = viewMode==='trash' ? 'stock' : 'trash'; dbLoad(); }
+// ── Corbeille (modal séparé — aucun ajout possible dedans) ──
+var trashRows=[];
+async function openTrash(){
+  var modal=document.getElementById('trash-modal'); if(!modal) return;
+  modal.style.display='flex';
+  var body=document.getElementById('trash-body');
+  body.innerHTML='<div style="text-align:center;padding:40px;color:var(--muted)">⏳ Chargement…</div>';
+  try{
+    var r=await fetch(SB_URL+'/rest/v1/stock?select=*&deleted_at=not.is.null&order=deleted_at.desc&limit=1000',{headers:H});
+    trashRows=await r.json();
+  }catch(e){ trashRows=[]; }
+  renderTrash();
+}
+function closeTrash(){ var m=document.getElementById('trash-modal'); if(m) m.style.display='none'; }
+function renderTrash(){
+  var body=document.getElementById('trash-body'); if(!body) return;
+  var ra=document.getElementById('trash-restore-all'); if(ra) ra.style.display=trashRows.length?'inline-flex':'none';
+  if(!trashRows.length){ body.innerHTML='<div style="text-align:center;padding:44px 20px;color:var(--muted)"><div style="font-size:30px;margin-bottom:8px">✨</div>Corbeille vide</div>'; return; }
+  body.innerHTML=trashRows.map(function(it){
+    var img=it.image?'<img src="'+it.image+'" style="width:40px;height:40px;border-radius:7px;object-fit:cover;flex-shrink:0" onerror="this.style.display=\'none\'">':'<div style="width:40px;height:40px;border-radius:7px;background:var(--bg-soft);display:flex;align-items:center;justify-content:center;flex-shrink:0">👕</div>';
+    var sz=(it.size||'—');
+    var when=it.deleted_at?new Date(it.deleted_at).toLocaleString('fr-FR',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}):'';
+    return '<div style="display:flex;align-items:center;gap:12px;padding:10px;border:1px solid var(--border);border-radius:10px;margin:6px 2px">'
+      +img
+      +'<div style="flex:1;min-width:0"><div style="font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+it.product+'</div>'
+      +'<div style="font-size:11px;color:var(--muted)">Taille '+sz+' · Qté '+it.qty+' · supprimé le '+when+'</div></div>'
+      +'<button class="fb" style="border-color:var(--green-border);color:var(--green)" onclick="restore(\''+it.id+'\')">♻ Restaurer</button>'
+      +'<button class="fb" style="border-color:var(--red-border);color:var(--red)" onclick="hardDeleteTrash(\''+it.id+'\')" title="Supprimer définitivement">🗑</button>'
+      +'</div>';
+  }).join('');
+}
+async function restore(id){
+  try{ await dbRestore(id); }catch(e){ dot('err'); toast('⚠️ Échec'); return; }
+  trashRows=trashRows.filter(function(i){ return i.id!==id; });
+  renderTrash(); updateTrashBtn(); dbLoad(); toast('♻ Restauré');
+}
+async function restoreAllTrash(){
+  if(!trashRows.length) return;
+  var ids=trashRows.map(function(i){ return i.id; });
+  try{ await dbRestore(ids); }catch(e){ dot('err'); toast('⚠️ Échec'); return; }
+  trashRows=[]; renderTrash(); updateTrashBtn(); dbLoad(); toast('♻ '+ids.length+' article(s) restauré(s)');
+}
+async function hardDeleteTrash(id){
+  if(!confirm('Supprimer DÉFINITIVEMENT cet article ? (irréversible)')) return;
+  try{ await dbDelete(id); }catch(e){ dot('err'); toast('⚠️ Échec'); return; }
+  trashRows=trashRows.filter(function(i){ return i.id!==id; });
+  renderTrash(); updateTrashBtn(); toast('Supprimé définitivement');
+}
 async function updateTrashBtn(){
   var btn=document.getElementById('btn-corbeille'); if(!btn) return;
-  if(viewMode==='trash'){ btn.textContent='← Retour au stock'; btn.classList.add('fb-all'); return; }
-  btn.classList.remove('fb-all');
-  try{ var r=await fetch(SB_URL+'/rest/v1/stock?select=id&deleted_at=not.is.null&limit=1000',{headers:H}); var d=await r.json(); btn.textContent='🗑 Corbeille ('+(d.length||0)+')'; }
+  try{ var r=await fetch(SB_URL+'/rest/v1/stock?select=id&deleted_at=not.is.null&limit=1000',{headers:H}); var d=await r.json(); btn.textContent='🗑 Corbeille'+(d.length?' ('+d.length+')':''); }
   catch(e){ btn.textContent='🗑 Corbeille'; }
 }
 function toast(m){ var t=document.getElementById('toast'); if(!t){ t=document.createElement('div'); t.id='toast'; t.style.cssText='position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#151515;color:#fff;padding:10px 18px;border-radius:24px;font-size:13px;font-weight:700;z-index:9999;transition:.2s;font-family:var(--font-main)'; document.body.appendChild(t); } t.textContent=m; t.style.opacity='1'; clearTimeout(t._); t._=setTimeout(function(){ t.style.opacity='0'; },1800); }
@@ -986,8 +1026,7 @@ function render() {
   });
   if(fSz) rows=rows.filter(function(i){ return normalizeSize(parseSizePart(i.size))===fSz; });
   if(fSt) rows=rows.filter(function(i){ return i.status===fSt; });
-  if(viewMode==='trash'){ rows.sort(function(a,b){ return new Date(b.deleted_at||0)-new Date(a.deleted_at||0); }); }
-  else { rows.sort(function(a,b){ var da=new Date(a.created_at||0),db=new Date(b.created_at||0); return fSort==='asc'?da-db:db-da; }); }
+  rows.sort(function(a,b){ var da=new Date(a.created_at||0),db=new Date(b.created_at||0); return fSort==='asc'?da-db:db-da; });
   var tb=document.getElementById('tb');
   if(!rows.length){ tb.innerHTML='<tr><td colspan="11"><div class="empty"><div class="ic">📦</div><p>Aucun article trouvé</p></div></td></tr>'; return; }
   tb.innerHTML=rows.map(function(it,i){
@@ -1023,9 +1062,8 @@ function render() {
       +'<td class="date-cell" data-label="Sortie">'+fmtDate(it.exit_date)+'</td>'
       +'<td data-label="Notes"><span style="font-size:12px;color:var(--muted)">'+(it.notes||'—')+'</span></td>'
       +'<td data-label="Actions"><div class="act-cell" onclick="event.stopPropagation()">'
-      +(viewMode==='trash'
-        ? '<button class="btn-edit" title="Restaurer" style="color:var(--green)" onclick="event.stopPropagation();restore(\''+id+'\')">♻</button>'
-        : '<button class="btn-edit" onclick="openModal(\''+id+'\')" title="Modifier">✏️</button><button class="del" onclick="event.stopPropagation();del(\''+id+'\')" title="Supprimer">×</button>')
+      +(selectMode ? '<input type="checkbox" class="rowchk" data-id="'+id+'" '+(selectedIds[id]?'checked':'')+' onclick="toggleSel(\''+id+'\',event)" style="width:18px;height:18px;cursor:pointer;accent-color:#151515">' : '')
+      +'<button class="btn-edit" onclick="openModal(\''+id+'\')" title="Modifier">✏️</button><button class="del" onclick="event.stopPropagation();del(\''+id+'\')" title="Supprimer">×</button>'
       +'</div></td></tr>';
   }).join('');
 }
@@ -1488,5 +1526,31 @@ if (_role === 'admin' || _role === 'staff') {
 }
 </script>
 <div class="lightbox" id="lightbox" onclick="closeImg()"><span class="x" onclick="event.stopPropagation();closeImg()">&times;</span><img id="lightbox-img" src="" alt="" onclick="event.stopPropagation()"></div>
+
+<!-- Barre de sélection FIXE (reste visible au scroll, uniquement en mode sélection) -->
+<div id="sel-bar" style="display:none;position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:600;align-items:center;gap:14px;flex-wrap:wrap;justify-content:center;background:#151515;color:#fff;border-radius:14px;padding:12px 18px;box-shadow:0 12px 40px rgba(0,0,0,.35);max-width:calc(100vw - 24px)">
+  <button class="selbar-btn" id="sel-all-btn" onclick="selAllVisible()" style="background:rgba(255,255,255,.14);border:none;color:#fff;font-family:var(--font-main);font-weight:700;font-size:13px;padding:9px 14px;border-radius:9px;cursor:pointer">☑ Tout sélectionner</button>
+  <span style="font-weight:800;font-size:14px;font-family:Jost,sans-serif"><span id="sel-count">0</span></span>
+  <button class="selbar-btn" onclick="bulkDelete()" style="background:#e11d48;border:none;color:#fff;font-family:var(--font-main);font-weight:700;font-size:13px;padding:9px 16px;border-radius:9px;cursor:pointer">🗑 Supprimer la sélection</button>
+  <button class="selbar-btn" onclick="toggleSelectMode()" style="background:transparent;border:1px solid rgba(255,255,255,.3);color:#fff;font-family:var(--font-main);font-weight:600;font-size:13px;padding:9px 14px;border-radius:9px;cursor:pointer">✕ Quitter</button>
+</div>
+
+<!-- Modal CORBEILLE (séparé du gestionnaire — impossible d'y ajouter des produits) -->
+<div id="trash-modal" style="display:none;position:fixed;inset:0;z-index:650;background:rgba(5,5,5,.55);backdrop-filter:blur(2px);align-items:center;justify-content:center;padding:20px" onclick="if(event.target===this)closeTrash()">
+  <div style="background:var(--surface,#fff);border:1px solid var(--border);border-radius:16px;width:760px;max-width:100%;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 24px 70px rgba(0,0,0,.4);overflow:hidden">
+    <div style="display:flex;align-items:center;gap:12px;padding:16px 20px;border-bottom:1px solid var(--border)">
+      <span style="font-size:20px">🗑</span>
+      <div style="display:flex;flex-direction:column;line-height:1.2">
+        <b style="font-size:16px;font-family:Jost,sans-serif">Corbeille</b>
+        <span style="font-size:12px;color:var(--muted)">Articles supprimés — restaurables à tout moment</span>
+      </div>
+      <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
+        <button class="fb" id="trash-restore-all" onclick="restoreAllTrash()" style="border-color:var(--green-border);color:var(--green)">♻ Tout restaurer</button>
+        <button onclick="closeTrash()" style="background:transparent;border:none;font-size:26px;line-height:1;cursor:pointer;color:var(--muted);padding:0 4px">&times;</button>
+      </div>
+    </div>
+    <div id="trash-body" style="overflow-y:auto;padding:8px 12px 16px"></div>
+  </div>
+</div>
 </body>
 </html>
