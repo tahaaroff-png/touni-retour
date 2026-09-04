@@ -300,7 +300,7 @@ async function scanOrdersStock(req, res) {
     // Charger TOUT le stock interne dispo UNE fois (retour + acheté, qty>0) → matching en mémoire (pas de fetch par ligne)
     const stockRows = [];
     for (let off = 0; ; off += 1000) {
-      const r = await fetch(`${SB_URL}/rest/v1/stock?select=id,product,size,qty,status&qty=gt.0&status=in.(retour,stock)&limit=1000&offset=${off}`, { headers: supabaseHeaders(true) });
+      const r = await fetch(`${SB_URL}/rest/v1/stock?select=id,product,size,qty,status&qty=gt.0&status=in.(retour,stock)&deleted_at=is.null&limit=1000&offset=${off}`, { headers: supabaseHeaders(true) });
       if (!r.ok) break;
       const rows = await r.json();
       stockRows.push(...rows);
@@ -385,7 +385,7 @@ async function scanOrdersStock(req, res) {
 async function loadStockMatcher() {
   const rows = [];
   for (let off = 0; ; off += 1000) {
-    const r = await fetch(`${SB_URL}/rest/v1/stock?select=id,product,size,qty,status&qty=gt.0&status=in.(retour,stock)&limit=1000&offset=${off}`, { headers: supabaseHeaders(true) });
+    const r = await fetch(`${SB_URL}/rest/v1/stock?select=id,product,size,qty,status&qty=gt.0&status=in.(retour,stock)&deleted_at=is.null&limit=1000&offset=${off}`, { headers: supabaseHeaders(true) });
     if (!r.ok) break; const a = await r.json(); rows.push(...a); if (a.length < 1000) break;
   }
   const byTitle = new Map();
@@ -717,7 +717,7 @@ async function invList(req, res) {
   try {
     const all = [];
     for (let off = 0; ; off += 1000) {
-      const r = await fetch(`${SB_URL}/rest/v1/stock?select=id,product,size,qty,counted_qty,counted_at,image,status&status=in.(retour,stock)&order=product.asc,size.asc&limit=1000&offset=${off}`, { headers: supabaseHeaders(true) });
+      const r = await fetch(`${SB_URL}/rest/v1/stock?select=id,product,size,qty,counted_qty,counted_at,image,status&status=in.(retour,stock)&deleted_at=is.null&order=product.asc,size.asc&limit=1000&offset=${off}`, { headers: supabaseHeaders(true) });
       if (!r.ok) throw new Error(await r.text());
       const rows = await r.json();
       all.push(...rows);

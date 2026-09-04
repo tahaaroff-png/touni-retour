@@ -252,7 +252,7 @@ module.exports = async function handler(req, res) {
   try {
     // ── ÉTAPE 1 : Charger le stock retours éligible ───────────────────────────
     const stockRes = await fetch(
-      `${SB_URL}/rest/v1/stock?select=*&status=eq.retour&qty=gt.0&shopify_pushed_at=is.null`,
+      `${SB_URL}/rest/v1/stock?select=*&status=eq.retour&qty=gt.0&shopify_pushed_at=is.null&deleted_at=is.null`,
       { headers: supabaseHeaders(true) }
     );
     if (!stockRes.ok) throw new Error('Stock fetch error: ' + await stockRes.text());

@@ -423,7 +423,14 @@ td{padding:11px 11px;vertical-align:middle}
       <button class="fb fb-all" onclick="setF('all',this)">Tous</button>
       <button class="fb" onclick="setF('dispo',this)" style="border-color:var(--green-border);color:var(--green)">● Dispo</button>
       <button class="fb" onclick="setF('rupture',this)" style="border-color:var(--red-border);color:var(--red)">● Rupture</button>
+      <button class="fb" onclick="selAllVisible()" title="Tout sélectionner / désélectionner">☑ Sélectionner</button>
+      <button class="fb" id="btn-corbeille" onclick="toggleCorbeille()">🗑 Corbeille</button>
     </div>
+  </div>
+  <div id="sel-bar" style="display:none;align-items:center;gap:12px;flex-wrap:wrap;background:var(--surface,#fff);border:1px solid var(--border);border-radius:10px;padding:9px 14px;margin:0 0 8px">
+    <span style="font-weight:700;font-size:13px"><span id="sel-count">0 sélectionné</span></span>
+    <span id="sel-actions" style="display:flex;gap:8px;flex-wrap:wrap"></span>
+    <button class="fb" style="margin-left:auto" onclick="clearSel()">Désélectionner tout</button>
   </div>
   <div class="tbl-wrap">
     <table>
@@ -431,7 +438,7 @@ td{padding:11px 11px;vertical-align:middle}
         <th style="width:34px">#</th><th>Produit</th><th style="width:100px">Taille</th>
         <th style="width:75px">Qté</th><th style="width:105px">État</th><th style="width:110px">Statut</th>
         <th style="width:90px">Shopify</th>
-        <th style="width:95px">Ajouté le</th><th style="width:95px">Sorti le</th><th>Notes</th><th style="width:68px"></th>
+        <th style="width:95px">Ajouté le</th><th style="width:95px">Sorti le</th><th>Notes</th><th style="width:98px"></th>
       </tr></thead>
       <tbody id="tb"><tr><td colspan="11"><div class="empty"><div class="ic">⏳</div><p>Chargement...</p></div></td></tr></tbody>
     </table>
@@ -605,13 +612,17 @@ function sbClose(){ document.getElementById('app-page').classList.remove('sbopen
 // SUPABASE
 function dot(s) { document.getElementById('sync-dot').className = 'sync-dot '+s; }
 
+var viewMode = 'stock';   // 'stock' (actifs) | 'trash' (corbeille)
+var selectedIds = {};     // ids cochés (multi-sélection)
 async function dbLoad() {
   dot('loading');
   try {
-    var r = await fetch(SB_URL+'/rest/v1/stock?select=*&order=created_at.desc', {headers:H});
+    var flt = viewMode==='trash' ? '&deleted_at=not.is.null&order=deleted_at.desc' : '&deleted_at=is.null&order=created_at.desc';
+    var r = await fetch(SB_URL+'/rest/v1/stock?select=*'+flt, {headers:H});
     if (!r.ok) throw new Error(await r.text());
     stock = await r.json();
-    dot('ok'); render(); updateStats(); buildSizeFilter();
+    selectedIds = {};
+    dot('ok'); render(); updateStats(); buildSizeFilter(); updateSelBar(); updateTrashBtn();
   } catch(e) {
     dot('err');
     document.getElementById('tb').innerHTML='<tr><td colspan="10"><div class="empty"><div class="ic">❌</div><p>Erreur connexion Supabase</p></div></td></tr>';
@@ -627,8 +638,18 @@ async function dbUpdate(id, changes) {
   if (!r.ok) throw new Error(await r.text());
   dot('ok');
 }
-async function dbDelete(id) {
+async function dbDelete(id) {   // suppression DÉFINITIVE (vider la corbeille)
   var r = await fetch(SB_URL+'/rest/v1/stock?id=eq.'+id, {method:'DELETE',headers:H});
+  if (!r.ok) throw new Error(await r.text());
+}
+async function dbSoftDelete(ids) {   // suppression douce → corbeille
+  var arr = Array.isArray(ids) ? ids : [ids];
+  var r = await fetch(SB_URL+'/rest/v1/stock?id=in.('+arr.join(',')+')', {method:'PATCH',headers:H,body:JSON.stringify({deleted_at:new Date().toISOString()})});
+  if (!r.ok) throw new Error(await r.text());
+}
+async function dbRestore(ids) {   // restaurer depuis la corbeille
+  var arr = Array.isArray(ids) ? ids : [ids];
+  var r = await fetch(SB_URL+'/rest/v1/stock?id=in.('+arr.join(',')+')', {method:'PATCH',headers:H,body:JSON.stringify({deleted_at:null})});
   if (!r.ok) throw new Error(await r.text());
 }
 
@@ -781,21 +802,57 @@ async function addItem() {
   btn.disabled=false; btn.textContent='Ajouter';
 }
 
-// DELETE
+// DELETE (soft — va dans la Corbeille, PAS de popup, récupérable)
 async function del(id) {
-  if(!confirm('Supprimer cet article ?')) return;
-  try { await dbDelete(id); stock=stock.filter(function(i){ return i.id!==id; }); render(); updateStats(); }
+  try { await dbSoftDelete(id); stock=stock.filter(function(i){ return i.id!==id; }); delete selectedIds[id]; render(); updateStats(); updateSelBar(); updateTrashBtn(); toast('🗑 Déplacé dans la corbeille'); }
+  catch(e){ dot('err'); }
+}
+async function delFromModal() {
+  if(!editId) return;
+  var id=editId;
+  try { await dbSoftDelete(id); stock=stock.filter(function(i){ return i.id!==id; }); closeModal(); render(); updateStats(); updateTrashBtn(); toast('🗑 Déplacé dans la corbeille'); }
   catch(e){ dot('err'); }
 }
 
-// DELETE depuis la fenêtre d'édition (admin + opératrice)
-async function delFromModal() {
-  if(!editId) return;
-  if(!confirm('Supprimer cet article ?')) return;
-  var id=editId;
-  try { await dbDelete(id); stock=stock.filter(function(i){ return i.id!==id; }); closeModal(); render(); updateStats(); }
-  catch(e){ dot('err'); }
+// ── Multi-sélection ──
+function toggleSel(id, ev){ if(ev) ev.stopPropagation(); if(selectedIds[id]) delete selectedIds[id]; else selectedIds[id]=1; updateSelBar(); }
+function selAllVisible(){ var boxes=document.querySelectorAll('.rowchk'); var allOn=Object.keys(selectedIds).length>=boxes.length && boxes.length>0; selectedIds={}; if(!allOn) boxes.forEach(function(b){ selectedIds[b.dataset.id]=1; }); render(); updateSelBar(); }
+function clearSel(){ selectedIds={}; render(); updateSelBar(); }
+function updateSelBar(){
+  var n=Object.keys(selectedIds).length; var bar=document.getElementById('sel-bar');
+  if(!bar) return;
+  bar.style.display = n? 'flex':'none';
+  var lbl=document.getElementById('sel-count'); if(lbl) lbl.textContent=n+' sélectionné'+(n>1?'s':'');
+  var act=document.getElementById('sel-actions');
+  if(act) act.innerHTML = viewMode==='trash'
+    ? '<button class="fb" style="border-color:var(--green-border);color:var(--green)" onclick="bulkRestore()">♻ Restaurer</button><button class="fb" style="border-color:var(--red-border);color:var(--red)" onclick="bulkHardDelete()">🗑 Supprimer définitivement</button>'
+    : '<button class="fb" style="border-color:var(--red-border);color:var(--red)" onclick="bulkDelete()">🗑 Supprimer la sélection</button>';
 }
+async function bulkDelete(){
+  var ids=Object.keys(selectedIds); if(!ids.length) return;
+  try{ await dbSoftDelete(ids); stock=stock.filter(function(i){ return !selectedIds[i.id]; }); selectedIds={}; render(); updateStats(); updateSelBar(); updateTrashBtn(); toast('🗑 '+ids.length+' article(s) → corbeille'); }catch(e){ dot('err'); }
+}
+async function bulkRestore(){
+  var ids=Object.keys(selectedIds); if(!ids.length) return;
+  try{ await dbRestore(ids); stock=stock.filter(function(i){ return !selectedIds[i.id]; }); selectedIds={}; render(); updateSelBar(); updateTrashBtn(); toast('♻ '+ids.length+' article(s) restauré(s)'); }catch(e){ dot('err'); }
+}
+async function bulkHardDelete(){
+  var ids=Object.keys(selectedIds); if(!ids.length) return;
+  if(!confirm('Supprimer DÉFINITIVEMENT '+ids.length+' article(s) ? (irréversible)')) return;
+  try{ for(var i=0;i<ids.length;i++){ await dbDelete(ids[i]); } stock=stock.filter(function(x){ return !selectedIds[x.id]; }); selectedIds={}; render(); updateSelBar(); updateTrashBtn(); toast('Supprimés définitivement'); }catch(e){ dot('err'); }
+}
+async function restore(id){ try{ await dbRestore(id); stock=stock.filter(function(i){ return i.id!==id; }); delete selectedIds[id]; render(); updateSelBar(); updateTrashBtn(); toast('♻ Restauré'); }catch(e){ dot('err'); } }
+
+// ── Corbeille (bascule de vue) ──
+function toggleCorbeille(){ viewMode = viewMode==='trash' ? 'stock' : 'trash'; dbLoad(); }
+async function updateTrashBtn(){
+  var btn=document.getElementById('btn-corbeille'); if(!btn) return;
+  if(viewMode==='trash'){ btn.textContent='← Retour au stock'; btn.classList.add('fb-all'); return; }
+  btn.classList.remove('fb-all');
+  try{ var r=await fetch(SB_URL+'/rest/v1/stock?select=id&deleted_at=not.is.null&limit=1000',{headers:H}); var d=await r.json(); btn.textContent='🗑 Corbeille ('+(d.length||0)+')'; }
+  catch(e){ btn.textContent='🗑 Corbeille'; }
+}
+function toast(m){ var t=document.getElementById('toast'); if(!t){ t=document.createElement('div'); t.id='toast'; t.style.cssText='position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#151515;color:#fff;padding:10px 18px;border-radius:24px;font-size:13px;font-weight:700;z-index:9999;transition:.2s;font-family:var(--font-main)'; document.body.appendChild(t); } t.textContent=m; t.style.opacity='1'; clearTimeout(t._); t._=setTimeout(function(){ t.style.opacity='0'; },1800); }
 
 // MODAL
 function qbPick(status) {
@@ -952,8 +1009,11 @@ function render() {
       +'<td class="date-cell" data-label="Sortie">'+fmtDate(it.exit_date)+'</td>'
       +'<td data-label="Notes"><span style="font-size:12px;color:var(--muted)">'+(it.notes||'—')+'</span></td>'
       +'<td data-label="Actions"><div class="act-cell" onclick="event.stopPropagation()">'
-      +'<button class="btn-edit" onclick="openModal(\''+id+'\')" title="Modifier">✏️</button>'
-      +'<button class="del" onclick="event.stopPropagation();del(\''+id+'\')" title="Supprimer">×</button>'+'</div></td></tr>';
+      +'<input type="checkbox" class="rowchk" data-id="'+id+'" '+(selectedIds[id]?'checked':'')+' onclick="toggleSel(\''+id+'\',event)" style="width:17px;height:17px;cursor:pointer;accent-color:#151515">'
+      +(viewMode==='trash'
+        ? '<button class="btn-edit" title="Restaurer" style="color:var(--green)" onclick="event.stopPropagation();restore(\''+id+'\')">♻</button>'
+        : '<button class="btn-edit" onclick="openModal(\''+id+'\')" title="Modifier">✏️</button><button class="del" onclick="event.stopPropagation();del(\''+id+'\')" title="Supprimer">×</button>')
+      +'</div></td></tr>';
   }).join('');
 }
 
