@@ -179,7 +179,8 @@ td{padding:11px 11px;vertical-align:middle}
 .qb.qb-vendu.active{background:#151515;border-color:#151515;color:#fff}
 .qb.qb-mystere.active{background:var(--bg-soft);border-color:var(--ink);color:var(--ink)}
 .qb.qb-stock.active{background:var(--bg-soft);border-color:#2563eb;color:#2563eb}
-.qb.qb-flocage.active{background:var(--bg-soft);border-color:#7c3aed;color:#7c3aed}
+.qb.qb-flocage_joueur.active{background:var(--bg-soft);border-color:#0d9488;color:#0d9488}
+.qb.qb-flocage_nom.active{background:var(--bg-soft);border-color:#7c3aed;color:#7c3aed}
 .qb.qb-autre.active{background:var(--bg-soft);border-color:var(--muted);color:var(--muted)}
 .qty-ctrl{display:flex;align-items:center;gap:0;border:1px solid var(--border);border-radius:var(--radius-btn);overflow:hidden}
 .qty-btn{background:var(--bg-soft);border:none;width:40px;height:42px;font-size:18px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--text);transition:background .2s;flex-shrink:0}
@@ -392,11 +393,12 @@ td{padding:11px 11px;vertical-align:middle}
       <div class="fg"><label>Quantité</label><input type="number" id="qi" min="0" value="1"></div>
       <div class="fg"><label>Statut</label>
         <select id="status-add">
+          <option value="stock" selected>📦 Stock</option>
           <option value="retour">🔄 Retour</option>
           <option value="vendu">💰 Vendu</option>
           <option value="mystere">🎁 Maillot mystère</option>
-          <option value="stock">📦 Stock</option>
-          <option value="flocage">🖋️ Flocage</option>
+          <option value="flocage_joueur">⚽ Flocage joueur (vendable)</option>
+          <option value="flocage_nom">🖋️ Flocage nom (perso)</option>
           <option value="autre">📋 Autre</option>
         </select>
       </div>
@@ -413,7 +415,7 @@ td{padding:11px 11px;vertical-align:middle}
       <select id="f-status" onchange="render()">
         <option value="">Tous</option><option value="retour">Retour</option>
         <option value="vendu">Vendu</option><option value="mystere">Mystère</option>
-        <option value="stock">Stock</option><option value="flocage">Flocage</option><option value="autre">Autre</option>
+        <option value="stock">Stock</option><option value="flocage_joueur">⚽ Flocage joueur</option><option value="flocage_nom">🖋️ Flocage nom</option><option value="autre">Autre</option>
       </select>
     </div>
     <div class="fg-row"><label>Tri</label>
@@ -478,7 +480,8 @@ td{padding:11px 11px;vertical-align:middle}
       <button class="qb qb-vendu" onclick="qbPick('vendu')"><span>💰</span>Vendu</button>
       <button class="qb qb-mystere" onclick="qbPick('mystere')"><span>🎁</span>Mystère</button>
       <button class="qb qb-stock" onclick="qbPick('stock')"><span>📦</span>Stock</button>
-      <button class="qb qb-flocage" onclick="qbPick('flocage')"><span>🖋️</span>Flocage</button>
+      <button class="qb qb-flocage_joueur" onclick="qbPick('flocage_joueur')"><span>⚽</span>Floc. joueur</button>
+      <button class="qb qb-flocage_nom" onclick="qbPick('flocage_nom')"><span>🖋️</span>Floc. nom</button>
       <button class="qb qb-autre" onclick="qbPick('autre')"><span>📋</span>Autre</button>
     </div>
     <div class="modal-grid">
@@ -502,7 +505,7 @@ td{padding:11px 11px;vertical-align:middle}
         <select id="m-status">
           <option value="retour">🔄 Retour</option><option value="vendu">💰 Vendu</option>
           <option value="mystere">🎁 Maillot mystère</option>
-          <option value="stock">📦 Stock</option><option value="flocage">🖋️ Flocage</option><option value="autre">📋 Autre</option>
+          <option value="stock">📦 Stock</option><option value="flocage_joueur">⚽ Flocage joueur</option><option value="flocage_nom">🖋️ Flocage nom</option><option value="autre">📋 Autre</option>
         </select>
       </div>
       <div class="mf"><label>Date sortie</label><input type="date" id="m-exit-date"></div>
@@ -795,7 +798,7 @@ async function addItem() {
     var scEl=document.getElementById('sc'); scEl.innerHTML='<option value="">— Couleur —</option>';
     document.getElementById('fg-color').classList.remove('visible');
     document.getElementById('qi').value=1; document.getElementById('ni').value='';
-    document.getElementById('exit-date-add').value=''; document.getElementById('status-add').value='retour';
+    document.getElementById('exit-date-add').value=''; document.getElementById('status-add').value='stock';
   } catch(e){ errEl.textContent="Erreur lors de l'ajout."; errEl.style.display='block'; dot('err'); }
   btn.disabled=false; btn.textContent='Ajouter';
 }
@@ -1025,7 +1028,8 @@ function statusBadge(s){
   if(s==='mystere') return '<span class="badge" style="background:transparent;color:var(--ink);border:1px solid var(--ink)">🎁 Mystère</span>';
   if(s==='stock')   return '<span class="badge" style="background:transparent;color:#2563eb;border:1px solid #2563eb">📦 Stock</span>';
   if(s==='autre')   return '<span class="badge" style="background:transparent;color:var(--muted);border:1px solid var(--muted)">📋 Autre</span>';
-  if(s==='flocage') return '<span class="badge" style="background:transparent;color:#7c3aed;border:1px solid #7c3aed">🖋️ Flocage</span>';
+  if(s==='flocage_joueur') return '<span class="badge" style="background:transparent;color:#0d9488;border:1px solid #0d9488">⚽ Flocage joueur</span>';
+  if(s==='flocage_nom')    return '<span class="badge" style="background:transparent;color:#7c3aed;border:1px solid #7c3aed">🖋️ Flocage nom</span>';
   return '<span class="badge" style="background:transparent;color:var(--green);border:1px solid var(--green)">🔄 Retour</span>';
 }
 function render() {
