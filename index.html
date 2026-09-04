@@ -423,7 +423,6 @@ td{padding:11px 11px;vertical-align:middle}
       <button class="fb fb-all" onclick="setF('all',this)">Tous</button>
       <button class="fb" onclick="setF('dispo',this)" style="border-color:var(--green-border);color:var(--green)">● Dispo</button>
       <button class="fb" onclick="setF('rupture',this)" style="border-color:var(--red-border);color:var(--red)">● Rupture</button>
-      <button class="fb" onclick="selAllVisible()" title="Tout sélectionner / désélectionner">☑ Sélectionner</button>
       <button class="fb" id="btn-corbeille" onclick="toggleCorbeille()">🗑 Corbeille</button>
     </div>
   </div>
@@ -1022,7 +1021,6 @@ function render() {
       +'<td class="date-cell" data-label="Sortie">'+fmtDate(it.exit_date)+'</td>'
       +'<td data-label="Notes"><span style="font-size:12px;color:var(--muted)">'+(it.notes||'—')+'</span></td>'
       +'<td data-label="Actions"><div class="act-cell" onclick="event.stopPropagation()">'
-      +'<input type="checkbox" class="rowchk" data-id="'+id+'" '+(selectedIds[id]?'checked':'')+' onclick="toggleSel(\''+id+'\',event)" style="width:17px;height:17px;cursor:pointer;accent-color:#151515">'
       +(viewMode==='trash'
         ? '<button class="btn-edit" title="Restaurer" style="color:var(--green)" onclick="event.stopPropagation();restore(\''+id+'\')">♻</button>'
         : '<button class="btn-edit" onclick="openModal(\''+id+'\')" title="Modifier">✏️</button><button class="del" onclick="event.stopPropagation();del(\''+id+'\')" title="Supprimer">×</button>')
