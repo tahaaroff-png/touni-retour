@@ -804,14 +804,23 @@ async function addItem() {
 
 // DELETE (soft — va dans la Corbeille, PAS de popup, récupérable)
 async function del(id) {
-  try { await dbSoftDelete(id); stock=stock.filter(function(i){ return i.id!==id; }); delete selectedIds[id]; render(); updateStats(); updateSelBar(); updateTrashBtn(); toast('🗑 Déplacé dans la corbeille'); }
-  catch(e){ dot('err'); }
+  var idx=stock.findIndex(function(i){ return i.id===id; }); if(idx<0) return;
+  var removed=stock[idx];
+  // retrait visuel IMMÉDIAT (optimiste) — sync serveur en arrière-plan
+  stock.splice(idx,1); delete selectedIds[id];
+  render(); updateStats(); updateSelBar(); toast('🗑 Déplacé dans la corbeille');
+  try { await dbSoftDelete(id); updateTrashBtn(); }
+  catch(e){ stock.splice(idx,0,removed); render(); updateStats(); updateSelBar(); dot('err'); toast('⚠️ Échec — article restauré'); }
 }
 async function delFromModal() {
   if(!editId) return;
   var id=editId;
-  try { await dbSoftDelete(id); stock=stock.filter(function(i){ return i.id!==id; }); closeModal(); render(); updateStats(); updateTrashBtn(); toast('🗑 Déplacé dans la corbeille'); }
-  catch(e){ dot('err'); }
+  var idx=stock.findIndex(function(i){ return i.id===id; }); if(idx<0){ closeModal(); return; }
+  var removed=stock[idx];
+  stock.splice(idx,1); closeModal();
+  render(); updateStats(); toast('🗑 Déplacé dans la corbeille');
+  try { await dbSoftDelete(id); updateTrashBtn(); }
+  catch(e){ stock.splice(idx,0,removed); render(); updateStats(); dot('err'); toast('⚠️ Échec — article restauré'); }
 }
 
 // ── Multi-sélection ──
@@ -830,7 +839,11 @@ function updateSelBar(){
 }
 async function bulkDelete(){
   var ids=Object.keys(selectedIds); if(!ids.length) return;
-  try{ await dbSoftDelete(ids); stock=stock.filter(function(i){ return !selectedIds[i.id]; }); selectedIds={}; render(); updateStats(); updateSelBar(); updateTrashBtn(); toast('🗑 '+ids.length+' article(s) → corbeille'); }catch(e){ dot('err'); }
+  var removed=stock.filter(function(i){ return selectedIds[i.id]; });
+  stock=stock.filter(function(i){ return !selectedIds[i.id]; }); selectedIds={};
+  render(); updateStats(); updateSelBar(); toast('🗑 '+ids.length+' article(s) → corbeille');
+  try{ await dbSoftDelete(ids); updateTrashBtn(); }
+  catch(e){ stock=stock.concat(removed); render(); updateStats(); updateSelBar(); dot('err'); toast('⚠️ Échec — articles restaurés'); }
 }
 async function bulkRestore(){
   var ids=Object.keys(selectedIds); if(!ids.length) return;
