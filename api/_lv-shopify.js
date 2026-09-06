@@ -93,7 +93,7 @@ async function reconcileInventory() {
   for (let i = 0; i < quantities.length; i += 200) {
     const batch = quantities.slice(i, i + 200);
     const d = await lvGraphql(
-      `mutation($q: [InventorySetQuantityInput!]!) {
+      `mutation($q: [InventoryQuantityInput!]!) {
         inventorySetQuantities(input: { name: "available", reason: "correction", ignoreCompareQuantity: true, quantities: $q }) {
           userErrors { field message }
         }
