@@ -7,6 +7,7 @@
 const { SB_URL, supabaseHeaders, shopifyAdminHeaders, SHOPIFY_DOMAIN, SHOPIFY_API_VERSION, normalizeSize, normalizeColor, fetchShopifyProductsAdmin } = require('./_shopify-helpers.js');
 // Réutilise le parsing du webhook (fonction exportée) — pour rester sous la limite de 12 fonctions Vercel
 const { parseVariantTitle } = require('./shopify-order-webhook.js');
+const lv = require('./_lv-shopify.js');
 
 // ── eGrow (pipelines) ──
 const EGROW_ME = process.env.EGROW_ME || '', EGROW_AK = process.env.EGROW_AK || '';
@@ -822,6 +823,27 @@ module.exports = async function handler(req, res) {
   if (req.query?.pipelines_list) return res.status(200).json({ pipelines: PIPELINES });
   // Commandes d'un pipeline eGrow + dispo stock interne
   if (req.method === 'GET' && req.query?.pipeline) return pipelineScan(req, res);
+
+  // ── SYNC LE VESTIAIRE ─────────────────────────────────────────────────────
+  // Resync manuelle/complète (secret-gated) : totaux stock → inventaires LV + Touni
+  if (req.method === 'POST' && req.query?.action === 'lv_sync') {
+    if ((req.query?.secret || '') !== (process.env.SYNC_SECRET || '')) return res.status(401).json({ error: 'unauthorized' });
+    try { return res.status(200).json({ ok: true, ...(await lv.reconcileInventory()) }); }
+    catch (e) { return res.status(500).json({ ok: false, error: e.message }); }
+  }
+  // Toute action qui modifie la table stock déclenche la resync AVANT de répondre
+  const LV_SYNC_ACTIONS = new Set(['ship', 'ship_deal', 'inv_add', 'inv_adjust', 'inv_merge', 'inv_reset']);
+  if (req.method === 'POST' && LV_SYNC_ACTIONS.has(req.query?.action)) {
+    const origJson = res.json.bind(res);
+    let lvDone = false;
+    res.json = async (data) => {
+      if (!lvDone) {
+        lvDone = true;
+        try { await lv.reconcileInventory(); } catch (e) { console.error('[lv-sync hook]', e.message); }
+      }
+      return origJson(data);
+    };
+  }
 
   // Actions « Commandes en stock » (page dédiée)
   if (req.method === 'POST' && req.query?.action === 'ship') return shipFromStock(req, res);

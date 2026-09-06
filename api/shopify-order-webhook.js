@@ -7,6 +7,7 @@
 
 const crypto = require('crypto');
 const { SB_URL, supabaseHeaders, normalizeSize, normalizeColor } = require('./_shopify-helpers.js');
+const lv = require('./_lv-shopify.js');
 
 // Shopify REST API webhooks are signed with the app's CLIENT_SECRET (not a separate webhook secret)
 const SHOPIFY_WEBHOOK_SECRET = process.env.SHOPIFY_CLIENT_SECRET
@@ -14,10 +15,11 @@ const SHOPIFY_WEBHOOK_SECRET = process.env.SHOPIFY_CLIENT_SECRET
   || process.env.SHOPIFY_WEBHOOK_SECRET
   || '';
 
-function verifySignature(rawBody, signature) {
-  if (!SHOPIFY_WEBHOOK_SECRET) return true; // dev mode : skip
+function verifySignature(rawBody, signature, secret) {
+  const key = secret || SHOPIFY_WEBHOOK_SECRET;
+  if (!key) return true; // dev mode : skip
   if (!signature) return false;
-  const expected = crypto.createHmac('sha256', SHOPIFY_WEBHOOK_SECRET).update(rawBody).digest('base64');
+  const expected = crypto.createHmac('sha256', key).update(rawBody).digest('base64');
   try {
     return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature));
   } catch {
@@ -110,6 +112,60 @@ async function handler(req, res) {
   const signature = req.headers['x-shopify-hmac-sha256'];
   const topic = req.headers['x-shopify-topic'] || 'unknown';
   console.log(`[order-webhook] Received topic=${topic} rawBody.length=${rawBody.length} sig=${signature ? 'present' : 'MISSING'} secret_env=${SHOPIFY_WEBHOOK_SECRET ? 'SET('+SHOPIFY_WEBHOOK_SECRET.slice(0,6)+'...)' : 'EMPTY→skip'}`);
+
+  // ── LE VESTIAIRE : commande → déduction immédiate du stock + resync partout ──
+  const shopDomain = String(req.headers['x-shopify-shop-domain'] || '');
+  if (shopDomain.includes('gvsffq-rq') || shopDomain.includes('levestiaire')) {
+    if (!verifySignature(rawBody, signature, lv.LV_CLIENT_SECRET)) {
+      console.warn('[lv-webhook] HMAC FAILED');
+      return res.status(401).json({ error: 'Invalid signature' });
+    }
+    let lvOrder;
+    try { lvOrder = JSON.parse(rawBody); } catch { return res.status(400).json({ error: 'Invalid JSON' }); }
+    try {
+      const orderName = 'LV ' + (lvOrder.name || lvOrder.order_number || lvOrder.id);
+      const cust = lvOrder.customer || lvOrder.shipping_address || {};
+      const custName = [cust.first_name, cust.last_name].filter(Boolean).join(' ') || (lvOrder.shipping_address?.name) || 'Client';
+      const custCity = lvOrder.shipping_address?.city || cust.city || '';
+      const results = [];
+      for (const item of (lvOrder.line_items || [])) {
+        const title = item.title || '';
+        if (!title || /^(flocage|patch)\b/i.test(title)) continue; // options perso : pas de stock physique
+        const { size, color } = parseVariantTitle(item.variant_title || '');
+        const matches = await findMatchingStock(title, size, color);
+        const qty = Number(item.quantity) || 1;
+        let dec = { updates: [], remaining: qty };
+        if (matches.length) dec = await lv.decrementStockRows(matches, qty);
+        results.push({ title, size, ordered: qty, decremented: qty - dec.remaining, unmatched: dec.remaining });
+        // notification pour l'opératrice (visibilité côté gestionnaire)
+        await fetch(`${SB_URL}/rest/v1/shopify_notifications?on_conflict=shopify_order_id,shopify_variant_id`, {
+          method: 'POST',
+          headers: { ...supabaseHeaders(true), Prefer: 'resolution=ignore-duplicates,return=minimal' },
+          body: JSON.stringify([{
+            shopify_order_id: lvOrder.id,
+            shopify_order_number: orderName,
+            customer_name: custName,
+            customer_city: custCity,
+            product_title: title,
+            variant_size: size,
+            variant_color: color,
+            shopify_variant_id: item.variant_id ? String(item.variant_id) : null,
+            matched_stock_ids: matches.map(m => m.id),
+            matched_qty: matches.reduce((sm, m) => sm + (m.qty || 0), 0),
+            ordered_qty: qty,
+            total_amount_mad: parseFloat(lvOrder.total_price || 0),
+          }]),
+        }).catch(() => {});
+      }
+      let sync = null;
+      try { sync = await lv.reconcileInventory(); } catch (e) { console.error('[lv-webhook] reconcile:', e.message); }
+      console.log(`[lv-webhook] ${orderName}:`, JSON.stringify(results));
+      return res.status(200).json({ shop: 'levestiaire', order: orderName, items: results, sync });
+    } catch (e) {
+      console.error('[lv-webhook] Error:', e.message);
+      return res.status(200).json({ error: e.message }); // 200 pour éviter les retries en boucle
+    }
+  }
 
   if (!verifySignature(rawBody, signature)) {
     console.warn('[order-webhook] HMAC FAILED — secret may be wrong. sig=', signature, 'secret_prefix=', SHOPIFY_WEBHOOK_SECRET.slice(0,6));
