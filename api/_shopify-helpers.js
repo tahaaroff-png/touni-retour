@@ -75,7 +75,9 @@ function normalizeSize(s) {
   const k = String(s).trim().toLowerCase();
   if (k === 'default title' || k === 'default') return null;
   // Taille unique variants — treat as "no size" so they match null-size stock items
-  if (k === 'standard' || k === 'taille unique' || k === 'unique') return null;
+  if (k === 'standard' || k === 'taille unique' || k === 'unique' || k === 'os' || k === 'one size') return null;
+  // Placeholder « sans taille » du stock (— / – / - / n/a / aucune) — traité comme null
+  if (/^[-–—]+$/.test(k) || k === 'n/a' || k === 'na' || k === 'aucune' || k === 'sans taille') return null;
   return SIZE_MAP[k] || String(s).trim();
 }
 
