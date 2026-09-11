@@ -21,6 +21,30 @@ module.exports = async function handler(req, res) {
     return res.redirect(installUrl);
   }
 
+  // ── TikTok Business API OAuth (redirect avec ?auth_code=...) ──
+  if (req.query.auth_code) {
+    const TT_APP_ID = process.env.TIKTOK_APP_ID || '';
+    const TT_SECRET = process.env.TIKTOK_SECRET || '';
+    try {
+      const r = await fetch('https://business-api.tiktok.com/open_api/v1.3/oauth2/access_token/', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ app_id: TT_APP_ID, secret: TT_SECRET, auth_code: req.query.auth_code }),
+      });
+      const j = await r.json();
+      const tok = j && j.data && j.data.access_token;
+      if (!tok) return res.status(400).json({ error: 'TikTok token exchange failed', details: j });
+      const saveSetting = (key, value) => fetch(`${SB_URL}/rest/v1/app_settings`, {
+        method: 'POST',
+        headers: { apikey: SB_ANON_KEY, Authorization: `Bearer ${SB_ANON_KEY}`, 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates' },
+        body: JSON.stringify({ key, value, updated_at: new Date().toISOString() }),
+      }).catch(() => {});
+      await saveSetting('tiktok_access_token', tok);
+      if (j.data.advertiser_ids) await saveSetting('tiktok_advertiser_ids', JSON.stringify(j.data.advertiser_ids));
+      if (j.data.scope) await saveSetting('tiktok_scope', JSON.stringify(j.data.scope));
+      return res.status(200).json({ success: true, message: 'TikTok connecté ✅', advertiser_ids: j.data.advertiser_ids, scope: j.data.scope, token_preview: String(tok).slice(0, 12) + '...' });
+    } catch (e) { return res.status(500).json({ error: 'TikTok: ' + e.message }); }
+  }
+
   // Step 2: Handle OAuth callback
   if (error) {
     return res.status(400).json({ error, message: 'OAuth authorization failed' });
