@@ -19,6 +19,57 @@ async function egrowPost(path, params) {
   const r = await fetch('https://api.egrow.com' + path, { method: 'POST', headers: { 'account-key': EGROW_AK, 'User-Agent': EGROW_UA, 'content-type': `multipart/form-data; boundary=${b}` }, body: raw });
   const t = await r.text(); try { return JSON.parse(t); } catch (e) { return { __raw: t.slice(0, 200) }; }
 }
+// ── eGrow V2 (GraphQL api5.egrow.com) — nouvelle infra, SOURCE des commandes du gestionnaire ──
+const EGROW_V2_KEY = process.env.EGROW_V2_KEY || 'a9671816046a83dbafe0916d0b9f432d';
+async function egrowV2(query, variables) {
+  const r = await fetch('https://api5.egrow.com/graphql', {
+    method: 'POST', headers: { 'X-API-Key': EGROW_V2_KEY, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query, variables: variables || {} }),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (j.errors) throw new Error('egrowV2: ' + JSON.stringify(j.errors).slice(0, 180));
+  return j.data || {};
+}
+// "Club - Maillot Domicile 2025/26 (M) x 2 · Autre (XL/Rouge) x 1" → [{name,size,qty}]
+function parseStringLineItems(s) {
+  if (!s) return [];
+  return String(s).split('·').map((part) => {
+    const t = part.trim(); if (!t) return null;
+    const mQty = t.match(/x\s*(\d+)\s*$/i);
+    const qty = mQty ? parseInt(mQty[1], 10) : 1;
+    let body = mQty ? t.slice(0, mQty.index).trim() : t;
+    let size = '';
+    const mSize = body.match(/\(([^()]*)\)\s*$/);       // dernière parenthèse = variante (taille[ / couleur])
+    if (mSize) { size = mSize[1].split('/')[0].trim(); body = body.slice(0, mSize.index).trim(); }  // garder la TAILLE seule pour le matching
+    return { name: body, size, qty };
+  }).filter(Boolean);
+}
+// Commandes V2 d'un/plusieurs stages (pipeline_id) → forme "deal" uniforme attendue par le gestionnaire.
+async function egrowV2OrdersByStages(stages) {
+  const Q = `query($q:String,$p:Int){ orders(perPage:100, page:$p, query:$q, sortKey:CREATED_AT, reverse:true){
+    nodes{ id orderNumber createdAt stringLineItems pipeline{ id name } customer{ displayName phone defaultAddress{ city } } }
+    pagination{ page pageCount totalCount } } }`;
+  const seen = new Set(); const out = [];
+  for (const sid of stages) {
+    for (let p = 1; p <= 20; p++) {
+      const d = await egrowV2(Q, { q: `pipeline_id:${sid}`, p });
+      const conn = d.orders || {}; const nodes = conn.nodes || [];
+      for (const n of nodes) {
+        const k = String(n.id); if (seen.has(k)) continue; seen.add(k);
+        const c = n.customer || {}; const ad = c.defaultAddress || {};
+        out.push({
+          id: n.id, order: 1, stage_id: (n.pipeline && n.pipeline.id) || sid,
+          deal_number: n.orderNumber || String(n.id),
+          client: c.displayName || 'Client', city: ad.city || '', phone: String(c.phone || ''),
+          date: n.createdAt ? Date.parse(n.createdAt) : null, note: '',
+          products: parseStringLineItems(n.stringLineItems),
+        });
+      }
+      const pg = conn.pagination || {}; if (!pg.pageCount || p >= pg.pageCount) break;
+    }
+  }
+  return out;
+}
 // Le deal est-il DANS ce stage ? (via getStageDeals qui fonctionne de façon fiable — getDealDetails renvoie null).
 async function egrowDealInStage(dealId, stageId) {
   try {
@@ -406,38 +457,50 @@ async function loadStockMatcher() {
 
 // ════════ Filtre par PIPELINE eGrow (GET ?pipeline=<stageId>) → commandes du pipeline + dispo stock interne ════════
 async function pipelineScan(req, res) {
-  if (!EGROW_ME || !EGROW_AK) return res.status(500).json({ error: 'eGrow non configuré (EGROW_ME/AK)' });
   // Un OU plusieurs stages (séparés par virgule) pour les filtres groupés « Confirmer », « Rappel »…
   const ALLOWED_STAGES = new Set([49396, 63093, 64833, 64835, 60669, 49430, 51500, 60599, 55207, 49397, 65365]);
   const stages = String(req.query.pipeline || '').split(',').map(s => parseInt(s.trim(), 10)).filter(id => ALLOWED_STAGES.has(id));
   if (!stages.length) return res.status(400).json({ error: 'pipeline inconnu' });
+  // V2 (api5.egrow.com GraphQL) par défaut ; fallback V1 legacy avec ?src=v1.
+  const USE_V1 = String(req.query.src || '') === 'v1';
+  if (USE_V1 && (!EGROW_ME || !EGROW_AK)) return res.status(500).json({ error: 'eGrow V1 non configuré (EGROW_ME/AK)' });
   try {
-    // Fusionne les deals de tous les stages du groupe (dédupliqués par id).
-    let raw = [];
-    for (const sid of stages) {
-      const rr = await egrowPost('/deal/getStageDeals.php', { stage: sid, page: 1, limit: 1500 });
-      const arr = Array.isArray(rr) ? rr : (rr && rr.data) || [];
-      arr.forEach(d => { d._srcStage = sid; raw.push(d); });
+    // Source des commandes → forme "deal" UNIFORME { id, order, stage_id, deal_number, client, city, phone, date, note, products:[{name,size,qty,image}] }
+    let deals;
+    if (USE_V1) {
+      let raw = [];
+      for (const sid of stages) {
+        const rr = await egrowPost('/deal/getStageDeals.php', { stage: sid, page: 1, limit: 1500 });
+        const arr = Array.isArray(rr) ? rr : (rr && rr.data) || [];
+        arr.forEach(d => { d._srcStage = sid; raw.push(d); });
+      }
+      const _seen = new Set();
+      deals = raw.filter(d => { const k = String(d.id); if (_seen.has(k)) return false; _seen.add(k); return true; })
+        .map(d => ({
+          id: d.id, order: d.order || 1, stage_id: (d.stage && d.stage.id) || d._srcStage,
+          deal_number: d.deal_number || String(d.id), client: (d.contact && d.contact.name) || 'Client',
+          city: d.deal_city || (d.contact && d.contact.city) || '', phone: String((d.contact && d.contact.phone) || ''),
+          date: d.time ? d.time * 1000 : null, note: (d.last_note && d.last_note.content) ? String(d.last_note.content) : '',
+          products: (d.products || []).map(p => ({ name: p.name, size: egrowSize(p), qty: p.quantity || 1, image: p.image || '' })),
+        }));
+    } else {
+      deals = await egrowV2OrdersByStages(stages);
     }
-    const _seen = new Set();
-    const deals = raw.filter(d => { const k = String(d.id); if (_seen.has(k)) return false; _seen.add(k); return true; });
     const { match } = await loadStockMatcher();
     // Une carte par COMMANDE (deal), avec TOUS ses produits (maillot seul / maillot + flocage / plusieurs maillots…)
     const out = deals.map(d => {
-      const c = d.contact || {};
       const products = (d.products || []).map(p => {
         const title = String(p.name || '').trim();
-        const size = egrowSize(p);
+        const size = p.size || '';
         const matches = title ? match(title, size, null) : [];
         const availQty = matches.reduce((s, m) => s + (m.qty || 0), 0);
-        return { product: title || '—', size: size || '—', qty: p.quantity || 1, image: p.image || '', available: availQty > 0, avail_qty: availQty, matched_stock_ids: matches.map(m => m.id) };
+        return { product: title || '—', size: size || '—', qty: p.qty || 1, image: p.image || '', available: availQty > 0, avail_qty: availQty, matched_stock_ids: matches.map(m => m.id) };
       });
       const availN = products.filter(x => x.available).length;
       return {
-        deal_id: d.id, order: d.order || 1, stage_id: (d.stage && d.stage.id) || d._srcStage,
-        deal_number: d.deal_number || String(d.id), client: c.name || 'Client', city: d.deal_city || c.city || '', phone: String(c.phone || ''),
-        date: d.time ? d.time * 1000 : null,                       // date de la commande (ms)
-        note: (d.last_note && d.last_note.content) ? String(d.last_note.content) : '',  // note eGrow
+        deal_id: d.id, order: d.order || 1, stage_id: d.stage_id,
+        deal_number: d.deal_number || String(d.id), client: d.client || 'Client', city: d.city || '', phone: String(d.phone || ''),
+        date: d.date || null, note: d.note || '',
         product_count: products.length, avail_count: availN,
         all_available: products.length > 0 && availN === products.length, any_available: availN > 0, products,
       };
