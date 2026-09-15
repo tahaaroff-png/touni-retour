@@ -461,8 +461,9 @@ async function pipelineScan(req, res) {
   const ALLOWED_STAGES = new Set([49396, 63093, 64833, 64835, 60669, 49430, 51500, 60599, 55207, 49397, 65365]);
   const stages = String(req.query.pipeline || '').split(',').map(s => parseInt(s.trim(), 10)).filter(id => ALLOWED_STAGES.has(id));
   if (!stages.length) return res.status(400).json({ error: 'pipeline inconnu' });
-  // V2 (api5.egrow.com GraphQL) par défaut ; fallback V1 legacy avec ?src=v1.
-  const USE_V1 = String(req.query.src || '') === 'v1';
+  // V1 legacy par défaut (fiable) ; V2 (api5.egrow.com GraphQL) en test explicite avec ?src=v2.
+  // TODO: basculer V2 par défaut quand EGROW_V2_KEY (Vercel) a bien accès au champ stringLineItems.
+  const USE_V1 = String(req.query.src || '') !== 'v2';
   if (USE_V1 && (!EGROW_ME || !EGROW_AK)) return res.status(500).json({ error: 'eGrow V1 non configuré (EGROW_ME/AK)' });
   try {
     // Source des commandes → forme "deal" UNIFORME { id, order, stage_id, deal_number, client, city, phone, date, note, products:[{name,size,qty,image}] }
