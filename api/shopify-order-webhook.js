@@ -134,9 +134,9 @@ async function handler(req, res) {
         const { size, color } = parseVariantTitle(item.variant_title || '');
         const matches = await findMatchingStock(title, size, color);
         const qty = Number(item.quantity) || 1;
-        let dec = { updates: [], remaining: qty };
-        if (matches.length) dec = await lv.decrementStockRows(matches, qty);
-        results.push({ title, size, ordered: qty, decremented: qty - dec.remaining, unmatched: dec.remaining });
+        // Décision Tahar 15/09/2026 : la commande NE déduit PLUS le gestionnaire.
+        // Seule l'opératrice déduit (à l'expédition) ; ici on ne fait que notifier + resync.
+        results.push({ title, size, ordered: qty, decremented: 0, matched_rows: matches.length });
         // notification pour l'opératrice (visibilité côté gestionnaire)
         await fetch(`${SB_URL}/rest/v1/shopify_notifications?on_conflict=shopify_order_id,shopify_variant_id`, {
           method: 'POST',
