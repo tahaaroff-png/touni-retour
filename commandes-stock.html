@@ -87,6 +87,8 @@ h1{font-size:20px;display:flex;align-items:center;gap:8px}
 .toast.show{opacity:1}
 @media(prefers-color-scheme:dark){:root{--bg:#0f1115;--card:#1a1d23;--text:#e5e7eb;--muted:#9ca3af;--border:#2a2e37}}
 </style>
+<link rel="stylesheet" href="/retour-relook.css?v=4">
+<script src="/retour-relook.js?v=3" defer></script>
 </head>
 <body>
 <header>
@@ -261,7 +263,7 @@ function applyCustom(){ DFROM=document.getElementById('dfrom').value||null; DTO=
 function clearCustom(){ DFROM=DTO=null; document.getElementById('dfrom').value=''; document.getElementById('dto').value=''; render(); }
 async function syncNow(){
   var b=document.getElementById('syncBtn'); b.disabled=true; var o=b.textContent; b.textContent='⏳…';
-  try{ await fetch('/api/notifications?action=scan&secret='+SECRET,{method:'POST'}).catch(function(){}); await load(); toast('🔄 Synchronisé'); }
+  try{ await fetch('/api/notifications?action=scan&secret='+SECRET,{method:'POST'}).catch(function(){}); await fetch('/api/notifications?action=lv_sync&secret=touni-sync-2026',{method:'POST'}).catch(function(){}); await load(); toast('🔄 Synchronisé (Touni + Le Vestiaire)'); }
   catch(e){ toast('⚠️ '+e.message); }
   finally{ b.disabled=false; b.textContent=o; }
 }

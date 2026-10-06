@@ -1,0 +1,151 @@
+/* =====================================================================
+   TOUNI RETOUR — RELOOK v1 (couche additive, réversible)
+   Retheme des tokens DS + sidebar dark premium + cartes/badges/boutons
+   modernes. Chargée APRÈS le <style> inline → gagne à spécificité égale.
+   Retrait = supprimer le <link> de cette feuille.
+   ===================================================================== */
+
+/* ---------- 1) Tokens rethemés (plus moderne, ADN rouge gardé) ---------- */
+:root{
+  --bg:#eef1f6; --surface:#ffffff; --bg-soft:#f4f6fa;
+  --border:#e7eaf0; --border2:#dfe3ea; --border-strong:#11131a;
+  --ink:#0b0d12; --text:#1a1d26; --secondary:#3a3f4c; --muted:#8a90a0; --muted2:#b6bcc9;
+  --signal:#e4121f; --signal-dark:#b00d17; --red:#e4121f;
+  --green:#159f6e; --green-bg:#e9f9f1; --green-border:#bdeed9;
+  --warning:#e0a23a; --error:#e4121f; --blue:#2b64f5;
+  --radius:14px; --radius-btn:10px; --radius-block:16px;
+  --shadow:0 1px 2px rgba(16,20,30,.05),0 2px 8px rgba(16,20,30,.04);
+  --shadow-hover:0 10px 30px -8px rgba(16,20,30,.18);
+  --tnr-ease:cubic-bezier(.22,.61,.36,1);
+}
+
+body{ background:var(--bg) !important; }
+
+/* ---------- 2) Sidebar : dark premium ---------- */
+.sidebar{
+  background:linear-gradient(180deg,#121521,#0c0e16) !important;
+  border-right:1px solid rgba(255,255,255,.06) !important;
+  box-shadow:4px 0 24px rgba(10,12,20,.12);
+}
+.sidebar, .sidebar *{ color:#cfd3de; }
+.sidebar .nav-sect, .sidebar [class*="side-sect"], .sidebar small{ color:#6b7180 !important; letter-spacing:.14em; }
+.side-link{
+  border-radius:11px !important; font-weight:600 !important;
+  color:#c7ccd8 !important; transition:background .2s var(--tnr-ease), color .2s var(--tnr-ease), transform .15s var(--tnr-ease);
+  margin:2px 0;
+}
+.side-link:hover{ background:rgba(255,255,255,.07) !important; color:#fff !important; transform:translateX(2px); }
+.side-link.active, .nav-btn.active{
+  background:linear-gradient(135deg,var(--signal),var(--signal-dark)) !important;
+  color:#fff !important; border-color:transparent !important;
+  box-shadow:0 8px 20px -6px rgba(228,18,31,.55);
+}
+.side-link.primary{ background:rgba(228,18,31,.14) !important; color:#ff9ea4 !important; border:1px solid rgba(228,18,31,.3) !important; }
+.side-link.primary:hover{ background:rgba(228,18,31,.22) !important; color:#fff !important; }
+.side-link .ic{ filter:saturate(1.1); }
+.side-link.logout{ color:#8a90a0 !important; }
+.side-link.logout:hover{ color:#fff !important; background:rgba(255,255,255,.06) !important; }
+.side-role{ background:rgba(224,162,58,.14) !important; border-color:rgba(224,162,58,.35) !important; color:#e8c583 !important; }
+
+/* ---------- 3) Topbar + chips KPI ---------- */
+.chip{
+  border-radius:999px !important; font-weight:700 !important;
+  border:1px solid var(--border) !important; background:var(--surface) !important;
+  box-shadow:var(--shadow); padding:8px 14px !important;
+}
+.chip b{ font-weight:800; }
+/* état actif des filtres de période (.chip.active) — ne pas laisser blanc sur blanc */
+.chip.active{ background:#0e1016 !important; color:#fff !important; border-color:#0e1016 !important; }
+.chip.active b{ color:#fff !important; }
+.chip-total{ background:#0e1016 !important; color:#fff !important; border-color:#0e1016 !important; }
+.chip-dispo{ background:var(--green-bg) !important; color:#0c7a52 !important; border-color:var(--green-border) !important; }
+.chip-rupture{ background:#fdecec !important; color:var(--signal-dark) !important; border-color:#f6cccd !important; }
+
+/* ---------- 4) Panels / cartes (form d'ajout, filtres, table) ---------- */
+.panel, .fbar, .tbl-wrap, .card{
+  background:var(--surface) !important; border:1px solid var(--border) !important;
+  border-radius:var(--radius-block) !important; box-shadow:var(--shadow) !important;
+}
+.panel{ padding:18px 20px !important; }
+
+/* champs de saisie / selects */
+.panel input, .panel select, .fbar input, .fbar select,
+input[type="text"], input[type="search"], input[type="date"], input[type="number"], select{
+  border-radius:var(--radius-btn) !important; border:1px solid var(--border2) !important;
+  background:var(--bg-soft) !important; transition:border-color .2s var(--tnr-ease), box-shadow .2s var(--tnr-ease);
+}
+.panel input:focus, .panel select:focus, .fbar input:focus, .fbar select:focus,
+input:focus, select:focus{
+  border-color:var(--signal) !important; background:#fff !important;
+  box-shadow:0 0 0 3px rgba(228,18,31,.12) !important; outline:none !important;
+}
+
+/* ---------- 5) Boutons ---------- */
+.btn-add, button.primary, .btn-primary{
+  background:linear-gradient(135deg,var(--signal),var(--signal-dark)) !important;
+  color:#fff !important; border:none !important; border-radius:var(--radius-btn) !important;
+  font-weight:700 !important; box-shadow:0 8px 20px -8px rgba(228,18,31,.55);
+  transition:transform .15s var(--tnr-ease), box-shadow .25s var(--tnr-ease);
+}
+.btn-add:hover, button.primary:hover{ transform:translateY(-1px); box-shadow:0 14px 28px -10px rgba(228,18,31,.6) !important; }
+.btn-edit, .btn-icon{ border-radius:9px !important; transition:background .2s, transform .15s; }
+.btn-edit:hover{ transform:translateY(-1px); }
+.del:hover{ color:var(--signal) !important; }
+
+/* ---------- 6) Onglets filtres (.fb) : pills segmentées ---------- */
+.fb{
+  border-radius:999px !important; font-weight:700 !important; border:1px solid var(--border) !important;
+  background:var(--bg-soft) !important; color:var(--secondary) !important; transition:.2s var(--tnr-ease);
+}
+.fb:hover{ background:#fff !important; border-color:var(--border2) !important; }
+.fb.active, .fb-all.active, .fb[aria-selected="true"]{
+  background:#0e1016 !important; color:#fff !important; border-color:#0e1016 !important;
+}
+
+/* ---------- 7) Badges d'état ---------- */
+.badge{
+  border-radius:999px !important; font-weight:700 !important; letter-spacing:.01em;
+  padding:4px 11px !important; border:1px solid transparent !important;
+}
+.badge.b-ok{ background:var(--green-bg) !important; color:#0c7a52 !important; border-color:var(--green-border) !important; }
+.badge.b-ko, .badge.b-rupture{ background:#fdecec !important; color:var(--signal-dark) !important; border-color:#f6cccd !important; }
+
+/* ---------- 8) Lignes de table : hover + respiration ---------- */
+/* ⚠️ NE PAS mettre overflow:hidden ici → casse l'en-tête sticky (thead top:118px). */
+.tbl-wrap{ overflow:visible !important; }
+/* en-tête collant : fond opaque + au-dessus des lignes */
+thead th{ background:var(--bg-soft) !important; z-index:85 !important; }
+.tbl-wrap .row, .tbl-wrap tr, .trow{ transition:background .18s var(--tnr-ease); }
+.tbl-wrap .row:hover, .tbl-wrap tr:hover, .trow:hover{ background:var(--bg-soft) !important; }
+
+/* barre d'achat / header sticky plus net */
+.burger{ border-radius:10px !important; }
+
+@media (prefers-reduced-motion: reduce){ *{ transition:none !important; } }
+/* ===================== fin RELOOK v1 ===================== */
+
+/* =====================================================================
+   RÉPARATIONS DIAGNOSTIC (a11y, polish, états) — additif
+   ===================================================================== */
+/* Focus visible (clavier) — ne jamais perdre l'anneau */
+a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focus-visible{
+  outline:2px solid var(--signal) !important; outline-offset:2px !important; border-radius:6px;
+}
+/* Chiffres alignés */
+.chip b, td, th, .tn-stats__n, [class*="count"], [class*="price"], [class*="total"], [class*="qte"]{
+  font-variant-numeric:tabular-nums;
+}
+/* Confort tactile mobile */
+button, a, label, .fb, .chip, .side-link, input, select, .badge{ touch-action:manipulation; }
+/* Troncature propre */
+.name, [class*="product-name"], [class*="title"]{ min-width:0; }
+/* Images : réserver la place (anti saut de mise en page) */
+.tbl-wrap img, .mob-card img, td img{ aspect-ratio:1/1; object-fit:cover; background:var(--bg-soft); }
+/* État erreur / vide relooké */
+.tnr-error{ display:flex; flex-direction:column; align-items:center; gap:10px; padding:30px 20px; text-align:center; color:var(--muted); }
+.tnr-error b{ color:var(--text); font-size:15.5px; font-weight:800; }
+.tnr-error span{ font-size:13px; max-width:34ch; }
+.tnr-retry{ margin-top:4px; background:linear-gradient(135deg,var(--signal),var(--signal-dark)); color:#fff; border:none;
+  border-radius:10px; padding:11px 22px; font-weight:800; font-size:13.5px; cursor:pointer; box-shadow:0 8px 20px -8px rgba(228,18,31,.5); }
+.tnr-retry:hover{ transform:translateY(-1px); }
+/* ===================== fin réparations diagnostic ===================== */

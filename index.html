@@ -286,6 +286,8 @@ td{padding:11px 11px;vertical-align:middle}
   .header-right .btn-logout{font-size:10px;padding:4px 10px}
 }
 </style>
+<link rel="stylesheet" href="/retour-relook.css?v=4">
+<script src="/retour-relook.js?v=3" defer></script>
 </head>
 <body>
 
@@ -1475,6 +1477,8 @@ async function syncAll(){
     var r1=await fetch('/api/sync-return-to-shopify?secret='+SYNC_SECRET,{method:'POST'});
     var d1; try{ d1=await r1.json(); }catch(je){ throw new Error('Sync timeout — la synchronisation a pris trop de temps. Réessayez dans quelques secondes.'); }
     if(!r1.ok) throw new Error((d1&&d1.error)||'Erreur sync retours');
+    // Réconciliation totale des quantités : Touni Shopify + Le Vestiaire
+    await fetch('/api/notifications?action=lv_sync&secret=touni-sync-2026',{method:'POST'}).catch(function(){});
     // Rafraîchir le stock local (shopify_pushed_at peut avoir changé)
     await dbLoad();
     await loadNotifications();
