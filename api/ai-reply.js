@@ -90,7 +90,9 @@ async function buttonAlreadyAnswered(convId) {
     return !!(last && (last.mine === true || last.mine === 'true'));
   } catch (e) { return false; }
 }
-async function egrowSend(integrationId, toWaId, text) {
+// Ancien envoi eGrow inbox (send_conversation_message.php) = chemin HORS-META → a fait bannir le compte.
+// Conservé en fallback seulement, JAMAIS utilisé par défaut.
+async function egrowSendLegacy(integrationId, toWaId, text) {
   const boundary = '----TouniAgent' + Math.random().toString(36).slice(2);
   const payload = JSON.stringify({ integrationId: Number(integrationId), to: String(toWaId), type: 'text', body: text, me: EGROW_ME, dev: 0 });
   const raw = `--${boundary}\r\nContent-Disposition: form-data; name="data"\r\n\r\n${payload}\r\n--${boundary}--\r\n`;
@@ -100,6 +102,25 @@ async function egrowSend(integrationId, toWaId, text) {
     body: raw,
   });
   try { return await r.json(); } catch (e) { return { status: 'http_' + r.status }; }
+}
+// ✅ Envoi TEXTE via la Meta Cloud API OFFICIELLE (type:text, autorisé dans la fenêtre 24h de service client).
+// Le bot ne répond qu'aux messages FRAIS (<600s) → toujours dans la fenêtre → 100% légal, anti-ban.
+async function metaSendText(toWaId, text) {
+  if (!META_WA_TOKEN) return { status: 'error', message: 'META_WA_TOKEN manquant' };
+  const to = String(toWaId).replace(/\D/g, '');
+  const body = JSON.stringify({ messaging_product: 'whatsapp', to, type: 'text', text: { preview_url: true, body: String(text) } });
+  const r = await fetch(`https://graph.facebook.com/v19.0/${META_WA_PHONE_ID}/messages`, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${META_WA_TOKEN}`, 'Content-Type': 'application/json' },
+    body,
+  });
+  const json = await r.json().catch(() => ({ status: 'http_' + r.status }));
+  // 131047 = hors fenêtre 24h → l'appelant gère (template + file d'attente).
+  return { status: r.ok ? 'success' : 'error', http: r.status, ...json };
+}
+// egrowSend garde sa signature (integrationId ignoré) mais envoie DÉSORMAIS via la Cloud API officielle.
+async function egrowSend(integrationId, toWaId, text) {
+  return metaSendText(toWaId, text);
 }
 // Envoi d'un template WhatsApp via Meta Cloud API (hors fenêtre 24h)
 // eGrow /inbox/send_conversation_template_message.php requiert un cookie session navigateur → inaccessible côté serveur.
@@ -674,6 +695,43 @@ async function recentBotSent(convId) {
   } catch (e) {}
   return res;
 }
+
+// ── ESCALADE : routage (patron = critique uniquement) + anti-doublon opératrice ──
+// Signature normalisée d'une escalade (pour détecter les répétitions d'un même client).
+function escSig(s) { return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9؀-ۿ]+/g, ' ').trim().slice(0, 90); }
+// CRITIQUE = ce qui doit remonter au numéro PERSO du patron (pas les réclamations courantes de taille/échange).
+const CRITICAL_RE = /(perdu|perte|jamais re[cç]u|pas re[cç]u|non re[cç]u|rembours|arnaqu|voleur|vol[eé]\b|scandal|avocat|justice|plaint|police|menac|tribunal|inadmissible|honteux|cass[eé]|ab[iî]m|endommag|d[eé]fectu|d[eé]chir|tromp|colis vide|rien re[cç]u|ma ?ws?lni|ma ?wsalni|مرجوع|احتيال|شكاية|محامي|لم يصل|ماوصلني|ضاع|نصاب)/i;
+function isCriticalEscalation(note, body) { const t = `${note || ''} ${body || ''}`; return CRITICAL_RE.test(t); }
+// A-t-on DÉJÀ escaladé un sujet similaire pour ce client récemment (fenêtre 6h) ? → évite les 5-6 doublons.
+async function escalationSeenRecently(phone, sig) {
+  try {
+    const digits = String(phone || '').replace(/\D/g, '');
+    if (!digits || !sig) return false;
+    const sinceIso = new Date(Date.now() - 6 * 3600 * 1000).toISOString();
+    const r = await fetch(`${SB_URL}/rest/v1/escalation_log?select=sig&phone=eq.${encodeURIComponent(digits)}&sent_at=gte.${encodeURIComponent(sinceIso)}`, { headers: supabaseHeaders(true) });
+    const j = await r.json().catch(() => []);
+    return Array.isArray(j) && j.some((row) => escSig(row.sig) === sig);
+  } catch (e) { return false; }
+}
+async function logEscalation(phone, sig, note, critical) {
+  try {
+    await fetch(`${SB_URL}/rest/v1/escalation_log`, {
+      method: 'POST',
+      headers: Object.assign({}, supabaseHeaders(true), { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' }),
+      body: JSON.stringify({ phone: String(phone || '').replace(/\D/g, ''), sig, note: String(note || '').slice(0, 500), critical: !!critical }),
+    });
+  } catch (e) {}
+}
+// Persistance d'un avis client (texte ou vocal) → fiche globale consultable.
+async function saveClientReview({ phone, name, channel, content, convId }) {
+  try {
+    await fetch(`${SB_URL}/rest/v1/client_reviews`, {
+      method: 'POST',
+      headers: Object.assign({}, supabaseHeaders(true), { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' }),
+      body: JSON.stringify({ phone: String(phone || '').replace(/\D/g, ''), name: name || '', channel: channel || 'text', content: String(content || '').slice(0, 2000), conv_id: String(convId || '') }),
+    });
+  } catch (e) {}
+}
 // Un HUMAIN gère-t-il la conversation ? (= message sortant récent <1h dont le texte n'est PAS un envoi du bot).
 function humanHandling(raw, nowSec, botSent, contactWaId) {
   const HUMAN_TYPES = ['text', 'image', 'audio', 'voice', 'ptt', 'video', 'document'];
@@ -1180,14 +1238,31 @@ async function runPoll(q) {
             } else if (isAction) {
               entry.dealMove = deal ? 'already_there' : 'no_movable_deal';
             }
-            // Escalade → prévenir l'opératrice + le patron
+            // Escalade → OPÉRATRICE = TOUTES les réclamations (mais dédupliquées) ; PATRON (perso) = CRITIQUE uniquement.
             if (decision.intent === 'escalate') {
-              const summary = `🔔 *Client à gérer (agent IA Touni)*\n👤 ${c.title || contactWaId}\n📱 ${contactWaId}\n📝 ${(decision.note || '').slice(0, 400) || 'voir la conversation'}\n💬 « ${body.slice(0, 220)} »`;
-              for (const _op of OPERATOR_PHONES) {
-                try { await sendAndQueue(integrationId, _op, summary); entry.operatorNotified = true; } catch (e) { entry.operatorNotified = 'err'; }
-              }
-              if (MERCHANT_PHONE && !OPERATOR_PHONES.includes(MERCHANT_PHONE)) {
-                try { await sendAndQueue(integrationId, MERCHANT_PHONE, summary); entry.merchantNotified = true; } catch (e) { entry.merchantNotified = 'err'; }
+              const note = (decision.note || '').trim();
+              const clientName = c.title || contactWaId;
+              const sig = escSig(note || body);
+              const isVocalMsg = isAudio || type === 'ptt' || type === 'voice';
+              const alreadySeen = await escalationSeenRecently(contactWaId, sig);
+              if (alreadySeen) {
+                entry.escalateSkipped = 'doublon'; // même client + même sujet déjà escaladé < 6h → on ne renvoie pas
+              } else {
+                const critical = isCriticalEscalation(note, body);
+                const summary = `🔔 *Client à gérer (agent IA Touni)*\n👤 ${clientName}\n📱 ${contactWaId}\n📝 ${note.slice(0, 400) || 'voir la conversation'}\n💬 « ${body.slice(0, 220)} »`;
+                // Opératrice : TOUTES les réclamations (elle traite tout)
+                for (const _op of OPERATOR_PHONES) {
+                  try { await sendAndQueue(integrationId, _op, summary); entry.operatorNotified = true; } catch (e) { entry.operatorNotified = 'err'; }
+                }
+                // Patron (numéro perso) : UNIQUEMENT si CRITIQUE. Pour un vocal → points clés (la note), pas le verbatim brut.
+                if (critical && MERCHANT_PHONE && !OPERATOR_PHONES.includes(MERCHANT_PHONE)) {
+                  const pmsg = isVocalMsg
+                    ? `⚠️ *Réclamation CRITIQUE (vocal client)*\n👤 ${clientName} (${contactWaId})\n📝 Points clés : ${note.slice(0, 400) || '(voir la conversation)'}`
+                    : `⚠️ *Réclamation CRITIQUE*\n👤 ${clientName} (${contactWaId})\n📝 ${note.slice(0, 400) || '(voir la conversation)'}\n💬 « ${body.slice(0, 220)} »`;
+                  try { await sendAndQueue(integrationId, MERCHANT_PHONE, pmsg); entry.merchantNotified = true; } catch (e) { entry.merchantNotified = 'err'; }
+                }
+                entry.escalateCritical = critical;
+                await logEscalation(contactWaId, sig, note, critical);
               }
             }
             // Avis positif → patron (comme toujours) ET opératrices e-commerce (collecte / screenshot Insta)
@@ -1203,6 +1278,8 @@ async function runPoll(q) {
                 for (const _t of reviewTargets) {
                   try { await sendAndQueue(integrationId, _t, notif); } catch (e) {}
                 }
+                // Persistance → fiche globale de TOUS les avis (texte + vocaux)
+                await saveClientReview({ phone: contactWaId, name: clientName, channel: isVocalReview ? 'vocal' : 'text', content: isVocalReview ? (body || '[vocal]') : body, convId: contactWaId });
                 entry.reviewNotified = true;
               } catch (e) { entry.reviewNotified = 'err'; }
             }
@@ -1323,6 +1400,41 @@ async function runPoll(q) {
 module.exports = async (req, res) => {
   const q = req.query || {};
   if (q.secret !== SECRET) return res.status(401).json({ error: 'unauthorized' });
+  // ── Fiche globale des avis clients (texte + vocaux) — ?reviews_fiche=1 ──
+  if (q.reviews_fiche === '1') {
+    try {
+      const limit = Math.min(parseInt(q.limit, 10) || 1000, 5000);
+      const r = await fetch(`${SB_URL}/rest/v1/client_reviews?select=created_at,name,phone,channel,content&order=created_at.desc&limit=${limit}`, { headers: supabaseHeaders(true) });
+      const rows = await r.json().catch(() => []);
+      const list = Array.isArray(rows) ? rows : [];
+      const txt = list.filter((x) => x.channel !== 'vocal').length;
+      const voc = list.filter((x) => x.channel === 'vocal').length;
+      const lines = list.map((x, i) => {
+        const d = String(x.created_at || '').slice(0, 10);
+        const who = x.name || x.phone || '?';
+        const tag = x.channel === 'vocal' ? '🎙️' : '💬';
+        return `${i + 1}. ${tag} ${d} — ${who}\n   ${String(x.content || '').replace(/\s+/g, ' ').slice(0, 300)}`;
+      });
+      const fiche = `📋 FICHE AVIS CLIENTS TOUNI\nTotal : ${list.length} (💬 ${txt} texte · 🎙️ ${voc} vocaux)\n\n${lines.join('\n\n')}`;
+      if (String(q.format) === 'text') { res.setHeader('Content-Type', 'text/plain; charset=utf-8'); return res.status(200).send(fiche); }
+      return res.status(200).json({ count: list.length, text: txt, vocal: voc, fiche, reviews: list });
+    } catch (e) { return res.status(200).json({ error: String(e) }); }
+  }
+  // ── Diagnostic Cloud API (LECTURE SEULE) — AVANT le kill-switch pour marcher même bot coupé ──
+  if (q.diagcloud === '1') {
+    if (!META_WA_TOKEN) return res.status(200).json({ ok: false, error: 'META_WA_TOKEN vide' });
+    try {
+      const r = await fetch(`https://graph.facebook.com/v19.0/${META_WA_PHONE_ID}?fields=verified_name,display_phone_number,quality_rating,code_verification_status,platform_type,throughput,messaging_limit_tier,name_status&access_token=${META_WA_TOKEN}`);
+      const j = await r.json().catch(() => ({}));
+      return res.status(200).json({ ok: r.ok, http: r.status, phone_id: META_WA_PHONE_ID, token_len: META_WA_TOKEN.length, data: j });
+    } catch (e) { return res.status(200).json({ ok: false, error: String(e) }); }
+  }
+  // ── Test d'envoi CONTRÔLÉ via Cloud API (1 seul message) — avant le kill-switch ──
+  if (q.diagsend === '1') {
+    const to = String(q.to || MERCHANT_PHONE).replace(/\D/g, '');
+    const result = await metaSendText(to, q.msg || 'Test technique Touni — envoi via Cloud API officielle. Message de verification, tu peux ignorer.');
+    return res.status(200).json({ to, via: 'meta_cloud_api', result });
+  }
   // Interrupteur global — BOT_ENABLED=0 dans Vercel pour couper le bot sans toucher au code
   if (process.env.BOT_ENABLED === '0') return res.status(200).json({ ok: true, status: 'bot_disabled' });
 
