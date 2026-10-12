@@ -27,7 +27,9 @@ html{-webkit-text-size-adjust:100%}
 body{
   font-family:var(--body); background:var(--ink); color:var(--txt);
   min-height:100dvh; -webkit-tap-highlight-color:transparent; letter-spacing:.01em;
-  overflow-x:hidden;
+  /* clip (pas hidden) : ne crée pas de conteneur de scroll → le header sticky
+     reste pinné même sur iOS Safari (hidden cassait le sticky sur mobile). */
+  overflow-x:clip;
 }
 /* Ambiance : halos rouges diffus fixés derrière le contenu */
 .aura{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden}
@@ -40,10 +42,10 @@ body{
 .wrap{position:relative;z-index:2;max-width:1320px;margin:0 auto;padding:0 20px 80px}
 
 /* ───────── Header ───────── */
-header{position:sticky;top:0;z-index:40;margin:0 -20px;padding:14px 20px 12px;
-  background:linear-gradient(180deg,rgba(5,5,6,.92),rgba(5,5,6,.72) 70%,transparent);
+header{position:sticky;top:0;z-index:40;margin:0 -20px;padding:12px 20px 11px;
+  background:rgba(5,5,6,.95);
   backdrop-filter:blur(18px) saturate(1.2);-webkit-backdrop-filter:blur(18px) saturate(1.2);
-  border-bottom:1px solid var(--line)}
+  border-bottom:1px solid var(--line);box-shadow:0 10px 30px -18px rgba(0,0,0,.9)}
 .hrow{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
 .brand{display:flex;align-items:center;gap:11px;min-width:0}
 .logo{width:38px;height:38px;border-radius:11px;object-fit:contain;background:#fff;padding:4px;flex:0 0 auto;
@@ -60,7 +62,7 @@ header{position:sticky;top:0;z-index:40;margin:0 -20px;padding:14px 20px 12px;
 .navlink:hover{color:#fff;border-color:var(--line2);background:rgba(255,255,255,.05)}
 
 /* search + toggle */
-.tools{display:flex;gap:10px;margin-top:12px;align-items:center;flex-wrap:wrap}
+.tools{display:flex;gap:10px;margin-top:10px;align-items:center;flex-wrap:wrap}
 .searchbox{position:relative;flex:1;min-width:220px}
 .searchbox svg{position:absolute;left:15px;top:50%;transform:translateY(-50%);width:17px;height:17px;stroke:var(--muted2);pointer-events:none}
 .search{width:100%;font-family:var(--body);font-size:15px;color:var(--txt);
@@ -80,7 +82,7 @@ header{position:sticky;top:0;z-index:40;margin:0 -20px;padding:14px 20px 12px;
 .toggle.on .sw::after{transform:translateX(16px)}
 
 /* ───────── Filtres ───────── */
-.filters{margin-top:14px;display:flex;flex-direction:column;gap:9px}
+.filters{margin-top:10px;display:flex;flex-direction:column;gap:8px}
 .frow{display:flex;gap:8px;align-items:center;overflow-x:auto;scrollbar-width:none;padding-bottom:2px;-webkit-overflow-scrolling:touch}
 .frow::-webkit-scrollbar{display:none}
 .flabel{font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--muted2);font-weight:600;flex:0 0 auto;width:66px}
@@ -179,9 +181,9 @@ header{position:sticky;top:0;z-index:40;margin:0 -20px;padding:14px 20px 12px;
 .edmsg.err{color:var(--red)} .edmsg.ok{color:var(--green)}
 .edhint{font-size:11px;color:var(--muted2);margin-top:8px}
 /* ruban global dans le header quand l'offre est active */
-.obar{margin-top:10px;display:flex;align-items:center;gap:9px;font-size:11.5px;font-weight:600;color:#fff;
+.obar{margin-top:9px;display:flex;align-items:center;gap:9px;font-size:11px;font-weight:600;color:#fff;
   background:linear-gradient(135deg,rgba(228,18,31,.16),rgba(228,18,31,.06));border:1px solid rgba(228,18,31,.4);
-  border-radius:12px;padding:9px 13px}
+  border-radius:11px;padding:7px 12px}
 .obar b{font-family:var(--head);font-weight:900;letter-spacing:.04em}
 .obar .tag{font-family:var(--head);font-size:9px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#fff;
   background:linear-gradient(135deg,var(--red),var(--red-ink));border-radius:999px;padding:3px 9px}
@@ -328,11 +330,13 @@ try{const o=new URLSearchParams(location.search).get('offre');if(o==='0'||o==='o
    édition spéciale/Terrace > ML > maillot de base. Retourne null si non classé. */
 function offrePricing(name){
   const n=norm(name);
-  const ML=/manches? longues?|long sleeve|\bml\b/.test(n);
-  const SPECIAL=/terrace|\bedition\b|anniversaire|mamba|\bkobe\b|limited|limitee|collector|\bspecial/.test(n);
-  const PREMATCH=/pre.?match|prematch|avant.?match/.test(n);
-  const NEW_SEASON=/2025\/26|2026\/27|2025-2026|2026-2027|2025\/2026|2026\/2027|25\/26|26\/27/.test(n);
-  const LAST_SEASON=/2024\/25|2024-2025|2024\/2025|24\/25|2023\/24|2023-2024|23\/24/.test(n);
+  // Mapping années : 2026/2027 = NOUVELLE saison ; 2025/2026 & 2024/2025 = saison DERNIÈRE.
+  const SPECIAL=/\bedition\b|anniversaire|mamba|\bkobe\b|limited|limitee|collector|\bspecial/.test(n);
+  const TERRACE=/terrace/.test(n);
+  const TRAINING=/pre.?match|prematch|avant.?match|entrainement|training/.test(n);
+  const RETRO=/retro/.test(n);
+  const NEW_SEASON=/2026\/27|2026-2027|2026\/2027|26\/27/.test(n);
+  const LAST_SEASON=/2025\/26|2025-2026|2025\/2026|25\/26|2024\/25|2024-2025|2024\/2025|24\/25|2023\/24|2023-2024|23\/24/.test(n);
   const CDM=/coupe du monde|\bcdm\b|world cup|mondial/.test(n);
   if(/casquette|\bbob\b|bonnet|trucker/.test(n)){
     const luxe=/monogramme|\bluxe\b|\bcoach\b|signature|\bcuir\b|lacoste|croco/.test(n);
@@ -344,31 +348,37 @@ function offrePricing(name){
   }
   if(/\bgants?\b/.test(n)) return {cat:'Gants',price:199,old:279};
   if(/serviette/.test(n)) return {cat:'Serviette',price:279,old:349};
-  if(/ballon/.test(n)) return {cat:'Ballon',price:399,old:499};
+  if(/ballon/.test(n)) return {cat:'Ballon',price:449,old:499};
   if(/sacoche|banane/.test(n)) return {cat:'Sacoche',price:229,old:329};
-  if(/sac a dos|sac de sport|\bsac\b|\bsacs\b/.test(n)) return {cat:'Sac à dos',price:329,old:449};
-  if(/chemise/.test(n)) return {cat:'Chemise supporter',price:349,old:449};
+  if(/sac a dos|sac de sport|\bsac\b|\bsacs\b/.test(n)) return {cat:'Sac à dos',price:299,old:399};
+  if(/chemise/.test(n)) return {cat:'Chemise',price:349,old:449};
   if(/sweat|hoodie|demi.?zip|half.?zip|capuche/.test(n)) return {cat:'Sweat/Hoodie',price:399,old:499};
-  if(/\bpolo\b/.test(n)) return {cat:'Polo',price:379,old:479};
+  if(/\bpolo\b/.test(n)) return {cat:'Polo',price:349,old:449};
   if(/t-?shirt|tee\b|tshirt/.test(n)) return {cat:'T-shirt',price:269,old:349};
-  if((/\bpantalon\b|\blegging\b|\bjogging\b/.test(n))&&!/ensemble/.test(n)) return null; // pantalon/veste seuls : hors grille
+  // Pantalon seul (y.c. "pantalon de survêtement") → Pantalon Origins — AVANT l'ensemble
+  if((/\bpantalon\b|\blegging\b|\bjogging\b/.test(n))&&!/ensemble/.test(n)) return {cat:'Pantalon Origins',price:299,old:379};
+  // Ensemble survêtement complet (veste+pantalon ; UA, On, Nike, équipes)
   if(/\bensemble\b|tracksuit|surv(e|ê)t/.test(n)) return {cat:'Ensemble survêtement',price:599,old:749};
-  if(/\bkit\b/.test(n)) return {cat:'Kit maillot+short',price:499,old:599};
-  if(/\bshort\b/.test(n)) return {cat:'Short',price:249,old:299};
-  // ── MAILLOTS (grille d'ouverture) ──
-  // Priorité : pré-match / rétro / édition spéciale (349) > ML non spécial (349)
-  // > MC selon la saison (299 nouvelle saison/CDM, 269 saison dernière).
-  // Sans année identifiable → défaut 299 (nouvelle saison).
-  if(/maillot|jersey/.test(n)){
-    if(PREMATCH)        return {cat:'Maillot pré-match',price:349,old:449};
-    if(/retro/.test(n)) return {cat:'Maillot rétro',price:349,old:449};
-    if(SPECIAL)         return {cat:'Édition spéciale / Terrace Icons',price:349,old:449};
-    if(ML)              return {cat:'Maillot ML',price:349,old:449};
-    if(LAST_SEASON)     return {cat:'Maillot saison dernière',price:269,old:349};
-    if(NEW_SEASON||CDM) return {cat:'Maillot nouvelle saison',price:299,old:379};
-    return {cat:'Maillot nouvelle saison',price:299,old:379};
+  // Kit (maillot + short) — terrace > pré-match > saison
+  if(/\bkit\b/.test(n)){
+    if(TERRACE)     return {cat:'Kit Terrace Icons',price:599,old:699};
+    if(TRAINING)    return {cat:'Kit pré-match',price:549,old:649};
+    if(LAST_SEASON) return {cat:'Kit saison dernière',price:529,old:629};
+    return {cat:'Kit nouvelle saison',price:549,old:649}; // 2026/2027 ou défaut
   }
-  if(/retro/.test(n)) return {cat:'Maillot rétro',price:349,old:449};
+  if(/\bshort\b/.test(n)) return {cat:'Short',price:249,old:299};
+  // ── MAILLOTS ──
+  // Priorité : pré-match/entraînement / rétro / terrace / édition spéciale (349)
+  // > sinon selon saison : 2026/2027 ou CDM → 299 ; sinon (dernière/inconnu) → 279.
+  if(/maillot|jersey/.test(n)){
+    if(TRAINING)        return {cat:"Maillot entraînement/pré-match",price:349,old:449};
+    if(RETRO)           return {cat:'Maillot rétro',price:349,old:449};
+    if(TERRACE)         return {cat:'Maillot Terrace Icons',price:349,old:449};
+    if(SPECIAL)         return {cat:'Édition spéciale',price:349,old:449};
+    if(NEW_SEASON||CDM) return {cat:'Maillot nouvelle saison',price:299,old:379};
+    return {cat:'Maillot saison dernière',price:279,old:349};
+  }
+  if(RETRO) return {cat:'Maillot rétro',price:349,old:449};
   return null; // non classé → garder le prix Shopify
 }
 

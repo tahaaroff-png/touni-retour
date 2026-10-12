@@ -947,12 +947,22 @@ async function catPriceGet(req, res) {
   } catch (e) { return res.status(200).json({ overrides: {}, error: e.message }); }
 }
 
-// Écriture PROPRIÉTAIRE uniquement : PIN vérifié côté serveur contre OWNER_PRICE_KEY.
-// Sans OWNER_PRICE_KEY définie → feature désactivée (403). verify:true = test du PIN sans écrire.
+// Code propriétaire : priorité à la valeur en base (app_config.owner_price_key),
+// sinon fallback sur l'env OWNER_PRICE_KEY (compat). Permet de poser la clé sans Vercel.
+async function getOwnerKey() {
+  try {
+    const r = await fetch(`${SB_URL}/rest/v1/app_config?select=value&key=eq.owner_price_key&limit=1`, { headers: supabaseHeaders(true) });
+    if (r.ok) { const rows = await r.json(); if (rows && rows[0] && rows[0].value) return String(rows[0].value); }
+  } catch (e) { /* fallback env */ }
+  return process.env.OWNER_PRICE_KEY || '';
+}
+
+// Écriture PROPRIÉTAIRE uniquement : code vérifié côté serveur (app_config puis env).
+// Clé absente → feature désactivée (403). verify:true = test du code sans écrire.
 async function catPriceSet(req, res) {
   try {
-    const KEY = process.env.OWNER_PRICE_KEY || '';
-    if (!KEY) return res.status(403).json({ ok: false, error: 'feature_disabled', message: 'OWNER_PRICE_KEY non définie côté serveur.' });
+    const KEY = await getOwnerKey();
+    if (!KEY) return res.status(403).json({ ok: false, error: 'feature_disabled', message: 'Code propriétaire non configuré (app_config.owner_price_key ou OWNER_PRICE_KEY).' });
     let body = req.body; if (typeof body === 'string') { try { body = JSON.parse(body); } catch (e) { body = {}; } }
     body = body || {};
     if (String(body.pin || '') !== String(KEY)) return res.status(401).json({ ok: false, error: 'bad_pin' });
