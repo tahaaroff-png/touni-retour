@@ -863,32 +863,37 @@ async function invReset(req, res) {
 // Additif : alimente la page /catalogue (vitrine en magasin). N'écrit rien.
 async function catList(req, res) {
   try {
-    // 1) Stock réel magasin disponible (image par ligne = source primaire, comme /inventaire)
-    const all = [];
-    for (let off = 0; ; off += 1000) {
-      const r = await fetch(`${SB_URL}/rest/v1/stock?select=product,size,qty,image&qty=gt.0&deleted_at=is.null&status=in.(retour,stock,flocage_joueur)&order=product.asc&limit=1000&offset=${off}`, { headers: supabaseHeaders(true) });
-      if (!r.ok) throw new Error(await r.text());
-      const rows = await r.json();
-      all.push(...rows);
-      if (rows.length < 1000) break;
-    }
-
-    // 2) Images de secours depuis shopify_variants_cache (si une ligne stock n'a pas d'image)
-    const images = {};
-    for (let off = 0; ; off += 1000) {
-      const r = await fetch(`${SB_URL}/rest/v1/shopify_variants_cache?select=product_title,product_image&product_image=neq.&limit=1000&offset=${off}`, { headers: supabaseHeaders(true) });
-      if (!r.ok) break;
-      const rows = await r.json();
-      rows.forEach((v) => { if (v.product_image && !images[v.product_title]) images[v.product_title] = v.product_image; });
-      if (rows.length < 1000) break;
-    }
-
-    // 3) Prix : dernière sauvegarde connue par titre (optionnel, masquable côté page)
-    const prices = {};
-    try {
-      const r = await fetch(`${SB_URL}/rest/v1/price_backups?select=product_title,price,created_at&price=gt.0&order=product_title.asc,created_at.desc`, { headers: supabaseHeaders(true) });
-      if (r.ok) { (await r.json()).forEach((p) => { if (!(p.product_title in prices)) prices[p.product_title] = Number(p.price); }); }
-    } catch (e) { /* prix optionnels */ }
+    // PERF : les 3 lectures Supabase (stock, images cache, prix) sont indépendantes
+    // → exécutées EN PARALLÈLE. Images dédupliquées côté DB via RPC (1 aller-retour
+    // au lieu de ~5 pages sur 4961 lignes).
+    const loadStock = async () => {
+      const out = [];
+      for (let off = 0; ; off += 1000) {
+        const r = await fetch(`${SB_URL}/rest/v1/stock?select=product,size,qty,image&qty=gt.0&deleted_at=is.null&status=in.(retour,stock,flocage_joueur)&order=product.asc&limit=1000&offset=${off}`, { headers: supabaseHeaders(true) });
+        if (!r.ok) throw new Error(await r.text());
+        const rows = await r.json();
+        out.push(...rows);
+        if (rows.length < 1000) break;
+      }
+      return out;
+    };
+    const loadImages = async () => {
+      const map = {};
+      try {
+        const r = await fetch(`${SB_URL}/rest/v1/rpc/catalogue_images`, { method: 'POST', headers: { ...supabaseHeaders(true), 'Content-Type': 'application/json' }, body: '{}' });
+        if (r.ok) { (await r.json()).forEach((v) => { if (v.product_image && !map[v.product_title]) map[v.product_title] = v.product_image; }); }
+      } catch (e) { /* images optionnelles */ }
+      return map;
+    };
+    const loadPrices = async () => {
+      const map = {};
+      try {
+        const r = await fetch(`${SB_URL}/rest/v1/price_backups?select=product_title,price,created_at&price=gt.0&order=product_title.asc,created_at.desc`, { headers: supabaseHeaders(true) });
+        if (r.ok) { (await r.json()).forEach((p) => { if (!(p.product_title in map)) map[p.product_title] = Number(p.price); }); }
+      } catch (e) { /* prix optionnels */ }
+      return map;
+    };
+    const [all, images, prices] = await Promise.all([loadStock(), loadImages(), loadPrices()]);
 
     // 3b) PERF : plus d'appel Shopify LIVE ici. L'enrichissement live
     // (fetchShopifyProductsAdmin, ~20 pages) coûtait ~4,6s par chargement à froid.
