@@ -138,12 +138,46 @@ header{position:sticky;top:0;z-index:40;margin:0 -20px;padding:14px 20px 12px;
 .szchip i{font-style:normal;font-size:9.5px;color:var(--muted2);font-weight:600}
 .szchip.hl{background:var(--red-soft);border-color:rgba(228,18,31,.4);color:#fff}
 /* ── Offre d'ouverture (affichage magasin, réversible) ── */
-.po-badge{display:inline-block;font-family:var(--head);font-size:9px;font-weight:800;letter-spacing:.11em;text-transform:uppercase;
-  color:#fff;background:linear-gradient(135deg,var(--red),var(--red-ink));border-radius:999px;padding:3px 9px;margin-bottom:6px;
+.price.show{display:flex;flex-direction:column;align-items:flex-start;gap:8px}
+.po-badge{display:inline-block;width:fit-content;font-family:var(--head);font-size:9px;font-weight:800;letter-spacing:.11em;text-transform:uppercase;
+  color:#fff;background:linear-gradient(135deg,var(--red),var(--red-ink));border-radius:999px;padding:4px 10px;
   box-shadow:0 6px 16px -6px rgba(228,18,31,.7)}
-.po-new{color:var(--red);font-weight:800}
-.po-old{margin-left:8px;color:var(--muted2);font-weight:600;font-size:12px;text-decoration:line-through;text-decoration-color:rgba(228,18,31,.55)}
-.po-note{display:block;margin-top:3px;font-size:10px;color:var(--muted2);font-weight:500;letter-spacing:.04em}
+.po-prices{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap}
+.po-new{color:var(--red);font-weight:800;font-size:17px;line-height:1}
+.po-old{color:var(--muted2);font-weight:600;font-size:12.5px;text-decoration:line-through;text-decoration-color:rgba(228,18,31,.55)}
+.po-note{display:block;font-size:10px;color:var(--muted2);font-weight:500;letter-spacing:.04em}
+/* crayon d'édition proprio */
+.edit-btn{margin-top:4px;display:inline-flex;align-items:center;gap:6px;font-family:var(--body);font-size:11.5px;font-weight:600;
+  color:var(--muted);background:rgba(255,255,255,.05);border:1px solid var(--line);border-radius:999px;padding:5px 11px;cursor:pointer;transition:.2s var(--ease)}
+.edit-btn:hover{color:#fff;border-color:var(--red);background:var(--red-soft)}
+/* bouton mode proprio dans le header */
+.ownerbtn{display:flex;align-items:center;gap:7px;font-size:12.5px;font-weight:500;color:var(--muted);
+  background:rgba(255,255,255,.045);border:1px solid var(--line);border-radius:999px;padding:9px 15px;cursor:pointer;
+  user-select:none;transition:.25s var(--ease);white-space:nowrap}
+.ownerbtn:hover{border-color:var(--line2);color:#fff}
+.ownerbtn.on{color:#fff;border-color:var(--red);background:var(--red-soft)}
+/* modale d'édition de prix */
+.edlg{position:fixed;inset:0;z-index:95;background:rgba(3,3,4,.82);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+  display:none;align-items:center;justify-content:center;padding:24px}
+.edlg.open{display:flex}
+.edcard{width:100%;max-width:360px;background:var(--panel);border:1px solid var(--line2);border-radius:var(--r-lg);padding:22px;box-shadow:0 40px 90px -30px #000}
+.edcard h3{font-family:var(--head);font-size:16px;font-weight:800;margin-bottom:4px}
+.edcard .pn{font-size:12.5px;color:var(--muted);margin-bottom:16px;line-height:1.3;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.edfield{margin-bottom:13px}
+.edfield label{display:block;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted2);font-weight:600;margin-bottom:6px}
+.edfield input{width:100%;font-family:var(--body);font-size:16px;color:var(--txt);background:rgba(255,255,255,.05);
+  border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.edfield input:focus{outline:none;border-color:var(--red);box-shadow:0 0 0 4px var(--red-soft)}
+.edact{display:flex;gap:9px;margin-top:18px}
+.edbtn{flex:1;font-family:var(--head);font-size:13px;font-weight:700;border-radius:12px;padding:12px;cursor:pointer;border:1px solid var(--line);
+  background:rgba(255,255,255,.05);color:var(--txt);transition:.2s var(--ease)}
+.edbtn.primary{background:linear-gradient(135deg,var(--red),var(--red-ink));border-color:transparent;color:#fff}
+.edbtn.ghost{color:var(--muted)}
+.edbtn:hover{filter:brightness(1.1)}
+.edmsg{font-size:12px;margin-top:10px;min-height:16px;color:var(--muted2)}
+.edmsg.err{color:var(--red)} .edmsg.ok{color:var(--green)}
+.edhint{font-size:11px;color:var(--muted2);margin-top:8px}
 /* ruban global dans le header quand l'offre est active */
 .obar{margin-top:10px;display:flex;align-items:center;gap:9px;font-size:11.5px;font-weight:600;color:#fff;
   background:linear-gradient(135deg,rgba(228,18,31,.16),rgba(228,18,31,.06));border:1px solid rgba(228,18,31,.4);
@@ -215,6 +249,9 @@ header{position:sticky;top:0;z-index:40;margin:0 -20px;padding:14px 20px 12px;
       <div class="toggle" id="priceToggle" role="switch" aria-checked="false" tabindex="0">
         <span class="sw"></span><span>Afficher les prix</span>
       </div>
+      <div class="ownerbtn" id="ownerBtn" role="button" tabindex="0" title="Espace propriétaire">
+        <span id="ownerIco">🔒</span><span id="ownerLbl">Proprio</span>
+      </div>
     </div>
 
     <div class="filters">
@@ -241,6 +278,29 @@ header{position:sticky;top:0;z-index:40;margin:0 -20px;padding:14px 20px 12px;
   <div class="cap" id="lbcap"></div>
 </div>
 
+<!-- Modale d'édition de prix (propriétaire uniquement) -->
+<div class="edlg" id="edlg">
+  <div class="edcard">
+    <h3 id="edTitle">Modifier le prix</h3>
+    <div class="pn" id="edProd"></div>
+    <div class="edfield">
+      <label for="edPrice">Prix net (DH)</label>
+      <input id="edPrice" type="number" inputmode="numeric" min="0" step="1" placeholder="ex. 299">
+    </div>
+    <div class="edfield">
+      <label for="edOld">Ancien prix barré (DH) — optionnel</label>
+      <input id="edOld" type="number" inputmode="numeric" min="0" step="1" placeholder="ex. 379">
+    </div>
+    <div class="edmsg" id="edMsg"></div>
+    <div class="edact">
+      <button class="edbtn ghost" id="edReset" type="button">Réinitialiser (grille auto)</button>
+      <button class="edbtn primary" id="edSave" type="button">Enregistrer</button>
+    </div>
+    <button class="edbtn" id="edCancel" type="button" style="margin-top:9px;width:100%">Annuler</button>
+    <div class="edhint">Réservé au propriétaire. Modification enregistrée côté serveur.</div>
+  </div>
+</div>
+
 <script>
 const SECRET='touni-sync-2026';
 const API='/api/notifications';
@@ -249,6 +309,8 @@ const esc=s=>(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"
 const norm=s=>(s||'').toString().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
 
 let ALL=[], activeCat='*', activeSize='*', query='', showPrice=false;
+let OVERRIDES={}, ownerMode=false, ownerPin='';
+try{ownerPin=localStorage.getItem('touni_owner_pin')||'';ownerMode=!!ownerPin;}catch(e){}
 
 /* ─────────────────────────────────────────────────────────────────────────
    OFFRE D'OUVERTURE — grille de prix magasin temporaire & réversible.
@@ -334,8 +396,12 @@ const SIZE_SORT={'XS':1,'S':2,'M':3,'L':4,'XL':5,'2XL':6,'3XL':7,'4XL':8,'UNIQUE
 
 async function load(){
   try{
-    const r=await fetch(`${API}?cat=list&secret=${SECRET}`);
+    const [r,ro]=await Promise.all([
+      fetch(`${API}?cat=list&secret=${SECRET}`),
+      fetch(`${API}?action=cat_price_get&secret=${SECRET}`).catch(()=>null)
+    ]);
     if(!r.ok) throw new Error('HTTP '+r.status);
+    try{ if(ro&&ro.ok){ OVERRIDES=((await ro.json()).overrides)||{}; } }catch(e){ OVERRIDES={}; }
     const j=await r.json();
     ALL=(j.products||[]).map(p=>({...p,cat:categorize(p.product),offre:offrePricing(p.product),_search:norm(p.product)}));
     $('#liveTxt').textContent=`${j.count} modèles · ${j.units} pièces`;
@@ -392,16 +458,26 @@ function render(){
     grid.innerHTML=`<div class="state"><b>Aucun modèle</b>Aucun produit ne correspond à ces filtres.<br>Essaie d'élargir la recherche.</div>`;
     return;
   }
-  grid.innerHTML=list.map(cardHtml).join('');
-  // scroll reveal
+  // Rendu progressif : premier lot affiché tout de suite, le reste au frame suivant
+  // (premières cartes visibles sans attendre la construction de toute la liste).
   if(io)io.disconnect();
   io=new IntersectionObserver((ents)=>{ents.forEach(en=>{if(en.isIntersecting){en.target.classList.add('in');io.unobserve(en.target);}});},{rootMargin:'0px 0px -40px 0px'});
-  grid.querySelectorAll('.card').forEach((c,i)=>{c.style.transitionDelay=Math.min(i,8)*35+'ms';io.observe(c);});
+  const observeFrom=base=>{[...grid.querySelectorAll('.card')].slice(base).forEach((c,i)=>{c.style.transitionDelay=Math.min(base+i,8)*35+'ms';io.observe(c);});};
+  const FIRST=48;
+  grid.innerHTML=list.slice(0,FIRST).map(cardHtml).join('');
+  observeFrom(0);
+  if(list.length>FIRST){
+    requestAnimationFrame(()=>{
+      const base=grid.querySelectorAll('.card').length;
+      grid.insertAdjacentHTML('beforeend',list.slice(FIRST).map(cardHtml).join(''));
+      observeFrom(base);
+    });
+  }
 }
 
 function cardHtml(p){
   const img=p.image
-    ? `<img src="${esc(p.image)}"${p.image_fallback?` data-fb="${esc(p.image_fallback)}"`:''} loading="lazy" alt="${esc(p.product)}" onclick="openLb((this.currentSrc||this.src),'${esc(p.product).replace(/'/g,"\\'")}')" onerror="imgFallback(this)">`
+    ? `<img src="${esc(p.image)}"${p.image_fallback?` data-fb="${esc(p.image_fallback)}"`:''} loading="lazy" decoding="async" alt="${esc(p.product)}" onclick="openLb((this.currentSrc||this.src),'${esc(p.product).replace(/'/g,"\\'")}')" onerror="imgFallback(this)">`
     : `<div class="noimg">Image à venir</div>`;
   const sz=p.sizes.map(s=>{
     const lbl=s.size==='—'?'Unique':s.size;
@@ -409,6 +485,7 @@ function cardHtml(p){
     return `<span class="szchip${hl}">${esc(lbl)} <i>${s.qty}</i></span>`;
   }).join('');
   const price=priceHtml(p);
+  const pencil=ownerMode?`<button class="edit-btn" data-edit="${esc(p.product)}" type="button" aria-label="Modifier le prix">✎ Modifier le prix</button>`:'';
   return `<article class="card">
     <div class="media">
       ${img}
@@ -418,18 +495,27 @@ function cardHtml(p){
     <div class="body">
       <div class="pname">${esc(p.product)}</div>
       ${price}
+      ${pencil}
       <div class="szrow">${sz}</div>
     </div>
   </article>`;
 }
 
+/* Prix effectif d'un produit : l'override proprio PRIME sur la grille auto. */
+function effectiveOffre(p){
+  const ov=OVERRIDES[p.product];
+  if(ov && ov.price!=null) return {price:Math.round(ov.price),old:(ov.old_price!=null?Math.round(ov.old_price):null),override:true};
+  return p.offre||null;
+}
+
 /* Construit le bloc prix d'une carte (offre d'ouverture ou prix Shopify). */
 function priceHtml(p){
   const sh=showPrice?' show':'';
-  if(OFFRE_OUVERTURE && p.offre){
-    const oldHtml=p.offre.old?`<span class="po-old">${p.offre.old} DH</span>`:'';
+  const eff=effectiveOffre(p);
+  if(OFFRE_OUVERTURE && eff){
+    const oldHtml=eff.old?`<span class="po-old">${eff.old} DH</span>`:'';
     return `<div class="price${sh}"><span class="po-badge">Offre d'ouverture</span>`+
-           `<span class="po-new">${p.offre.price} DH</span>${oldHtml}</div>`;
+           `<div class="po-prices"><span class="po-new">${eff.price} DH</span>${oldHtml}</div></div>`;
   }
   if(p.price!=null) return `<div class="price${sh}">${Math.round(p.price)} DH`+
     (OFFRE_OUVERTURE?`<span class="po-note">Prix magasin</span>`:'')+`</div>`;
@@ -445,8 +531,10 @@ function imgFallback(el){
 }
 function openLb(src,cap){$('#lbimg').src=src;$('#lbcap').textContent=cap;$('#lb').classList.add('open');}
 function closeLb(){$('#lb').classList.remove('open');setTimeout(()=>{$('#lbimg').src='';},350);}
-$('#lb').addEventListener('click',e=>{if(e.target.id==='lb'||e.target.id==='lbx')closeLb();});
-document.addEventListener('keydown',e=>{if(e.key==='Escape')closeLb();});
+/* Fermeture : bouton X (handler dédié, stopPropagation) + clic sur le fond. */
+$('#lbx').addEventListener('click',e=>{e.preventDefault();e.stopPropagation();closeLb();});
+$('#lb').addEventListener('click',e=>{if(e.target===$('#lb'))closeLb();});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeLb();closeEdit();}});
 
 /* ── Prix toggle ── */
 function setPrice(on){showPrice=on;const t=$('#priceToggle');t.classList.toggle('on',on);t.setAttribute('aria-checked',on);
@@ -463,6 +551,75 @@ $('#resetBtn').addEventListener('click',()=>{
   setActive($('#sizeRow'),$('#sizeRow [data-size="*"]'));
   render();
 });
+
+/* ── Espace PROPRIÉTAIRE (édition des prix, verrouillé par PIN serveur) ──
+   Le PIN n'est JAMAIS en clair ici : il est vérifié côté serveur contre
+   OWNER_PRICE_KEY. L'opératrice n'a pas le PIN → aucun crayon, lecture seule. */
+function reflectOwnerBtn(){
+  const b=$('#ownerBtn');if(!b)return;
+  b.classList.toggle('on',ownerMode);
+  $('#ownerIco').textContent=ownerMode?'🔓':'🔒';
+  $('#ownerLbl').textContent=ownerMode?'Proprio ✓ (quitter)':'Proprio';
+}
+async function ownerUnlock(){
+  const pin=(prompt('Code propriétaire :')||'').trim();
+  if(!pin) return;
+  try{
+    const r=await fetch(`${API}?action=cat_price_set&secret=${SECRET}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pin,verify:true})});
+    if(r.ok){ownerPin=pin;ownerMode=true;try{localStorage.setItem('touni_owner_pin',pin);}catch(e){}reflectOwnerBtn();render();}
+    else if(r.status===403){alert('Édition des prix désactivée : OWNER_PRICE_KEY non définie côté serveur (Vercel).');}
+    else{alert('Code incorrect.');}
+  }catch(e){alert('Connexion impossible. Réessaie.');}
+}
+function ownerLock(){ownerMode=false;ownerPin='';try{localStorage.removeItem('touni_owner_pin');}catch(e){}reflectOwnerBtn();closeEdit();render();}
+function toggleOwner(){ownerMode?ownerLock():ownerUnlock();}
+$('#ownerBtn').addEventListener('click',toggleOwner);
+$('#ownerBtn').addEventListener('keydown',e=>{if(e.key===' '||e.key==='Enter'){e.preventDefault();toggleOwner();}});
+reflectOwnerBtn();
+
+/* ── Modale d'édition de prix ── */
+let editPid=null;
+function openEdit(pid){
+  if(!ownerMode)return;
+  const p=ALL.find(x=>x.product===pid);if(!p)return;
+  editPid=pid;
+  const eff=effectiveOffre(p);
+  $('#edProd').textContent=pid;
+  $('#edPrice').value=eff&&eff.price!=null?eff.price:'';
+  $('#edOld').value=eff&&eff.old!=null?eff.old:'';
+  $('#edMsg').textContent='';$('#edMsg').className='edmsg';
+  $('#edlg').classList.add('open');
+  setTimeout(()=>$('#edPrice').focus(),60);
+}
+function closeEdit(){$('#edlg').classList.remove('open');editPid=null;}
+async function sendEdit(payload,okMsg){
+  if(!editPid)return;
+  $('#edMsg').className='edmsg';$('#edMsg').textContent='Enregistrement…';
+  try{
+    const r=await fetch(`${API}?action=cat_price_set&secret=${SECRET}`,{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({pin:ownerPin,product_id:editPid,...payload})});
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok||!j.ok){
+      if(r.status===401){$('#edMsg').className='edmsg err';$('#edMsg').textContent='Code propriétaire invalide. Reconnecte-toi.';return;}
+      if(r.status===403){$('#edMsg').className='edmsg err';$('#edMsg').textContent='Feature désactivée (OWNER_PRICE_KEY absente).';return;}
+      $('#edMsg').className='edmsg err';$('#edMsg').textContent='Erreur : '+(j.error||('HTTP '+r.status));return;
+    }
+    if(j.deleted){ delete OVERRIDES[editPid]; }
+    else { OVERRIDES[editPid]={price:j.price,old_price:j.old_price}; }
+    $('#edMsg').className='edmsg ok';$('#edMsg').textContent=okMsg;
+    render();
+    setTimeout(closeEdit,650);
+  }catch(e){$('#edMsg').className='edmsg err';$('#edMsg').textContent='Connexion impossible.';}
+}
+$('#grid').addEventListener('click',e=>{const b=e.target.closest('[data-edit]');if(b){e.preventDefault();openEdit(b.dataset.edit);}});
+$('#edSave').addEventListener('click',()=>{
+  const price=$('#edPrice').value.trim();
+  if(!(Number(price)>0)){$('#edMsg').className='edmsg err';$('#edMsg').textContent='Prix net invalide.';return;}
+  sendEdit({price,old_price:$('#edOld').value.trim()},'Prix enregistré ✓');
+});
+$('#edReset').addEventListener('click',()=>sendEdit({price:''},'Remis sur la grille auto ✓'));
+$('#edCancel').addEventListener('click',closeEdit);
+$('#edlg').addEventListener('click',e=>{if(e.target===$('#edlg'))closeEdit();});
 
 /* Prix visibles par défaut quand l'offre d'ouverture est active ; un choix déjà
    mémorisé par l'utilisateur reste prioritaire. */

@@ -890,20 +890,11 @@ async function catList(req, res) {
       if (r.ok) { (await r.json()).forEach((p) => { if (!(p.product_title in prices)) prices[p.product_title] = Number(p.price); }); }
     } catch (e) { /* prix optionnels */ }
 
-    // 3b) Enrichissement live Shopify (prix manquants + image de dernier recours).
-    // Réutilise fetchShopifyProductsAdmin (déjà importé). Optionnel : en cas d'échec on garde
-    // price_backups + le cache des variantes, donc rien ne casse si Shopify est indisponible.
-    const live = {};
-    try {
-      const sp = await fetchShopifyProductsAdmin();
-      for (const p of (sp || [])) {
-        if (!p || !p.title || (p.title in live)) continue;
-        const v = (p.variants || [])[0];
-        const im = (p.images || [])[0];
-        const pr = v && v.price != null ? Number(v.price) : null;
-        live[p.title] = { price: (pr && pr > 0) ? pr : null, image: (im && im.src) ? im.src : null };
-      }
-    } catch (e) { /* live Shopify optionnel */ }
+    // 3b) PERF : plus d'appel Shopify LIVE ici. L'enrichissement live
+    // (fetchShopifyProductsAdmin, ~20 pages) coûtait ~4,6s par chargement à froid.
+    // On sert désormais uniquement depuis Supabase : prix via price_backups,
+    // images via le cache des variantes (shopify_variants_cache). Avec l'offre
+    // d'ouverture active, le prix affiché vient de la grille, pas de Shopify.
 
     // 4) Groupement par modèle
     const SIZE_ORDER = { XS: 1, S: 2, M: 3, L: 4, XL: 5, '2XL': 6, XXL: 6, '3XL': 7, '4XL': 8, Unique: 9 };
@@ -917,24 +908,75 @@ async function catList(req, res) {
       if (!by[key].image && s.image && String(s.image).trim()) by[key].image = String(s.image).trim();
     }
     const products = Object.values(by).map((p) => {
-      // Image : stock (porté) en primaire, cache/live Shopify en secours (l'URL stock peut être 404).
+      // Image : stock (porté) en primaire, cache des variantes en secours (l'URL stock peut être 404).
       const cacheImg = images[p.product] || null;
-      const liveImg = (live[p.product] && live[p.product].image) || null;
-      const primary = p.image || cacheImg || liveImg || null;
-      const fallback = cacheImg || liveImg || null;
+      const primary = p.image || cacheImg || null;
       p.image = primary;
-      p.image_fallback = (fallback && fallback !== primary) ? fallback : null;
-      // Prix : price_backups prioritaire, sinon prix live Shopify (comble les modèles sans backup).
-      if (p.price == null && live[p.product] && live[p.product].price != null) p.price = live[p.product].price;
+      p.image_fallback = (cacheImg && cacheImg !== primary) ? cacheImg : null;
       p.sizes = Object.entries(p.sizes)
         .map(([size, qty]) => ({ size, qty }))
         .sort((a, b) => (SIZE_ORDER[a.size] || 50) - (SIZE_ORDER[b.size] || 50) || a.size.localeCompare(b.size));
       return p;
     }).sort((a, b) => b.total - a.total);
 
-    res.setHeader('Cache-Control', 's-maxage=120, stale-while-revalidate=600');
+    // Cache edge : réponse fraîche 60s, puis servie « stale » instantanément jusqu'à
+    // 24h pendant une revalidation en arrière-plan → ouvertures suivantes immédiates.
+    res.setHeader('Cache-Control', 's-maxage=60, stale-while-revalidate=86400');
     return res.status(200).json({ products, count: products.length, units: all.reduce((a, s) => a + (s.qty || 0), 0) });
   } catch (e) { return res.status(500).json({ error: e.message }); }
+}
+
+// ── Catalogue : overrides de prix proprio (grille d'ouverture) ──────────────
+// Lecture publique (derrière le secret de sync, comme catList) : map titre → {price, old_price}.
+async function catPriceGet(req, res) {
+  try {
+    const out = {};
+    for (let off = 0; ; off += 1000) {
+      const r = await fetch(`${SB_URL}/rest/v1/catalogue_price_overrides?select=product_id,price,old_price&limit=1000&offset=${off}`, { headers: supabaseHeaders(true) });
+      if (!r.ok) { if (off === 0) return res.status(200).json({ overrides: {} }); break; }
+      const rows = await r.json();
+      rows.forEach((v) => { out[v.product_id] = { price: Number(v.price), old_price: (v.old_price == null ? null : Number(v.old_price)) }; });
+      if (rows.length < 1000) break;
+    }
+    return res.status(200).json({ overrides: out });
+  } catch (e) { return res.status(200).json({ overrides: {}, error: e.message }); }
+}
+
+// Écriture PROPRIÉTAIRE uniquement : PIN vérifié côté serveur contre OWNER_PRICE_KEY.
+// Sans OWNER_PRICE_KEY définie → feature désactivée (403). verify:true = test du PIN sans écrire.
+async function catPriceSet(req, res) {
+  try {
+    const KEY = process.env.OWNER_PRICE_KEY || '';
+    if (!KEY) return res.status(403).json({ ok: false, error: 'feature_disabled', message: 'OWNER_PRICE_KEY non définie côté serveur.' });
+    let body = req.body; if (typeof body === 'string') { try { body = JSON.parse(body); } catch (e) { body = {}; } }
+    body = body || {};
+    if (String(body.pin || '') !== String(KEY)) return res.status(401).json({ ok: false, error: 'bad_pin' });
+    if (body.verify) return res.status(200).json({ ok: true, verified: true });
+
+    const pid = String(body.product_id || '').trim();
+    if (!pid) return res.status(400).json({ ok: false, error: 'missing_product' });
+
+    // Suppression de l'override (retour à la grille auto) si price vide/null.
+    if (body.price === '' || body.price == null) {
+      const d = await fetch(`${SB_URL}/rest/v1/catalogue_price_overrides?product_id=eq.${encodeURIComponent(pid)}`, { method: 'DELETE', headers: { ...supabaseHeaders(true), Prefer: 'return=minimal' } });
+      if (!d.ok) return res.status(500).json({ ok: false, error: await d.text() });
+      return res.status(200).json({ ok: true, deleted: true, product_id: pid });
+    }
+
+    const price = Math.round(Number(body.price));
+    if (!(price > 0)) return res.status(400).json({ ok: false, error: 'bad_price' });
+    let old_price = null;
+    if (body.old_price !== '' && body.old_price != null) { old_price = Math.round(Number(body.old_price)); if (!(old_price > 0)) old_price = null; }
+
+    const row = [{ product_id: pid, price, old_price, updated_at: new Date().toISOString() }];
+    const r = await fetch(`${SB_URL}/rest/v1/catalogue_price_overrides?on_conflict=product_id`, {
+      method: 'POST',
+      headers: { ...supabaseHeaders(true), Prefer: 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify(row),
+    });
+    if (!r.ok) return res.status(500).json({ ok: false, error: await r.text() });
+    return res.status(200).json({ ok: true, product_id: pid, price, old_price });
+  } catch (e) { return res.status(500).json({ ok: false, error: e.message }); }
 }
 
 module.exports = async function handler(req, res) {
@@ -999,6 +1041,9 @@ module.exports = async function handler(req, res) {
 
   // Catalogue magasin (vitrine /catalogue — lecture seule)
   if (req.query?.cat === 'list') return catList(req, res);
+  // Catalogue : overrides de prix proprio (grille d'ouverture)
+  if (req.method === 'GET' && req.query?.action === 'cat_price_get') return catPriceGet(req, res);
+  if (req.method === 'POST' && req.query?.action === 'cat_price_set') return catPriceSet(req, res);
 
   // Inventaire physique (réconciliation stock ↔ dépôt)
   if (req.query?.inv === 'list') return invList(req, res);
