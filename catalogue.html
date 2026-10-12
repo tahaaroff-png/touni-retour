@@ -268,6 +268,10 @@ function offrePricing(name){
   const n=norm(name);
   const ML=/manches? longues?|long sleeve|\bml\b/.test(n);
   const SPECIAL=/terrace|\bedition\b|anniversaire|mamba|\bkobe\b|limited|limitee|collector|\bspecial/.test(n);
+  const PREMATCH=/pre.?match|prematch|avant.?match/.test(n);
+  const NEW_SEASON=/2025\/26|2026\/27|2025-2026|2026-2027|2025\/2026|2026\/2027|25\/26|26\/27/.test(n);
+  const LAST_SEASON=/2024\/25|2024-2025|2024\/2025|24\/25|2023\/24|2023-2024|23\/24/.test(n);
+  const CDM=/coupe du monde|\bcdm\b|world cup|mondial/.test(n);
   if(/casquette|\bbob\b|bonnet|trucker/.test(n)){
     const luxe=/monogramme|\bluxe\b|\bcoach\b|signature|\bcuir\b|lacoste|croco/.test(n);
     return luxe?{cat:'Casquette luxe',price:229,old:279}:{cat:'Casquette',price:199,old:279};
@@ -289,13 +293,20 @@ function offrePricing(name){
   if(/\bensemble\b|tracksuit|surv(e|ê)t/.test(n)) return {cat:'Ensemble survêtement',price:599,old:749};
   if(/\bkit\b/.test(n)) return {cat:'Kit maillot+short',price:499,old:599};
   if(/\bshort\b/.test(n)) return {cat:'Short',price:249,old:299};
-  if(/retro/.test(n)) return {cat:'Maillot rétro',price:349,old:449};
+  // ── MAILLOTS (grille d'ouverture) ──
+  // Priorité : pré-match / rétro / édition spéciale (349) > ML non spécial (349)
+  // > MC selon la saison (299 nouvelle saison/CDM, 269 saison dernière).
+  // Sans année identifiable → défaut 299 (nouvelle saison).
   if(/maillot|jersey/.test(n)){
-    if(SPECIAL&&ML) return {cat:'Édition spéciale ML / Terrace ML',price:399,old:499};
-    if(SPECIAL)     return {cat:'Édition spéciale / Terrace Icons',price:379,old:449};
-    if(ML)          return {cat:'Maillot ML',price:349,old:449};
-    return {cat:'Maillot MC',price:299,old:379};
+    if(PREMATCH)        return {cat:'Maillot pré-match',price:349,old:449};
+    if(/retro/.test(n)) return {cat:'Maillot rétro',price:349,old:449};
+    if(SPECIAL)         return {cat:'Édition spéciale / Terrace Icons',price:349,old:449};
+    if(ML)              return {cat:'Maillot ML',price:349,old:449};
+    if(LAST_SEASON)     return {cat:'Maillot saison dernière',price:269,old:349};
+    if(NEW_SEASON||CDM) return {cat:'Maillot nouvelle saison',price:299,old:379};
+    return {cat:'Maillot nouvelle saison',price:299,old:379};
   }
+  if(/retro/.test(n)) return {cat:'Maillot rétro',price:349,old:449};
   return null; // non classé → garder le prix Shopify
 }
 
