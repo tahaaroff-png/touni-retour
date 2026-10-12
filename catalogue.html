@@ -45,7 +45,10 @@ body{
 header{position:sticky;top:0;z-index:40;margin:0 -20px;padding:12px 20px 11px;
   background:rgba(5,5,6,.95);
   backdrop-filter:blur(18px) saturate(1.2);-webkit-backdrop-filter:blur(18px) saturate(1.2);
-  border-bottom:1px solid var(--line);box-shadow:0 10px 30px -18px rgba(0,0,0,.9)}
+  border-bottom:1px solid var(--line);box-shadow:0 10px 30px -18px rgba(0,0,0,.9);
+  transition:transform .32s cubic-bezier(.4,0,.2,1);will-change:transform}
+/* Auto-hide : masqué en scroll-bas (glisse vers le haut), revient en scroll-haut. */
+header.hdr-hidden{transform:translateY(-100%)}
 .hrow{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
 .brand{display:flex;align-items:center;gap:11px;min-width:0}
 .logo{width:38px;height:38px;border-radius:11px;object-fit:contain;background:#fff;padding:4px;flex:0 0 auto;
@@ -328,19 +331,30 @@ try{const o=new URLSearchParams(location.search).get('offre');if(o==='0'||o==='o
 /* Classe un produit (depuis son titre) → une catégorie de la grille d'ouverture.
    Priorité aux spécificités : accessoires/non-maillots d'abord, puis
    édition spéciale/Terrace > ML > maillot de base. Retourne null si non classé. */
+/* Année représentative d'un maillot = année de DÉBUT de la saison/range détectée.
+   Ainsi 2025/2026 → 2025 (saison dernière), 2026/2027 → 2026 (nouvelle),
+   1995-1997 → 1995, 1993/94 → 1993, 98' → 1998. Retourne la plus grande trouvée. */
+function seasonYear(n){
+  let s=' '+n+' ', reps=[];
+  const conv=v=>v>=90?1900+v:(v<=39?2000+v:NaN);
+  s=s.replace(/(19\d{2}|20\d{2})\s*[\/\-]\s*(19\d{2}|20\d{2})/g,(m,a)=>{reps.push(+a);return ' ';}); // ranges 4 chiffres → début
+  s=s.replace(/\b(\d{2})\s*[\/\-]\s*(\d{2})\b/g,(m,a)=>{reps.push(conv(+a));return ' ';});            // saisons XX/YY → conv(début)
+  s=s.replace(/\b(\d{2})\s*['’]/g,(m,a)=>{reps.push(conv(+a));return ' ';});                           // année apostrophée 98'
+  (s.match(/19\d{2}|20\d{2}/g)||[]).forEach(y=>reps.push(+y));                                         // années 4 chiffres restantes
+  reps=reps.filter(v=>!isNaN(v)&&v>=1900&&v<=2099);
+  return reps.length?Math.max(...reps):null;
+}
+
 function offrePricing(name){
   const n=norm(name);
-  // Mapping années : 2026/2027 = NOUVELLE saison ; 2025/2026 & 2024/2025 = saison DERNIÈRE.
   const SPECIAL=/\bedition\b|anniversaire|mamba|\bkobe\b|limited|limitee|collector|\bspecial/.test(n);
   const TERRACE=/terrace/.test(n);
   const TRAINING=/pre.?match|prematch|avant.?match|entrainement|training/.test(n);
-  const RETRO=/retro/.test(n);
-  const NEW_SEASON=/2026\/27|2026-2027|2026\/2027|26\/27/.test(n);
-  const LAST_SEASON=/2025\/26|2025-2026|2025\/2026|25\/26|2024\/25|2024-2025|2024\/2025|24\/25|2023\/24|2023-2024|23\/24/.test(n);
+  const RETRO_KW=/retro|vintage/.test(n);
   const CDM=/coupe du monde|\bcdm\b|world cup|mondial/.test(n);
   if(/casquette|\bbob\b|bonnet|trucker/.test(n)){
     const luxe=/monogramme|\bluxe\b|\bcoach\b|signature|\bcuir\b|lacoste|croco/.test(n);
-    return luxe?{cat:'Casquette luxe',price:229,old:279}:{cat:'Casquette',price:199,old:279};
+    return luxe?{cat:'Casquette luxe',price:249,old:299}:{cat:'Casquette',price:199,old:279};
   }
   if(/chaussette|socquette/.test(n)){
     const p5=/pack ?5|x ?5|lot ?5|5 paires|5-pack/.test(n);
@@ -352,33 +366,40 @@ function offrePricing(name){
   if(/sacoche|banane/.test(n)) return {cat:'Sacoche',price:229,old:329};
   if(/sac a dos|sac de sport|\bsac\b|\bsacs\b/.test(n)) return {cat:'Sac à dos',price:299,old:399};
   if(/chemise/.test(n)) return {cat:'Chemise',price:349,old:449};
-  if(/sweat|hoodie|demi.?zip|half.?zip|capuche/.test(n)) return {cat:'Sweat/Hoodie',price:399,old:499};
+  if(/sweat|hoodie|demi.?zip|half.?zip|capuche/.test(n)) return {cat:'Sweat/Hoodie',price:379,old:499};
   if(/\bpolo\b/.test(n)) return {cat:'Polo',price:349,old:449};
   if(/t-?shirt|tee\b|tshirt/.test(n)) return {cat:'T-shirt',price:269,old:349};
   // Pantalon seul (y.c. "pantalon de survêtement") → Pantalon Origins — AVANT l'ensemble
   if((/\bpantalon\b|\blegging\b|\bjogging\b/.test(n))&&!/ensemble/.test(n)) return {cat:'Pantalon Origins',price:299,old:379};
   // Ensemble survêtement complet (veste+pantalon ; UA, On, Nike, équipes)
   if(/\bensemble\b|tracksuit|surv(e|ê)t/.test(n)) return {cat:'Ensemble survêtement',price:599,old:749};
-  // Kit (maillot + short) — terrace > pré-match > saison
+  // Kit (maillot + short) — terrace > pré-match > saison (début 2024/2025 → dernière)
   if(/\bkit\b/.test(n)){
-    if(TERRACE)     return {cat:'Kit Terrace Icons',price:599,old:699};
-    if(TRAINING)    return {cat:'Kit pré-match',price:549,old:649};
-    if(LAST_SEASON) return {cat:'Kit saison dernière',price:529,old:629};
+    if(TERRACE)  return {cat:'Kit Terrace Icons',price:599,old:699};
+    if(TRAINING) return {cat:'Kit pré-match',price:549,old:649};
+    const y=seasonYear(n);
+    if(y===2024||y===2025) return {cat:'Kit saison dernière',price:529,old:629};
     return {cat:'Kit nouvelle saison',price:549,old:649}; // 2026/2027 ou défaut
   }
   if(/\bshort\b/.test(n)) return {cat:'Short',price:249,old:299};
   // ── MAILLOTS ──
-  // Priorité : pré-match/entraînement / rétro / terrace / édition spéciale (349)
-  // > sinon selon saison : 2026/2027 ou CDM → 299 ; sinon (dernière/inconnu) → 279.
+  // Priorité : entraînement/pré-match / rétro (mot-clé) / terrace / édition spéciale (349)
+  // puis par année de DÉBUT : ≤2023 → rétro 349 ; 2024-2025 → dernière 279 ; ≥2026 → nouvelle 299.
   if(/maillot|jersey/.test(n)){
-    if(TRAINING)        return {cat:"Maillot entraînement/pré-match",price:349,old:449};
-    if(RETRO)           return {cat:'Maillot rétro',price:349,old:449};
-    if(TERRACE)         return {cat:'Maillot Terrace Icons',price:349,old:449};
-    if(SPECIAL)         return {cat:'Édition spéciale',price:349,old:449};
-    if(NEW_SEASON||CDM) return {cat:'Maillot nouvelle saison',price:299,old:379};
-    return {cat:'Maillot saison dernière',price:279,old:349};
+    if(TRAINING) return {cat:"Maillot entraînement/pré-match",price:349,old:449};
+    if(RETRO_KW) return {cat:'Maillot rétro',price:349,old:449};
+    if(TERRACE)  return {cat:'Maillot Terrace Icons',price:349,old:449};
+    if(SPECIAL)  return {cat:'Édition spéciale',price:349,old:449};
+    if(CDM)      return {cat:'Maillot nouvelle saison',price:299,old:379};
+    const y=seasonYear(n);
+    if(y!=null){
+      if(y<=2023)            return {cat:'Maillot rétro',price:349,old:449};
+      if(y===2024||y===2025) return {cat:'Maillot saison dernière',price:279,old:349};
+      return {cat:'Maillot nouvelle saison',price:299,old:379}; // ≥2026
+    }
+    return {cat:'Maillot nouvelle saison',price:299,old:379}; // défaut sans année
   }
-  if(RETRO) return {cat:'Maillot rétro',price:349,old:449};
+  if(RETRO_KW) return {cat:'Maillot rétro',price:349,old:449};
   return null; // non classé → garder le prix Shopify
 }
 
@@ -561,6 +582,25 @@ $('#resetBtn').addEventListener('click',()=>{
   setActive($('#sizeRow'),$('#sizeRow [data-size="*"]'));
   render();
 });
+
+/* ── Header auto-hide : masqué au scroll-bas (libère ~1 ligne de cartes),
+   revient au scroll-haut. translateY doux + seuil anti-jitter. En haut = visible. */
+(function(){
+  const HDR=document.querySelector('header'); if(!HDR) return;
+  let lastY=window.scrollY||0, hidden=false, ticking=false;
+  const TH=10;            // seuil anti-jitter (px)
+  const TOP_SAFE=90;      // près du haut → toujours visible
+  function update(){
+    ticking=false;
+    const y=window.scrollY||0, dy=y-lastY;
+    if(y<=TOP_SAFE){ if(hidden){HDR.classList.remove('hdr-hidden');hidden=false;} lastY=y; return; }
+    if(Math.abs(dy)<TH) return;
+    if(dy>0 && !hidden){ HDR.classList.add('hdr-hidden'); hidden=true; }      // scroll bas → masque
+    else if(dy<0 && hidden){ HDR.classList.remove('hdr-hidden'); hidden=false; } // scroll haut → montre
+    lastY=y;
+  }
+  window.addEventListener('scroll',()=>{ if(!ticking){ ticking=true; requestAnimationFrame(update); } },{passive:true});
+})();
 
 /* ── Rôle PROPRIÉTAIRE (édition des prix) ──
    Le mode proprio est hérité du LOGIN du gestionnaire : au login avec le code
