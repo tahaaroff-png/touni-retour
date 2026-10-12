@@ -859,6 +859,61 @@ async function invReset(req, res) {
   } catch (e) { return res.status(500).json({ error: e.message }); }
 }
 
+// ── Catalogue magasin : produits dispo (qty>0) groupés par modèle, avec tailles + image + prix (optionnel) ──
+// Additif : alimente la page /catalogue (vitrine en magasin). N'écrit rien.
+async function catList(req, res) {
+  try {
+    // 1) Stock réel magasin disponible (image par ligne = source primaire, comme /inventaire)
+    const all = [];
+    for (let off = 0; ; off += 1000) {
+      const r = await fetch(`${SB_URL}/rest/v1/stock?select=product,size,qty,image&qty=gt.0&deleted_at=is.null&status=in.(retour,stock,flocage_joueur)&order=product.asc&limit=1000&offset=${off}`, { headers: supabaseHeaders(true) });
+      if (!r.ok) throw new Error(await r.text());
+      const rows = await r.json();
+      all.push(...rows);
+      if (rows.length < 1000) break;
+    }
+
+    // 2) Images de secours depuis shopify_variants_cache (si une ligne stock n'a pas d'image)
+    const images = {};
+    for (let off = 0; ; off += 1000) {
+      const r = await fetch(`${SB_URL}/rest/v1/shopify_variants_cache?select=product_title,product_image&product_image=neq.&limit=1000&offset=${off}`, { headers: supabaseHeaders(true) });
+      if (!r.ok) break;
+      const rows = await r.json();
+      rows.forEach((v) => { if (v.product_image && !images[v.product_title]) images[v.product_title] = v.product_image; });
+      if (rows.length < 1000) break;
+    }
+
+    // 3) Prix : dernière sauvegarde connue par titre (optionnel, masquable côté page)
+    const prices = {};
+    try {
+      const r = await fetch(`${SB_URL}/rest/v1/price_backups?select=product_title,price,created_at&price=gt.0&order=product_title.asc,created_at.desc`, { headers: supabaseHeaders(true) });
+      if (r.ok) { (await r.json()).forEach((p) => { if (!(p.product_title in prices)) prices[p.product_title] = Number(p.price); }); }
+    } catch (e) { /* prix optionnels */ }
+
+    // 4) Groupement par modèle
+    const SIZE_ORDER = { XS: 1, S: 2, M: 3, L: 4, XL: 5, '2XL': 6, XXL: 6, '3XL': 7, '4XL': 8, Unique: 9 };
+    const by = {};
+    for (const s of all) {
+      const key = s.product;
+      if (!by[key]) by[key] = { product: key, sizes: {}, total: 0, image: null, price: prices[key] ?? null };
+      const sz = (s.size && String(s.size).trim()) ? String(s.size).trim() : '—';
+      by[key].sizes[sz] = (by[key].sizes[sz] || 0) + (s.qty || 0);
+      by[key].total += (s.qty || 0);
+      if (!by[key].image && s.image && String(s.image).trim()) by[key].image = String(s.image).trim();
+    }
+    const products = Object.values(by).map((p) => {
+      p.image = p.image || images[p.product] || null;
+      p.sizes = Object.entries(p.sizes)
+        .map(([size, qty]) => ({ size, qty }))
+        .sort((a, b) => (SIZE_ORDER[a.size] || 50) - (SIZE_ORDER[b.size] || 50) || a.size.localeCompare(b.size));
+      return p;
+    }).sort((a, b) => b.total - a.total);
+
+    res.setHeader('Cache-Control', 's-maxage=120, stale-while-revalidate=600');
+    return res.status(200).json({ products, count: products.length, units: all.reduce((a, s) => a + (s.qty || 0), 0) });
+  } catch (e) { return res.status(500).json({ error: e.message }); }
+}
+
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
@@ -918,6 +973,9 @@ module.exports = async function handler(req, res) {
   if (req.method === 'GET' && req.query?.history) return historyList(req, res);
   if (req.method === 'GET' && req.query?.bestsellers) return bestSellers(req, res);
   if (req.method === 'GET' && req.query?.delivered) return deliveredSellers(req, res);
+
+  // Catalogue magasin (vitrine /catalogue — lecture seule)
+  if (req.query?.cat === 'list') return catList(req, res);
 
   // Inventaire physique (réconciliation stock ↔ dépôt)
   if (req.query?.inv === 'list') return invList(req, res);

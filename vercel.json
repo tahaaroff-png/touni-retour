@@ -32,7 +32,9 @@
     { "source": "/top-produits", "destination": "/bestsellers.html" },
     { "source": "/best-sellers", "destination": "/bestsellers.html" },
     { "source": "/rupture", "destination": "/rupture.html" },
-    { "source": "/inventaire", "destination": "/inventaire.html" }
+    { "source": "/inventaire", "destination": "/inventaire.html" },
+    { "source": "/catalogue", "destination": "/catalogue.html" },
+    { "source": "/vitrine", "destination": "/catalogue.html" }
   ],
   "headers": [
     {
