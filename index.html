@@ -579,22 +579,41 @@ function sortSizes(arr){
 }
 
 // AUTH
-function login() {
-  var val = document.getElementById('pwd-input').value;
-  if (val === PWD_ADMIN) {
-    sessionStorage.setItem('role','admin');
-  } else if (val === PWD_STAFF) {
-    sessionStorage.setItem('role','staff');
-  } else {
-    document.getElementById('login-err').style.display = 'block';
-    return;
-  }
+// Rôles : opératrice (touni123) = staff, aucune édition de prix ;
+// propriétaire = son code perso (= env OWNER_PRICE_KEY), validé CÔTÉ SERVEUR,
+// déverrouille l'édition des prix sur /catalogue (pin propagé en localStorage).
+// 'Fitfat25!' reste un accès admin historique au dashboard, sans édition de prix
+// (sauf si le patron définit OWNER_PRICE_KEY = Fitfat25!).
+async function verifyOwnerCode(code) {
+  try {
+    var r = await fetch('/api/notifications?action=cat_price_set&secret=touni-sync-2026',
+      { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ pin: code, verify: true }) });
+    return r.ok;
+  } catch(e) { return false; }
+}
+function enterOwner(code){ sessionStorage.setItem('role','admin'); try{ localStorage.setItem('touni_owner_pin', code); }catch(e){} }
+function enterAdmin(){ sessionStorage.setItem('role','admin'); try{ localStorage.removeItem('touni_owner_pin'); }catch(e){} }
+function enterStaff(){ sessionStorage.setItem('role','staff'); try{ localStorage.removeItem('touni_owner_pin'); }catch(e){} }
+function afterLogin(){
   document.getElementById('login-page').style.display = 'none';
   document.getElementById('app-page').style.display = 'flex';
   applyRole();
   startApp();
 }
-function logout() { sessionStorage.removeItem('role'); location.reload(); }
+async function login() {
+  var btn = document.querySelector('.btn-login');
+  var val = document.getElementById('pwd-input').value;
+  if (val === PWD_STAFF) { enterStaff(); afterLogin(); return; }
+  // Code propriétaire = OWNER_PRICE_KEY (vérifié serveur) → accès amplifié + édition prix
+  if (btn) { btn.disabled = true; }
+  var isOwner = (val && val !== PWD_ADMIN) ? await verifyOwnerCode(val) : false;
+  if (!isOwner && val === PWD_ADMIN) { isOwner = await verifyOwnerCode(val); } // Fitfat25! = owner si OWNER_PRICE_KEY=Fitfat25!
+  if (btn) { btn.disabled = false; }
+  if (isOwner) { enterOwner(val); afterLogin(); return; }
+  if (val === PWD_ADMIN) { enterAdmin(); afterLogin(); return; }
+  document.getElementById('login-err').style.display = 'block';
+}
+function logout() { sessionStorage.removeItem('role'); try{ localStorage.removeItem('touni_owner_pin'); }catch(e){} location.reload(); }
 function applyRole() {
   var role = sessionStorage.getItem('role');
   document.getElementById('stock-orders-btn').style.display = ''; // utile aux 2 rôles

@@ -249,8 +249,8 @@ header{position:sticky;top:0;z-index:40;margin:0 -20px;padding:14px 20px 12px;
       <div class="toggle" id="priceToggle" role="switch" aria-checked="false" tabindex="0">
         <span class="sw"></span><span>Afficher les prix</span>
       </div>
-      <div class="ownerbtn" id="ownerBtn" role="button" tabindex="0" title="Espace propriétaire">
-        <span id="ownerIco">🔒</span><span id="ownerLbl">Proprio</span>
+      <div class="ownerbtn on" id="roleChip" style="display:none;cursor:default" title="Édition des prix activée">
+        <span>🔓</span><span>Propriétaire</span>
       </div>
     </div>
 
@@ -552,30 +552,14 @@ $('#resetBtn').addEventListener('click',()=>{
   render();
 });
 
-/* ── Espace PROPRIÉTAIRE (édition des prix, verrouillé par PIN serveur) ──
-   Le PIN n'est JAMAIS en clair ici : il est vérifié côté serveur contre
-   OWNER_PRICE_KEY. L'opératrice n'a pas le PIN → aucun crayon, lecture seule. */
-function reflectOwnerBtn(){
-  const b=$('#ownerBtn');if(!b)return;
-  b.classList.toggle('on',ownerMode);
-  $('#ownerIco').textContent=ownerMode?'🔓':'🔒';
-  $('#ownerLbl').textContent=ownerMode?'Proprio ✓ (quitter)':'Proprio';
-}
-async function ownerUnlock(){
-  const pin=(prompt('Code propriétaire :')||'').trim();
-  if(!pin) return;
-  try{
-    const r=await fetch(`${API}?action=cat_price_set&secret=${SECRET}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pin,verify:true})});
-    if(r.ok){ownerPin=pin;ownerMode=true;try{localStorage.setItem('touni_owner_pin',pin);}catch(e){}reflectOwnerBtn();render();}
-    else if(r.status===403){alert('Édition des prix désactivée : OWNER_PRICE_KEY non définie côté serveur (Vercel).');}
-    else{alert('Code incorrect.');}
-  }catch(e){alert('Connexion impossible. Réessaie.');}
-}
-function ownerLock(){ownerMode=false;ownerPin='';try{localStorage.removeItem('touni_owner_pin');}catch(e){}reflectOwnerBtn();closeEdit();render();}
-function toggleOwner(){ownerMode?ownerLock():ownerUnlock();}
-$('#ownerBtn').addEventListener('click',toggleOwner);
-$('#ownerBtn').addEventListener('keydown',e=>{if(e.key===' '||e.key==='Enter'){e.preventDefault();toggleOwner();}});
-reflectOwnerBtn();
+/* ── Rôle PROPRIÉTAIRE (édition des prix) ──
+   Le mode proprio est hérité du LOGIN du gestionnaire : au login avec le code
+   propriétaire (= OWNER_PRICE_KEY, vérifié côté serveur dans index.html), le pin
+   est propagé en localStorage ('touni_owner_pin'). L'opératrice (touni123) n'a pas
+   ce pin → aucun crayon, lecture seule. Le serveur revalide chaque écriture, donc
+   forcer l'UI ne permet jamais d'écrire un prix sans le bon code. */
+function reflectRole(){ const c=$('#roleChip'); if(c) c.style.display=ownerMode?'flex':'none'; }
+reflectRole();
 
 /* ── Modale d'édition de prix ── */
 let editPid=null;
