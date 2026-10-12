@@ -74,7 +74,8 @@ body{font-family:var(--font-main);background:var(--bg);color:var(--text);min-hei
 #app-page.shell{display:flex;min-height:100vh;align-items:stretch}
 .sidebar{width:216px;flex-shrink:0;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;padding:16px 12px;gap:2px;position:sticky;top:0;height:100vh;overflow-y:auto;z-index:200}
 .side-logo{display:flex;align-items:center;gap:9px;padding:2px 8px 12px;border-bottom:1px solid var(--border);margin-bottom:6px}
-.side-logo img{height:40px;width:auto;object-fit:contain}
+/* Sidebar à fond sombre (dégradé) → logo noir rendu BLANC pour qu'il soit visible. */
+.side-logo img{height:40px;width:auto;object-fit:contain;filter:brightness(0) invert(1)}
 .side-ttl{font-family:var(--font-main);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.14em;color:var(--muted)}
 .side-sec{font-family:var(--font-main);font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.14em;color:var(--muted2);margin:14px 10px 5px}
 .side-link{display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:9px;font-family:var(--font-main);font-size:13px;font-weight:600;color:var(--text);text-decoration:none;cursor:pointer;border:0;background:transparent;width:100%;text-align:left;transition:background .15s,color .15s;white-space:nowrap;text-transform:none;letter-spacing:0}

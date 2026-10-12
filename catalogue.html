@@ -118,7 +118,8 @@ header.hdr-hidden{transform:translateY(-100%)}
 /* inner core (double-bezel) */
 .media{position:relative;border-radius:calc(var(--r-lg) - 7px);overflow:hidden;background:var(--ink2);
   aspect-ratio:3/4;box-shadow:inset 0 1px 1px rgba(255,255,255,.07)}
-.media img{width:100%;height:100%;object-fit:cover;display:block;transition:transform .8s var(--ease);cursor:zoom-in}
+/* Cadrage carte : garde le HAUT du sujet (tête+buste), rogne les pieds — pas le lightbox. */
+.media img{width:100%;height:100%;object-fit:cover;object-position:top center;display:block;transition:transform .8s var(--ease);cursor:zoom-in}
 .card:hover .media img{transform:scale(1.045)}
 .noimg{width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:var(--muted2);font-size:12px;letter-spacing:.1em;text-transform:uppercase}
 .catbadge{position:absolute;top:10px;left:10px;z-index:3;font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;
@@ -356,7 +357,8 @@ function offrePricing(name){
   const RETRO_KW=/retro|vintage/.test(n);
   const CDM=/coupe du monde|\bcdm\b|world cup|mondial/.test(n);
   if(/casquette|\bbob\b|bonnet|trucker/.test(n)){
-    const luxe=/monogramme|\bluxe\b|\bcoach\b|signature|\bcuir\b|lacoste|croco/.test(n);
+    // Luxe (249) = motifs à carreaux / monogramme / Gucci / Louis Vuitton (LV token) / Chanel.
+    const luxe=/carreaux|damier|monogramme|gucci|louis vuitton|chanel|\blv\b/.test(n);
     return luxe?{cat:'Casquette luxe',price:249,old:299}:{cat:'Casquette',price:199,old:279};
   }
   if(/chaussette|socquette/.test(n)){
@@ -590,19 +592,18 @@ $('#resetBtn').addEventListener('click',()=>{
    revient au scroll-haut. translateY doux + seuil anti-jitter. En haut = visible. */
 (function(){
   const HDR=document.querySelector('header'); if(!HDR) return;
-  let lastY=window.scrollY||0, hidden=false, ticking=false;
+  let lastY=window.scrollY||0, hidden=false;
   const TH=10;            // seuil anti-jitter (px)
   const TOP_SAFE=90;      // près du haut → toujours visible
-  function update(){
-    ticking=false;
+  function onScroll(){
     const y=window.scrollY||0, dy=y-lastY;
     if(y<=TOP_SAFE){ if(hidden){HDR.classList.remove('hdr-hidden');hidden=false;} lastY=y; return; }
     if(Math.abs(dy)<TH) return;
-    if(dy>0 && !hidden){ HDR.classList.add('hdr-hidden'); hidden=true; }      // scroll bas → masque
+    if(dy>0 && !hidden){ HDR.classList.add('hdr-hidden'); hidden=true; }         // scroll bas → masque
     else if(dy<0 && hidden){ HDR.classList.remove('hdr-hidden'); hidden=false; } // scroll haut → montre
     lastY=y;
   }
-  window.addEventListener('scroll',()=>{ if(!ticking){ ticking=true; requestAnimationFrame(update); } },{passive:true});
+  window.addEventListener('scroll',onScroll,{passive:true});
 })();
 
 /* ── Rôle PROPRIÉTAIRE (édition des prix) ──
