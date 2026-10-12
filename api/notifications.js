@@ -890,6 +890,21 @@ async function catList(req, res) {
       if (r.ok) { (await r.json()).forEach((p) => { if (!(p.product_title in prices)) prices[p.product_title] = Number(p.price); }); }
     } catch (e) { /* prix optionnels */ }
 
+    // 3b) Enrichissement live Shopify (prix manquants + image de dernier recours).
+    // Réutilise fetchShopifyProductsAdmin (déjà importé). Optionnel : en cas d'échec on garde
+    // price_backups + le cache des variantes, donc rien ne casse si Shopify est indisponible.
+    const live = {};
+    try {
+      const sp = await fetchShopifyProductsAdmin();
+      for (const p of (sp || [])) {
+        if (!p || !p.title || (p.title in live)) continue;
+        const v = (p.variants || [])[0];
+        const im = (p.images || [])[0];
+        const pr = v && v.price != null ? Number(v.price) : null;
+        live[p.title] = { price: (pr && pr > 0) ? pr : null, image: (im && im.src) ? im.src : null };
+      }
+    } catch (e) { /* live Shopify optionnel */ }
+
     // 4) Groupement par modèle
     const SIZE_ORDER = { XS: 1, S: 2, M: 3, L: 4, XL: 5, '2XL': 6, XXL: 6, '3XL': 7, '4XL': 8, Unique: 9 };
     const by = {};
@@ -902,7 +917,15 @@ async function catList(req, res) {
       if (!by[key].image && s.image && String(s.image).trim()) by[key].image = String(s.image).trim();
     }
     const products = Object.values(by).map((p) => {
-      p.image = p.image || images[p.product] || null;
+      // Image : stock (porté) en primaire, cache/live Shopify en secours (l'URL stock peut être 404).
+      const cacheImg = images[p.product] || null;
+      const liveImg = (live[p.product] && live[p.product].image) || null;
+      const primary = p.image || cacheImg || liveImg || null;
+      const fallback = cacheImg || liveImg || null;
+      p.image = primary;
+      p.image_fallback = (fallback && fallback !== primary) ? fallback : null;
+      // Prix : price_backups prioritaire, sinon prix live Shopify (comble les modèles sans backup).
+      if (p.price == null && live[p.product] && live[p.product].price != null) p.price = live[p.product].price;
       p.sizes = Object.entries(p.sizes)
         .map(([size, qty]) => ({ size, qty }))
         .sort((a, b) => (SIZE_ORDER[a.size] || 50) - (SIZE_ORDER[b.size] || 50) || a.size.localeCompare(b.size));

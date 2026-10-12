@@ -327,7 +327,7 @@ function render(){
 
 function cardHtml(p){
   const img=p.image
-    ? `<img src="${esc(p.image)}" loading="lazy" alt="${esc(p.product)}" onclick="openLb('${esc(p.image).replace(/'/g,"\\'")}','${esc(p.product).replace(/'/g,"\\'")}')" onerror="this.parentNode.innerHTML='<div class=&quot;noimg&quot;>Image à venir</div>'">`
+    ? `<img src="${esc(p.image)}"${p.image_fallback?` data-fb="${esc(p.image_fallback)}"`:''} loading="lazy" alt="${esc(p.product)}" onclick="openLb((this.currentSrc||this.src),'${esc(p.product).replace(/'/g,"\\'")}')" onerror="imgFallback(this)">`
     : `<div class="noimg">Image à venir</div>`;
   const sz=p.sizes.map(s=>{
     const lbl=s.size==='—'?'Unique':s.size;
@@ -350,6 +350,12 @@ function cardHtml(p){
 }
 
 /* ── Lightbox ── */
+/* L'URL d'image stock peut être morte (404) : on bascule une fois sur l'image de secours (cache/live Shopify) avant d'afficher « Image à venir ». */
+function imgFallback(el){
+  const fb=el.getAttribute('data-fb');
+  if(fb && el.getAttribute('src')!==fb){el.removeAttribute('data-fb');el.setAttribute('src',fb);return;}
+  el.parentNode.innerHTML='<div class="noimg">Image à venir</div>';
+}
 function openLb(src,cap){$('#lbimg').src=src;$('#lbcap').textContent=cap;$('#lb').classList.add('open');}
 function closeLb(){$('#lb').classList.remove('open');setTimeout(()=>{$('#lbimg').src='';},350);}
 $('#lb').addEventListener('click',e=>{if(e.target.id==='lb'||e.target.id==='lbx')closeLb();});
