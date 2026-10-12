@@ -137,6 +137,20 @@ header{position:sticky;top:0;z-index:40;margin:0 -20px;padding:14px 20px 12px;
   border:1px solid var(--line);border-radius:8px;padding:5px 9px;display:flex;align-items:center;gap:5px;line-height:1}
 .szchip i{font-style:normal;font-size:9.5px;color:var(--muted2);font-weight:600}
 .szchip.hl{background:var(--red-soft);border-color:rgba(228,18,31,.4);color:#fff}
+/* ── Offre d'ouverture (affichage magasin, réversible) ── */
+.po-badge{display:inline-block;font-family:var(--head);font-size:9px;font-weight:800;letter-spacing:.11em;text-transform:uppercase;
+  color:#fff;background:linear-gradient(135deg,var(--red),var(--red-ink));border-radius:999px;padding:3px 9px;margin-bottom:6px;
+  box-shadow:0 6px 16px -6px rgba(228,18,31,.7)}
+.po-new{color:var(--red);font-weight:800}
+.po-old{margin-left:8px;color:var(--muted2);font-weight:600;font-size:12px;text-decoration:line-through;text-decoration-color:rgba(228,18,31,.55)}
+.po-note{display:block;margin-top:3px;font-size:10px;color:var(--muted2);font-weight:500;letter-spacing:.04em}
+/* ruban global dans le header quand l'offre est active */
+.obar{margin-top:10px;display:flex;align-items:center;gap:9px;font-size:11.5px;font-weight:600;color:#fff;
+  background:linear-gradient(135deg,rgba(228,18,31,.16),rgba(228,18,31,.06));border:1px solid rgba(228,18,31,.4);
+  border-radius:12px;padding:9px 13px}
+.obar b{font-family:var(--head);font-weight:900;letter-spacing:.04em}
+.obar .tag{font-family:var(--head);font-size:9px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#fff;
+  background:linear-gradient(135deg,var(--red),var(--red-ink));border-radius:999px;padding:3px 9px}
 
 /* état vide / chargement */
 .state{grid-column:1/-1;text-align:center;padding:80px 20px;color:var(--muted)}
@@ -236,6 +250,55 @@ const norm=s=>(s||'').toString().toLowerCase().normalize('NFD').replace(/[\u0300
 
 let ALL=[], activeCat='*', activeSize='*', query='', showPrice=false;
 
+/* ─────────────────────────────────────────────────────────────────────────
+   OFFRE D'OUVERTURE — grille de prix magasin temporaire & réversible.
+   • Interrupteur : OFFRE_OUVERTURE (par défaut true). Désactivable sans
+     redéployer la logique via l'URL : ?offre=0 (forcer OFF) / ?offre=1 (forcer ON).
+   • N'impacte PAS Shopify ni la boutique en ligne : simple affichage catalogue.
+   • Un produit non reconnu garde son prix Shopify actuel (aucune casse).
+   Pour couper l'offre après l'ouverture : mettre OFFRE_OUVERTURE=false ci-dessous.
+   ───────────────────────────────────────────────────────────────────────── */
+let OFFRE_OUVERTURE = true;
+try{const o=new URLSearchParams(location.search).get('offre');if(o==='0'||o==='off')OFFRE_OUVERTURE=false;if(o==='1'||o==='on')OFFRE_OUVERTURE=true;}catch(e){}
+
+/* Classe un produit (depuis son titre) → une catégorie de la grille d'ouverture.
+   Priorité aux spécificités : accessoires/non-maillots d'abord, puis
+   édition spéciale/Terrace > ML > maillot de base. Retourne null si non classé. */
+function offrePricing(name){
+  const n=norm(name);
+  const ML=/manches? longues?|long sleeve|\bml\b/.test(n);
+  const SPECIAL=/terrace|\bedition\b|anniversaire|mamba|\bkobe\b|limited|limitee|collector|\bspecial/.test(n);
+  if(/casquette|\bbob\b|bonnet|trucker/.test(n)){
+    const luxe=/monogramme|\bluxe\b|\bcoach\b|signature|\bcuir\b|lacoste|croco/.test(n);
+    return luxe?{cat:'Casquette luxe',price:229,old:279}:{cat:'Casquette',price:199,old:279};
+  }
+  if(/chaussette|socquette/.test(n)){
+    const p5=/pack ?5|x ?5|lot ?5|5 paires|5-pack/.test(n);
+    return p5?{cat:'Chaussettes pack 5',price:199,old:null}:{cat:'Chaussettes pack 3',price:149,old:null};
+  }
+  if(/\bgants?\b/.test(n)) return {cat:'Gants',price:199,old:279};
+  if(/serviette/.test(n)) return {cat:'Serviette',price:279,old:349};
+  if(/ballon/.test(n)) return {cat:'Ballon',price:399,old:499};
+  if(/sacoche|banane/.test(n)) return {cat:'Sacoche',price:229,old:329};
+  if(/sac a dos|sac de sport|\bsac\b|\bsacs\b/.test(n)) return {cat:'Sac à dos',price:329,old:449};
+  if(/chemise/.test(n)) return {cat:'Chemise supporter',price:349,old:449};
+  if(/sweat|hoodie|demi.?zip|half.?zip|capuche/.test(n)) return {cat:'Sweat/Hoodie',price:399,old:499};
+  if(/\bpolo\b/.test(n)) return {cat:'Polo',price:379,old:479};
+  if(/t-?shirt|tee\b|tshirt/.test(n)) return {cat:'T-shirt',price:269,old:349};
+  if((/\bpantalon\b|\blegging\b|\bjogging\b/.test(n))&&!/ensemble/.test(n)) return null; // pantalon/veste seuls : hors grille
+  if(/\bensemble\b|tracksuit|surv(e|ê)t/.test(n)) return {cat:'Ensemble survêtement',price:599,old:749};
+  if(/\bkit\b/.test(n)) return {cat:'Kit maillot+short',price:499,old:599};
+  if(/\bshort\b/.test(n)) return {cat:'Short',price:249,old:299};
+  if(/retro/.test(n)) return {cat:'Maillot rétro',price:349,old:449};
+  if(/maillot|jersey/.test(n)){
+    if(SPECIAL&&ML) return {cat:'Édition spéciale ML / Terrace ML',price:399,old:499};
+    if(SPECIAL)     return {cat:'Édition spéciale / Terrace Icons',price:379,old:449};
+    if(ML)          return {cat:'Maillot ML',price:349,old:449};
+    return {cat:'Maillot MC',price:299,old:379};
+  }
+  return null; // non classé → garder le prix Shopify
+}
+
 /* ── Catégorisation à partir du nom (pas de colonne dédiée en base) ── */
 function categorize(name){
   const n=norm(name);
@@ -263,7 +326,7 @@ async function load(){
     const r=await fetch(`${API}?cat=list&secret=${SECRET}`);
     if(!r.ok) throw new Error('HTTP '+r.status);
     const j=await r.json();
-    ALL=(j.products||[]).map(p=>({...p,cat:categorize(p.product),_search:norm(p.product)}));
+    ALL=(j.products||[]).map(p=>({...p,cat:categorize(p.product),offre:offrePricing(p.product),_search:norm(p.product)}));
     $('#liveTxt').textContent=`${j.count} modèles · ${j.units} pièces`;
     buildFilters();
     render();
@@ -334,7 +397,7 @@ function cardHtml(p){
     const hl=(activeSize!=='*'&&normSize(s.size)===activeSize)?' hl':'';
     return `<span class="szchip${hl}">${esc(lbl)} <i>${s.qty}</i></span>`;
   }).join('');
-  const price=p.price?`<div class="price${showPrice?' show':''}">${Math.round(p.price)} DH</div>`:`<div class="price${showPrice?' show':''}" style="color:var(--muted2)">Prix —</div>`;
+  const price=priceHtml(p);
   return `<article class="card">
     <div class="media">
       ${img}
@@ -347,6 +410,19 @@ function cardHtml(p){
       <div class="szrow">${sz}</div>
     </div>
   </article>`;
+}
+
+/* Construit le bloc prix d'une carte (offre d'ouverture ou prix Shopify). */
+function priceHtml(p){
+  const sh=showPrice?' show':'';
+  if(OFFRE_OUVERTURE && p.offre){
+    const oldHtml=p.offre.old?`<span class="po-old">${p.offre.old} DH</span>`:'';
+    return `<div class="price${sh}"><span class="po-badge">Offre d'ouverture</span>`+
+           `<span class="po-new">${p.offre.price} DH</span>${oldHtml}</div>`;
+  }
+  if(p.price!=null) return `<div class="price${sh}">${Math.round(p.price)} DH`+
+    (OFFRE_OUVERTURE?`<span class="po-note">Prix magasin</span>`:'')+`</div>`;
+  return `<div class="price${sh}" style="color:var(--muted2)">Prix —</div>`;
 }
 
 /* ── Lightbox ── */
@@ -377,8 +453,18 @@ $('#resetBtn').addEventListener('click',()=>{
   render();
 });
 
-try{if(localStorage.getItem('touni_cat_price')==='1')showPrice=true;}catch(e){}
+/* Prix visibles par défaut quand l'offre d'ouverture est active ; un choix déjà
+   mémorisé par l'utilisateur reste prioritaire. */
+showPrice=OFFRE_OUVERTURE;
+try{const st=localStorage.getItem('touni_cat_price');if(st!==null)showPrice=(st==='1');}catch(e){}
 if(showPrice){$('#priceToggle').classList.add('on');$('#priceToggle').setAttribute('aria-checked','true');}
+
+/* Ruban « Offre d'ouverture » dans le header (indicateur visuel du mode). */
+if(OFFRE_OUVERTURE){
+  const bar=document.createElement('div');bar.className='obar';
+  bar.innerHTML=`<span class="tag">Offre d'ouverture</span><span><b>Prix d'ouverture magasin</b> — tarifs spéciaux, pour une durée limitée.</span>`;
+  document.querySelector('.filters').insertAdjacentElement('afterend',bar);
+}
 load();
 </script>
 </body>
