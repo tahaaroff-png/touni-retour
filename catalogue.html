@@ -63,6 +63,8 @@ header.hdr-hidden{transform:translateY(-100%)}
 @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(38,208,124,.45)}70%{box-shadow:0 0 0 7px rgba(38,208,124,0)}100%{box-shadow:0 0 0 0 rgba(38,208,124,0)}}
 .navlink{font-size:12px;font-weight:600;text-decoration:none;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:8px 14px;transition:.25s var(--ease);white-space:nowrap}
 .navlink:hover{color:#fff;border-color:var(--line2);background:rgba(255,255,255,.05)}
+.navlink.back{color:#fff;border-color:rgba(228,18,31,.4);background:var(--red-soft)}
+.navlink.back:hover{border-color:var(--red);background:rgba(228,18,31,.2)}
 
 /* search + toggle */
 .tools{display:flex;gap:10px;margin-top:10px;align-items:center;flex-wrap:wrap}
@@ -234,6 +236,7 @@ header.hdr-hidden{transform:translateY(-100%)}
 <div class="wrap">
   <header>
     <div class="hrow">
+      <a class="navlink back" href="/" title="Retour au gestionnaire de stock">← Gestionnaire</a>
       <div class="brand">
         <img class="logo" src="/touni-logo.png" alt="Touni" onerror="this.style.display='none'">
         <div>
