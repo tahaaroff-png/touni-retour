@@ -118,9 +118,38 @@ async function metaSendText(toWaId, text) {
   // 131047 = hors fenêtre 24h → l'appelant gère (template + file d'attente).
   return { status: r.ok ? 'success' : 'error', http: r.status, ...json };
 }
-// egrowSend garde sa signature (integrationId ignoré) mais envoie DÉSORMAIS via la Cloud API officielle.
+// ✅ Envoi TEXTE via eGrow V2 (GraphQL api5) — BSP eGrow = utilise SON accès Cloud API + SA facturation.
+// Contourne le blocage « Paid Message Account » (#10) du token Meta direct, et garde le numéro en Coexistence
+// (0625254090 reste actif sur l'app WhatsApp Business du téléphone). Connexion 7887 = +212 625-254090.
+const EGROW_V2_URL         = process.env.EGROW_V2_URL         || 'https://api5.egrow.com/graphql';
+const EGROW_V2_KEY         = process.env.EGROW_V2_KEY         || 'a9671816046a83dbafe0916d0b9f432d';
+const EGROW_V2_CONN        = parseInt(process.env.EGROW_V2_CONN        || '7887', 10); // userConnectionId (0625254090)
+const EGROW_V2_INTEGRATION = parseInt(process.env.EGROW_V2_INTEGRATION || '59', 10);   // integrationId (Whatsapp API)
+async function egrowV2Send(toWaId, text) {
+  const to = String(toWaId).replace(/\D/g, '');
+  if (!to) return { status: 'error', message: 'destinataire vide' };
+  const query = 'mutation($in:InboxSendConversationMessageInput!){ inboxSendConversationMessage(input:$in){ userErrors{field message} message{ id createdAt } } }';
+  const variables = { in: { integrationId: EGROW_V2_INTEGRATION, userConnectionId: EGROW_V2_CONN, externalCustomerId: to, messageType: 'text', messageContent: { body: String(text) } } };
+  try {
+    const r = await fetch(EGROW_V2_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-API-Key': EGROW_V2_KEY, 'User-Agent': EGROW_UA },
+      body: JSON.stringify({ query, variables }),
+    });
+    const j = await r.json().catch(() => null);
+    const node = j && j.data && j.data.inboxSendConversationMessage;
+    const userErrors = (node && node.userErrors) || [];
+    if (node && node.message && node.message.id && !userErrors.length) {
+      return { status: 'success', http: r.status, id: node.message.id };
+    }
+    return { status: 'error', http: r.status, userErrors, errors: (j && j.errors) || null };
+  } catch (e) {
+    return { status: 'error', message: String((e && e.message) || e) };
+  }
+}
+// egrowSend garde sa signature (integrationId ignoré) mais envoie DÉSORMAIS via eGrow V2 (connexion 7887).
 async function egrowSend(integrationId, toWaId, text) {
-  return metaSendText(toWaId, text);
+  return egrowV2Send(toWaId, text);
 }
 // Envoi d'un template WhatsApp via Meta Cloud API (hors fenêtre 24h)
 // eGrow /inbox/send_conversation_template_message.php requiert un cookie session navigateur → inaccessible côté serveur.
@@ -1448,6 +1477,28 @@ module.exports = async (req, res) => {
     const to = String(q.to || MERCHANT_PHONE).replace(/\D/g, '');
     const result = await metaSendText(to, q.msg || 'Test technique Touni — envoi via Cloud API officielle. Message de verification, tu peux ignorer.');
     return res.status(200).json({ to, via: 'meta_cloud_api', result });
+  }
+  // ── Diag CONFIG du bot (non-secret) ──
+  if (q.diagcfg === '1') {
+    return res.status(200).json({
+      integrations: INTEGRATIONS, operator_phones: OPERATOR_PHONES, merchant_phone: MERCHANT_PHONE,
+      egrow_me_set: !!EGROW_ME, egrow_ak_set: !!EGROW_AK, egrow_me: EGROW_ME ? String(EGROW_ME).slice(0, 4) + '…' : null,
+      meta_token_set: !!META_WA_TOKEN, meta_phone_id: META_WA_PHONE_ID,
+      bot_enabled: process.env.BOT_ENABLED !== '0', fresh_window_sec: FRESH_WINDOW_SEC,
+    });
+  }
+  // ── Diag LECTURE inbox V1 (le bot voit-il les messages entrants ?) ──
+  if (q.diagread === '1') {
+    const out = [];
+    for (const ig of INTEGRATIONS) {
+      try {
+        const conv = await egrowGetConversations(ig, 1);
+        let list = conv;
+        if (conv && typeof conv === 'object' && !Array.isArray(conv)) list = conv.data || conv.conversations || conv.result || [];
+        out.push({ integration: ig, count: Array.isArray(list) ? list.length : null, keys: conv && typeof conv === 'object' ? Object.keys(conv).slice(0, 10) : null, sample: Array.isArray(list) ? list.slice(0, 3).map((c) => ({ id: c.id || c.conversation_id, name: c.name || c.contact_name, phone: c.phone || c.wa_id || c.number })) : list });
+      } catch (e) { out.push({ integration: ig, error: String(e) }); }
+    }
+    return res.status(200).json({ integrations: INTEGRATIONS, results: out });
   }
   // Interrupteur global — BOT_ENABLED=0 dans Vercel pour couper le bot sans toucher au code
   if (process.env.BOT_ENABLED === '0') return res.status(200).json({ ok: true, status: 'bot_disabled' });
