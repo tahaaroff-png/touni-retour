@@ -203,11 +203,15 @@ async function metaSendText(toWaId, text) {
 // ✅ Envoi TEXTE via eGrow V2 (GraphQL api5) — BSP eGrow = utilise SON accès Cloud API + SA facturation.
 // Contourne le blocage « Paid Message Account » (#10) du token Meta direct, et garde le numéro en Coexistence
 // (0625254090 reste actif sur l'app WhatsApp Business du téléphone). Connexion 7887 = +212 625-254090.
-async function egrowV2Send(toWaId, text) {
-  const to = String(toWaId).replace(/\D/g, '');
-  if (!to) return { status: 'error', message: 'destinataire vide' };
+async function egrowV2Send(toWaId, text, convId) {
+  const to = String(toWaId || '').replace(/\D/g, '');
+  // ⚠️ Répondre par conversationId quand on l'a (fil EXACT) — indispensable pour les leads pub « click-to-WhatsApp »
+  // dont le "numéro" est un id de référence (ex 143645074858564) : envoyer par externalCustomerId créerait un AUTRE fil.
+  if (!to && !convId) return { status: 'error', message: 'destinataire vide' };
   const query = 'mutation($in:InboxSendConversationMessageInput!){ inboxSendConversationMessage(input:$in){ userErrors{field message} message{ id createdAt } } }';
-  const variables = { in: { integrationId: EGROW_V2_INTEGRATION, userConnectionId: EGROW_V2_CONN, externalCustomerId: to, messageType: 'text', messageContent: { body: String(text) } } };
+  const inInput = { integrationId: EGROW_V2_INTEGRATION, userConnectionId: EGROW_V2_CONN, messageType: 'text', messageContent: { body: String(text) } };
+  if (convId) inInput.conversationId = Number(convId); else inInput.externalCustomerId = to;
+  const variables = { in: inInput };
   try {
     const r = await fetch(EGROW_V2_URL, {
       method: 'POST',
@@ -226,8 +230,9 @@ async function egrowV2Send(toWaId, text) {
   }
 }
 // egrowSend garde sa signature (integrationId ignoré) mais envoie DÉSORMAIS via eGrow V2 (connexion 7887).
-async function egrowSend(integrationId, toWaId, text) {
-  return egrowV2Send(toWaId, text);
+// convId optionnel : si fourni, on répond dans CE fil exact (réponses clients) ; sinon par numéro (notifs opératrice/patron).
+async function egrowSend(integrationId, toWaId, text, convId) {
+  return egrowV2Send(toWaId, text, convId);
 }
 // Envoi d'un template WhatsApp via Meta Cloud API (hors fenêtre 24h)
 // eGrow /inbox/send_conversation_template_message.php requiert un cookie session navigateur → inaccessible côté serveur.
@@ -1203,7 +1208,7 @@ async function runPoll(q) {
             const msg = cmd === 'client'
               ? "✅ Mode CLIENT activé — je te traite maintenant comme un client (tu peux tester l'expérience de vente). Envoie « mode patron » pour revenir à ton assistant."
               : "✅ Mode PATRON réactivé — je suis de nouveau ton assistant privé (ventes, pub Meta, commandes, stock).";
-            if (!dry) { try { await egrowSend(integrationId, contactWaId, msg); } catch (e) {} claimedMsgId = null; }
+            if (!dry) { try { await egrowSend(integrationId, contactWaId, msg, c.id); } catch (e) {} claimedMsgId = null; }
             results.push({ conv: c.id, phone: contactWaId, decision: 'mode->' + cmd });
             processed++; continue;
           }
@@ -1244,7 +1249,7 @@ async function runPoll(q) {
             // BOUTON : eGrow a déjà répondu (un template) juste après le clic → on ne double PAS. L'agent se tait.
             await releaseClaim(msgId); entry.sent = 'skip:template_a_repondu'; entry.decision = 'bouton_gere_par_template';
           } else {
-            const sendRes = await egrowSend(integrationId, contactWaId, decision.reply);
+            const sendRes = await egrowSend(integrationId, contactWaId, decision.reply, c.id); // c.id = fil exact (fiable pour les leads pub)
             entry.sent = sendRes && sendRes.status;
             if (sendRes && sendRes.status === 'success') { claimedMsgId = null; await markBotSent(c.id, integrationId, sendRes, decision.reply); } // envoi OK → ne PAS libérer + mémoriser le texte (handover + anti-doublon)
             else await releaseClaim(msgId);                                       // envoi raté → libère pour réessayer au prochain run
