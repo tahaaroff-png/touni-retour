@@ -12,6 +12,11 @@ const EGROW_BASE = 'https://api.egrow.com';
 // ⚠️ User-Agent navigateur OBLIGATOIRE : sans lui, eGrow renvoie 403 (anti-bot Cloudflare, code 1010) sur certains envois.
 const EGROW_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 const INTEGRATIONS = (process.env.EGROW_INTEGRATIONS || '5425').split(',').map((s) => s.trim()).filter(Boolean);
+// eGrow V2 (GraphQL api5) — canal WhatsApp réel depuis la transition V1→V2. Connexion 7887 = +212 625-254090 (numéro du bot, Coexistence).
+const EGROW_V2_URL         = process.env.EGROW_V2_URL         || 'https://api5.egrow.com/graphql';
+const EGROW_V2_KEY         = process.env.EGROW_V2_KEY         || 'a9671816046a83dbafe0916d0b9f432d';
+const EGROW_V2_CONN        = parseInt(process.env.EGROW_V2_CONN        || '7887', 10); // userConnectionId (0625254090)
+const EGROW_V2_INTEGRATION = parseInt(process.env.EGROW_V2_INTEGRATION || '59', 10);   // integrationId (Whatsapp API)
 const FRESH_WINDOW_SEC = parseInt(process.env.EGROW_FRESH_SEC || '600', 10); // ne répond qu'aux messages des 10 dernières min
 const HUMAN_HANDOVER_SEC = parseInt(process.env.EGROW_HUMAN_HANDOVER_SEC || '3600', 10); // si un humain (équipe) a répondu il y a < 1h, le bot se tait ; il ne reprend qu'après 1h sans réponse humaine
 const HISTORY_LIMIT = parseInt(process.env.EGROW_HISTORY_LIMIT || '8', 10);  // nb de messages d'historique lus (8 = suffisant, 20 = trop coûteux)
@@ -69,17 +74,82 @@ async function getBody(req) {
 }
 
 // ───────── API eGrow + anti-doublon Supabase (mode POLLER) ─────────
-async function egrowGetConversations(integrationId, page) {
-  const url = `${EGROW_BASE}/inbox/get_conversations.php?me=${EGROW_ME}&dev=0&integrationId=${integrationId}&page=${page}&limit=20`;
-  const r = await fetch(url, { headers: { 'account-key': EGROW_AK, 'User-Agent': EGROW_UA } });
-  const j = await r.json();
-  return (j && j.data) || [];
+// ── LECTURE INBOX via eGrow V2 (GraphQL api5) — le V1 (get_conversations.php) ne renvoie plus rien ──
+// On garde EXACTEMENT les mêmes formes de données que le V1 pour ne pas toucher à la boucle principale.
+// Timestamps renvoyés en SECONDES epoch (la boucle & humanHandling font parseInt dessus).
+async function egrowV2Query(query, variables) {
+  const r = await fetch(EGROW_V2_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-API-Key': EGROW_V2_KEY, 'User-Agent': EGROW_UA },
+    body: JSON.stringify({ query, variables: variables || {} }),
+  });
+  const j = await r.json().catch(() => null);
+  return (j && j.data) || null;
+}
+// Messages d'une conv (V2) → forme compatible V1 : [{id, mine, type, body, content, senderWaId, sentAt, createdAt, connId}], RÉCENT d'abord.
+async function egrowV2Messages(convId, limit) {
+  const q = 'query($id:Int!,$n:Int!){ inboxConversationMessages(conversationId:$id, perPage:$n){ nodes{ id externalMessageId isMine type content createdAt userConnection{ id } } } }';
+  const d = await egrowV2Query(q, { id: Number(convId), n: Number(limit || 14) });
+  const nodes = (d && d.inboxConversationMessages && d.inboxConversationMessages.nodes) || [];
+  const mapped = nodes.map((m) => {
+    const sec = Math.floor(Date.parse(m.createdAt || '') / 1000) || 0;
+    const mine = m.isMine === true;
+    return {
+      id: String(m.id || ''),
+      mine,
+      type: String(m.type || 'text'),
+      body: (m.content && m.content.body) || '',
+      content: m.content || {},
+      senderWaId: '',                 // direction = `mine` (humanHandling s'appuie sur mine pour le sortant)
+      sentAt: sec, createdAt: sec,
+      connId: (m.userConnection && m.userConnection.id) || null,
+    };
+  });
+  mapped.sort((a, b) => (b.sentAt || 0) - (a.sentAt || 0)); // récent d'abord (comme le V1)
+  return mapped;
 }
 async function egrowGetMessages(convId, limit) {
-  const url = `${EGROW_BASE}/inbox/get_conversation_messages.php?me=${EGROW_ME}&dev=0&conversationId=${convId}&page=1&limit=${limit || 14}`;
-  const r = await fetch(url, { headers: { 'account-key': EGROW_AK, 'User-Agent': EGROW_UA } });
-  const j = await r.json().catch(() => ({}));
-  return (j && j.data) || [];
+  try { return await egrowV2Messages(convId, limit); } catch (e) { return []; }
+}
+// Conversations avec un message FRAIS (V2) → forme compatible V1 attendue par la boucle.
+// Scope : uniquement la connexion du bot (EGROW_V2_CONN = 7887 / 0625254090). integrationId/page ignorés.
+async function egrowGetConversations(integrationId, page) {
+  const q = 'query{ inboxConversations(perPage:25, sortKey:UPDATED_AT, reverse:false){ nodes{ id updatedAt unreadCount displayTitle customer{ phoneWithCountryCode phone firstName displayName } } } }';
+  let d = null;
+  try { d = await egrowV2Query(q); } catch (e) { return []; }
+  const nodes = (d && d.inboxConversations && d.inboxConversations.nodes) || [];
+  const nowSec = Math.floor(Date.now() / 1000);
+  const out = [];
+  let scanned = 0;
+  for (const n of nodes) {
+    const updSec = Math.floor(Date.parse(n.updatedAt || '') / 1000) || 0;
+    if (!updSec) continue;
+    if ((nowSec - updSec) > (FRESH_WINDOW_SEC + 180)) break; // trié desc → au-delà de la fenêtre, plus rien de frais
+    if (scanned >= 20) break;
+    scanned++;
+    const cust = n.customer || {};
+    const phone = String(cust.phoneWithCountryCode || cust.phone || '').replace(/\D/g, '');
+    if (!phone) continue;
+    let lastArr = [];
+    try { lastArr = await egrowV2Messages(n.id, 1); } catch (e) {}
+    const lm = lastArr[0];
+    if (!lm) continue;
+    if (lm.connId && Number(lm.connId) !== EGROW_V2_CONN) continue; // autre numéro (ex: 780-615753) → hors scope
+    out.push({
+      id: n.id,
+      contactWaId: phone,
+      lastMessageTime: lm.sentAt || updSec,
+      lastMessage: {
+        id: lm.id,
+        body: lm.body,
+        type: lm.type,
+        senderWaId: lm.mine ? '' : phone, // entrant (mine=false) → senderWaId == contact → la boucle voit "incoming"
+        sentAt: lm.sentAt || updSec,
+        content: lm.content,
+      },
+    });
+  }
+  return out;
 }
 // Pour un clic de BOUTON : eGrow a-t-il DÉJÀ répondu (template) juste après le clic ? (dernier message = sortant/mine)
 // → si oui, l'agent ne répond pas (évite la double-réponse en cas de course poll/template).
@@ -121,10 +191,6 @@ async function metaSendText(toWaId, text) {
 // ✅ Envoi TEXTE via eGrow V2 (GraphQL api5) — BSP eGrow = utilise SON accès Cloud API + SA facturation.
 // Contourne le blocage « Paid Message Account » (#10) du token Meta direct, et garde le numéro en Coexistence
 // (0625254090 reste actif sur l'app WhatsApp Business du téléphone). Connexion 7887 = +212 625-254090.
-const EGROW_V2_URL         = process.env.EGROW_V2_URL         || 'https://api5.egrow.com/graphql';
-const EGROW_V2_KEY         = process.env.EGROW_V2_KEY         || 'a9671816046a83dbafe0916d0b9f432d';
-const EGROW_V2_CONN        = parseInt(process.env.EGROW_V2_CONN        || '7887', 10); // userConnectionId (0625254090)
-const EGROW_V2_INTEGRATION = parseInt(process.env.EGROW_V2_INTEGRATION || '59', 10);   // integrationId (Whatsapp API)
 async function egrowV2Send(toWaId, text) {
   const to = String(toWaId).replace(/\D/g, '');
   if (!to) return { status: 'error', message: 'destinataire vide' };
