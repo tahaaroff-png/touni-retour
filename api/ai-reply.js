@@ -1429,6 +1429,20 @@ module.exports = async (req, res) => {
       return res.status(200).json({ ok: r.ok, http: r.status, phone_id: META_WA_PHONE_ID, token_len: META_WA_TOKEN.length, data: j });
     } catch (e) { return res.status(200).json({ ok: false, error: String(e) }); }
   }
+  // ── Diagnostic du TOKEN actuel du bot (app, System User, WABA cibles) — lecture seule ──
+  if (q.diagtoken === '1') {
+    if (!META_WA_TOKEN) return res.status(200).json({ ok: false, error: 'META_WA_TOKEN vide' });
+    try {
+      const dr = await fetch(`https://graph.facebook.com/v21.0/debug_token?input_token=${META_WA_TOKEN}&access_token=${META_WA_TOKEN}`);
+      const dj = await dr.json().catch(() => ({}));
+      const data = (dj && dj.data) || {};
+      const waScopes = (data.granular_scopes || []).filter((g) => String(g.scope || '').includes('whatsapp'));
+      let wabas = null, me = null;
+      try { me = await (await fetch(`https://graph.facebook.com/v21.0/me?fields=id,name&access_token=${META_WA_TOKEN}`)).json(); } catch (e) {}
+      try { wabas = await (await fetch(`https://graph.facebook.com/v21.0/me/assigned_whatsapp_business_accounts?fields=id,name&access_token=${META_WA_TOKEN}`)).json(); } catch (e) {}
+      return res.status(200).json({ ok: dr.ok, app_id: data.app_id, system_user_id: data.user_id, system_user: me, is_valid: data.is_valid, expires_at: data.expires_at, whatsapp_scopes: waScopes, assigned_wabas: wabas });
+    } catch (e) { return res.status(200).json({ ok: false, error: String(e) }); }
+  }
   // ── Test d'envoi CONTRÔLÉ via Cloud API (1 seul message) — avant le kill-switch ──
   if (q.diagsend === '1') {
     const to = String(q.to || MERCHANT_PHONE).replace(/\D/g, '');
