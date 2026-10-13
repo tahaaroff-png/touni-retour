@@ -431,7 +431,7 @@ async function addProductsToExistingDeal(existingDeal, order) {
 const STAGE_CAT = (() => {
   const m = {};
   // LIVRÉE (reçue par le client)
-  [49152, 49214, 49209, 49210].forEach((id) => (m[id] = 'livree'));                                  // Livrer / Recu / Payé / Facturé
+  [49152, 49209, 49210].forEach((id) => (m[id] = 'livree'));                                          // Livrer / Payé / Facturé (⚠️ « Recu » 49214 N'EST PAS « livré » — sens à confirmer avec Tahar)
   // ⚠️ EXPÉDIÉE / EN ROUTE = UNIQUEMENT à partir du RAMASSAGE (le colis est physiquement parti chez le livreur).
   //    « Success Ozone » / « Failed Ozone » NE sont PAS « expédiée » (c'est juste la création du colis chez Ozone).
   // EN ROUTE = physiquement partie (à partir du RAMASSAGE) → chez le livreur.
@@ -465,7 +465,7 @@ async function getOrderStatus(phone) {
     + `• « A contacter » = on doit le recontacter (problème/échange) → escalate.\n`
     + `• « Ramassé » / « Expédier » / « Mise en distribution » / « En cours » = EXPÉDIÉE, chez le livreur → arrive 24-72h, NE PAS modifier (« Mise en distribution » = le livreur le contactera).\n`
     + `• « Reporté » = livraison reportée à sa demande. « Pas de réponse » = le livreur n'a pas pu le joindre → escalate pour reprogrammer.\n`
-    + `• « Livrer » / « Recu » = déjà LIVRÉE → si problème : échange possible 48h après réception (~45 dh, photo+étiquette), l'opératrice tranche (escalate).\n`
+    + `• « Livrer » = déjà LIVRÉE → si problème : échange possible 48h après réception (~45 dh, photo+étiquette), l'opératrice tranche (escalate).\n`
     + `• « Annuler Wtsp » / « Annuler pas de réponse » / « Annuler autres » / « Annuler société livraison » = ANNULÉE. « Retourner » / « Erreur société de livraison » = retour/souci en cours → l'équipe gère (escalate).\n`
     + `⚠️ Beaucoup d'étapes envoient DÉJÀ un message/template automatique au client — NE répète PAS ces infos de toi-même ; réponds seulement à ce qu'il demande, court.`;
 }
