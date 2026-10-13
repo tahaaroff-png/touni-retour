@@ -681,7 +681,7 @@ async function createOrderDeal(order, contactId) {
     customer: { firstName: nameParts[0] || order.customer_name || '', lastName: nameParts.slice(1).join(' ') || '', phone: digits },
     shippingAddress: { firstName: order.customer_name || '', phone: digits, city: order.city || '', address1: order.address || '', countryCode: 'MA' },
     lineItems,
-    pipelineId: (order.waiting_stock && STAGE_STOCK_WAIT) ? STAGE_STOCK_WAIT : STAGE_CONFIRM,
+    pipelineId: order.pipelineId ? Number(order.pipelineId) : ((order.waiting_stock && STAGE_STOCK_WAIT) ? STAGE_STOCK_WAIT : STAGE_CONFIRM), // order.pipelineId = étape forcée (ex 70661 Attente retrait magasin)
     note: noteText,
     paymentMethod: 'Cash on Delivery (COD)',
     currency: 'MAD',
