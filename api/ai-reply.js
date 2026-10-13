@@ -77,6 +77,17 @@ async function getBody(req) {
 // ── LECTURE INBOX via eGrow V2 (GraphQL api5) — le V1 (get_conversations.php) ne renvoie plus rien ──
 // On garde EXACTEMENT les mêmes formes de données que le V1 pour ne pas toucher à la boucle principale.
 // Timestamps renvoyés en SECONDES epoch (la boucle & humanHandling font parseInt dessus).
+// Récupère le numéro WhatsApp du client depuis l'identifiant du message (wamid) — fallback quand le profil
+// client n'a pas de numéro enregistré côté eGrow (nouveaux contacts). Le wamid encode le numéro en clair.
+function waIdFromWamid(wamid) {
+  try {
+    const b = String(wamid || '').replace(/^wamid\./, '');
+    if (!b) return '';
+    const dec = Buffer.from(b, 'base64').toString('latin1');
+    const m = dec.match(/(\d{11,15})/);
+    return m ? m[1] : '';
+  } catch (e) { return ''; }
+}
 async function egrowV2Query(query, variables) {
   const r = await fetch(EGROW_V2_URL, {
     method: 'POST',
@@ -103,6 +114,7 @@ async function egrowV2Messages(convId, limit) {
       senderWaId: '',                 // direction = `mine` (humanHandling s'appuie sur mine pour le sortant)
       sentAt: sec, createdAt: sec,
       connId: (m.userConnection && m.userConnection.id) || null,
+      waFrom: waIdFromWamid(m.externalMessageId), // numéro client décodé du wamid (fallback profil vide)
     };
   });
   mapped.sort((a, b) => (b.sentAt || 0) - (a.sentAt || 0)); // récent d'abord (comme le V1)
@@ -127,14 +139,14 @@ async function egrowGetConversations(integrationId, page) {
     if ((nowSec - updSec) > (FRESH_WINDOW_SEC + 180)) break; // trié desc → au-delà de la fenêtre, plus rien de frais
     if (scanned >= 20) break;
     scanned++;
-    const cust = n.customer || {};
-    const phone = String(cust.phoneWithCountryCode || cust.phone || '').replace(/\D/g, '');
-    if (!phone) continue;
     let lastArr = [];
     try { lastArr = await egrowV2Messages(n.id, 1); } catch (e) {}
     const lm = lastArr[0];
     if (!lm) continue;
     if (lm.connId && Number(lm.connId) !== EGROW_V2_CONN) continue; // autre numéro (ex: 780-615753) → hors scope
+    const cust = n.customer || {};
+    const phone = String(cust.phoneWithCountryCode || cust.phone || '').replace(/\D/g, '') || String(lm.waFrom || '').replace(/\D/g, '');
+    if (!phone) continue;
     out.push({
       id: n.id,
       contactWaId: phone,
