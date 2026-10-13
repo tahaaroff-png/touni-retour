@@ -481,13 +481,36 @@ const AGENT_TOOLS = [
     description: "Donne l'état RÉEL de la/les commande(s) du client (étape du pipeline : en attente, confirmée, expédiée, en distribution, LIVRÉE, annulée, retournée) avec les produits. À utiliser pour TOUTE question de suivi/livraison, et OBLIGATOIREMENT avant de parler d'échange/retour/annulation/modification (pour savoir si c'est déjà livré ou pas encore parti).",
     input_schema: { type: 'object', properties: {}, required: [] },
   },
+  {
+    name: 'stock_magasin',
+    description: "Vérifie le STOCK PHYSIQUE du MAGASIN (Sidi Maârouf) — ce qui est RÉELLEMENT en rayon, disponible pour une VISITE ou un RETRAIT immédiat sur place. ⚠️ C'est DIFFÉRENT de chercher_catalogue (= stock Shopify du site, pour la LIVRAISON en ligne). Utilise-le UNIQUEMENT quand le client veut VENIR au magasin / RETIRER sur place / demande si c'est dispo EN MAGASIN. Donne une recherche simple (équipe / type / année).",
+    input_schema: { type: 'object', properties: { recherche: { type: 'string', description: "mots-clés du produit (équipe, type, année…)" } }, required: ['recherche'] },
+  },
 ];
+// STOCK PHYSIQUE MAGASIN (table Supabase `stock`, gestionnaire /inventaire) — distinct du stock Shopify.
+// Dispo magasin = status 'stock' OU 'retour' avec qty>0.
+async function searchStoreStock(q) {
+  if (!SB_URL) return '';
+  const terms = String(q || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\p{L}\p{N}\s]/gu, ' ').trim().toLowerCase().split(/\s+/).filter((w) => w.length > 2 && !CATALOG_STOPWORDS.has(w)).slice(0, 3);
+  if (!terms.length) return '';
+  try {
+    const params = terms.map((t) => `product=ilike.*${encodeURIComponent(t)}*`).join('&');
+    const r = await fetch(`${SB_URL}/rest/v1/stock?${params}&status=in.(stock,retour)&qty=gt.0&deleted_at=is.null&select=product,size,qty&limit=40`, { headers: supabaseHeaders() });
+    const rows = await r.json().catch(() => []);
+    if (!Array.isArray(rows) || !rows.length) return "STOCK MAGASIN : rien trouvé physiquement en magasin pour cette recherche. ⚠️ Ne dis pas « pas dispo » tout court — propose la LIVRAISON gratuite depuis le site, ou la PRÉCOMMANDE avec retrait au magasin le lendemain.";
+    const byProd = {};
+    for (const row of rows) { const k = row.product; byProd[k] = byProd[k] || {}; const s = (row.size || 'Unique').toUpperCase(); byProd[k][s] = (byProd[k][s] || 0) + (row.qty || 0); }
+    const lines = Object.entries(byProd).slice(0, 8).map(([p, sizes]) => { const sz = Object.entries(sizes).filter(([, qn]) => qn > 0).map(([s]) => s).join(', '); return `• ${p}${sz ? ` — en magasin : ${sz}` : ''}`; });
+    return "STOCK MAGASIN (physique, Sidi Maârouf — RÉELLEMENT en rayon, pour visite/retrait) :\n" + lines.join('\n') + "\n(S'il n'est pas listé ici mais que le client le veut en magasin → propose la PRÉCOMMANDE + retrait le lendemain.)";
+  } catch (e) { return ''; }
+}
 async function runAgentTool(name, input, phone) {
   if (name === 'chercher_catalogue') {
     const res = await searchCatalog(String((input && input.recherche) || ''));
     return res || "⚠️ CATALOGUE VIDE — 0 résultat Shopify pour cette recherche. INSTRUCTIONS OBLIGATOIRES : (1) NE DIS JAMAIS au client « pas disponible », « pas en stock », « on ne l'a pas » ou « ça ne ressort pas dans le catalogue » — ce produit peut exister dans notre dépôt sans être listé en ligne. (2) Si le client cherche un produit PRÉCIS (équipe + type identifiés, ex : maillot Raja, Maroc rétro 1990, kit Wydad) → marque OBLIGATOIREMENT intent='escalate' avec note : « Client cherche [décrire le produit exact] — vérifier dispo en dépôt ». Dis au client : « Je transmets à notre équipe pour vérifier ça directement avec toi 🙏 ». (3) Si la demande est vague (juste une équipe ou une catégorie) → partage la page collection correspondante depuis NOS PAGES. Ne dis JAMAIS au client que le résultat de ta recherche était vide.";
   }
   if (name === 'statut_commande') return await getOrderStatus(phone);
+  if (name === 'stock_magasin') return await searchStoreStock(String((input && input.recherche) || ''));
   return 'Outil inconnu.';
 }
 
