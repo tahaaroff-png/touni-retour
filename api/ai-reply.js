@@ -1553,18 +1553,23 @@ module.exports = async (req, res) => {
       bot_enabled: process.env.BOT_ENABLED !== '0', fresh_window_sec: FRESH_WINDOW_SEC,
     });
   }
-  // ── Diag LECTURE inbox V1 (le bot voit-il les messages entrants ?) ──
+  // ── Diag LECTURE inbox V2 (le bot voit-il les messages entrants ?) ──
   if (q.diagread === '1') {
-    const out = [];
-    for (const ig of INTEGRATIONS) {
-      try {
-        const conv = await egrowGetConversations(ig, 1);
-        let list = conv;
-        if (conv && typeof conv === 'object' && !Array.isArray(conv)) list = conv.data || conv.conversations || conv.result || [];
-        out.push({ integration: ig, count: Array.isArray(list) ? list.length : null, keys: conv && typeof conv === 'object' ? Object.keys(conv).slice(0, 10) : null, sample: Array.isArray(list) ? list.slice(0, 3).map((c) => ({ id: c.id || c.conversation_id, name: c.name || c.contact_name, phone: c.phone || c.wa_id || c.number })) : list });
-      } catch (e) { out.push({ integration: ig, error: String(e) }); }
-    }
-    return res.status(200).json({ integrations: INTEGRATIONS, results: out });
+    const nowSec = Math.floor(Date.now() / 1000);
+    // 1) Connectivité + parsing V2 bruts (10 conv récentes, SANS filtre de fraîcheur)
+    let raw = [];
+    try {
+      const d = await egrowV2Query('query{ inboxConversations(perPage:10, sortKey:UPDATED_AT, reverse:false){ nodes{ id updatedAt unreadCount displayTitle customer{ phoneWithCountryCode } } } }');
+      const nodes = (d && d.inboxConversations && d.inboxConversations.nodes) || [];
+      raw = nodes.map((n) => ({ id: n.id, title: n.displayTitle, unread: n.unreadCount, updatedAt: n.updatedAt, age_sec: Math.floor(Date.parse(n.updatedAt || '') / 1000) ? nowSec - Math.floor(Date.parse(n.updatedAt) / 1000) : null, phone: (n.customer && n.customer.phoneWithCountryCode) || null }));
+    } catch (e) { raw = [{ error: String(e) }]; }
+    // 2) Ce que le bot retient réellement (filtre fraîcheur + scope connexion 7887)
+    let fresh = [];
+    try {
+      const convs = await egrowGetConversations('5425', 1);
+      fresh = (convs || []).map((c) => { const lm = c.lastMessage || {}; const incoming = lm.senderWaId && c.contactWaId && lm.senderWaId === c.contactWaId; return { id: c.id, phone: c.contactWaId, age_sec: nowSec - (c.lastMessageTime || 0), incoming, type: lm.type, body: String(lm.body || '').slice(0, 60) }; });
+    } catch (e) { fresh = [{ error: String(e) }]; }
+    return res.status(200).json({ now: new Date().toISOString(), fresh_window_sec: FRESH_WINDOW_SEC, v2_conn: EGROW_V2_CONN, raw_recent: raw, bot_sees_fresh: fresh });
   }
   // Interrupteur global — BOT_ENABLED=0 dans Vercel pour couper le bot sans toucher au code
   if (process.env.BOT_ENABLED === '0') return res.status(200).json({ ok: true, status: 'bot_disabled' });
