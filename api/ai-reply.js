@@ -21,6 +21,7 @@ const FRESH_WINDOW_SEC = parseInt(process.env.EGROW_FRESH_SEC || '600', 10); // 
 const HUMAN_HANDOVER_SEC = parseInt(process.env.EGROW_HUMAN_HANDOVER_SEC || '3600', 10); // si un humain (équipe) a répondu il y a < 1h, le bot se tait ; il ne reprend qu'après 1h sans réponse humaine
 const HISTORY_LIMIT = parseInt(process.env.EGROW_HISTORY_LIMIT || '8', 10);  // nb de messages d'historique lus (8 = suffisant, 20 = trop coûteux)
 const MAX_PER_RUN = parseInt(process.env.EGROW_MAX_PER_RUN || '8', 10);      // garde-fou anti-blast
+const MAX_REPLIES_PER_CONV = parseInt(process.env.EGROW_MAX_REPLIES_PER_CONV || '12', 10); // plafond de réponses du bot par conv (~2h) → anti-abuseur/blagueur, protège les crédits
 // #4 — stages pipeline : commande en attente → Confirmer Wtsp (confirm) / Annuler Wtsp (cancel)
 const STAGE_CONFIRM = parseInt(process.env.EGROW_STAGE_CONFIRM || '49148', 10);
 const STAGE_CANCEL = parseInt(process.env.EGROW_STAGE_CANCEL || '49149', 10);
@@ -1211,6 +1212,22 @@ async function runPoll(q) {
             results.push({ conv: c.id, phone: contactWaId, msgId, body: body.slice(0, 60), decision: 'human_handover' });
             processed++; continue;
           }
+        }
+
+        // GARDE-FOU CRÉDITS : plafond de réponses du bot par conversation (anti-abuseur / blagueur / perte de temps).
+        // Au-delà de MAX_REPLIES_PER_CONV réponses sur ~2h, le bot ARRÊTE de répondre (économie crédits) et prévient
+        // l'opératrice UNE seule fois. Ne s'applique PAS au patron. Le bot reprend si la conv redevient calme (fenêtre 2h).
+        if (!_isMerchantHere && botSent.bodies.size >= MAX_REPLIES_PER_CONV) {
+          if (!dry) {
+            if (claimedMsgId) { await releaseClaim(claimedMsgId); claimedMsgId = null; }
+            try {
+              if (await claimMessage('cap_' + c.id, c.id, contactWaId, 'reply_cap')) { // dédup notif (1 seule fois / conv)
+                for (const _op of OPERATOR_PHONES) { try { await sendAndQueue(integrationId, _op, `🛑 *Conversation très longue — bot stoppé*\n👤 ${c.title || contactWaId} (${contactWaId})\nLe bot a atteint ${MAX_REPLIES_PER_CONV} réponses (possible perte de temps/abuseur, ou client à reprendre à la main).\n💬 « ${body.slice(0, 120)} »`); } catch (e) {} }
+              }
+            } catch (e) {}
+          }
+          results.push({ conv: c.id, phone: contactWaId, decision: 'reply_cap_reached', count: botSent.bodies.size });
+          processed++; continue;
         }
 
         // NOS PAGES (collections, STATIQUE → caché) à part ; dispo produit LIVE (dynamique) à part.
