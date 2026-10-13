@@ -439,7 +439,7 @@ const STAGE_CAT = (() => {
   [49213, 49151, 49199, 49200, 49201, 49202, 49211].forEach((id) => (m[id] = 'en_route'));           // Ramassé / Expédier / Mise en distribution / En cours / Reporté / Pas de réponse / Erreur société livraison
   // PAS ENCORE EXPÉDIÉE : en attente, relances J1-J3, confirmations (Wtsp/stock/fournisseur/flocage), Traiter, handoff livraison, incomplète, à contacter, rupture.
   [65365, 49147, 62357, 49148, 49396, 63093, 64833, 53444, 51500, 60599, 55207, 49397, 63095, 60669, 49430, 49431,
-    49150, 49197, 49154, 49155, 49212, 64835].forEach((id) => (m[id] = 'avant_envoi'));              // En attente/relances/Confirmer Wtsp+EnStock+Fournisseur+FlocagePRO/Traiter/Attente ramassage/Success+Failed société livraison/Nouveau Colis/Commande Incomplète/rappeler stock/Rupture/A contacter
+    49150, 49197, 49154, 49155, 49212, 64835, 70661, 70663].forEach((id) => (m[id] = 'avant_envoi')); // ...+ Attente retrait magasin (70661) + Retrait magasin prêt (70663)
   // ANNULÉE / RETOUR
   [49149, 49153, 49205, 49206, 49265, 60359, 59765].forEach((id) => (m[id] = 'annulee_retour'));     // Annuler Wtsp / Retourner / Retour agence / Retour reçu / Annuler société livraison / Annuler autres / Annuler pas de réponse
   return m;
@@ -464,6 +464,8 @@ async function getOrderStatus(phone) {
     + `• « Commande Incomplète » = un article manque temporairement → on envoie le reste et le manquant dès retour (ou on attend selon son choix) ; escalate.\n`
     + `• « rappeler le stock » / « Rupture de stock » = produit en RUPTURE → propose un similaire dispo OU préviens au retour ; escalate.\n`
     + `• « A contacter » = on doit le recontacter (problème/échange) → escalate.\n`
+    + `• « Attente retrait magasin » = commande RÉSERVÉE au magasin, en préparation → dis-lui qu'on le recontacte dès qu'elle est prête à retirer.\n`
+    + `• « Retrait magasin prêt » = sa commande est PRÊTE au magasin (Sidi Maârouf) → invite-le à venir la récupérer (rappelle horaires 7j/7 9h-22h + lien Google si besoin).\n`
     + `• « Ramassé » / « Expédier » / « Mise en distribution » / « En cours » = EXPÉDIÉE, chez le livreur → arrive 24-72h, NE PAS modifier (« Mise en distribution » = le livreur le contactera).\n`
     + `• « Reporté » = livraison reportée à sa demande. « Pas de réponse » = le livreur n'a pas pu le joindre → escalate pour reprogrammer.\n`
     + `• « Livrer » = déjà LIVRÉE → si problème : échange possible 48h après réception (~45 dh, photo+étiquette), l'opératrice tranche (escalate).\n`
