@@ -434,12 +434,13 @@ const STAGE_CAT = (() => {
   [49152, 49214, 49209, 49210].forEach((id) => (m[id] = 'livree'));                                  // Livrer / Recu / Payé / Facturé
   // ⚠️ EXPÉDIÉE / EN ROUTE = UNIQUEMENT à partir du RAMASSAGE (le colis est physiquement parti chez le livreur).
   //    « Success Ozone » / « Failed Ozone » NE sont PAS « expédiée » (c'est juste la création du colis chez Ozone).
-  [49213, 49151, 49199, 49200, 49201, 49202].forEach((id) => (m[id] = 'en_route'));                  // Ramassé / Expédier / Mise en distribution / En cours / Reporté / Pas de réponse
-  // PAS ENCORE EXPÉDIÉE : confirmation, traitement, créé chez Ozone mais PAS encore ramassé.
-  [65365, 49147, 62357, 49148, 49396, 63093, 53444, 51500, 60599, 55207, 49397, 63095, 60669, 49430, 49431,
-    49150, 49197, 49154, 49155, 49212, 49211].forEach((id) => (m[id] = 'avant_envoi'));              // En attente(V2 65365 / V1 62357)/relances/Traiter/Attente ramassage/Success Ozone/Failed Ozone/Erreur Ozone/Nouveau Colis/Rupture
+  // EN ROUTE = physiquement partie (à partir du RAMASSAGE) → chez le livreur.
+  [49213, 49151, 49199, 49200, 49201, 49202, 49211].forEach((id) => (m[id] = 'en_route'));           // Ramassé / Expédier / Mise en distribution / En cours / Reporté / Pas de réponse / Erreur société livraison
+  // PAS ENCORE EXPÉDIÉE : en attente, relances J1-J3, confirmations (Wtsp/stock/fournisseur/flocage), Traiter, handoff livraison, incomplète, à contacter, rupture.
+  [65365, 49147, 62357, 49148, 49396, 63093, 64833, 53444, 51500, 60599, 55207, 49397, 63095, 60669, 49430, 49431,
+    49150, 49197, 49154, 49155, 49212, 64835].forEach((id) => (m[id] = 'avant_envoi'));              // En attente/relances/Confirmer Wtsp+EnStock+Fournisseur+FlocagePRO/Traiter/Attente ramassage/Success+Failed société livraison/Nouveau Colis/Commande Incomplète/rappeler stock/Rupture/A contacter
   // ANNULÉE / RETOUR
-  [49149, 49153, 49205, 49206, 49265, 60359, 59765].forEach((id) => (m[id] = 'annulee_retour'));     // Annuler Wtsp / Retourner / Retour agence / Retour reçu / Annuler Ozone / Annuler autres / Annuler pas de réponse
+  [49149, 49153, 49205, 49206, 49265, 60359, 59765].forEach((id) => (m[id] = 'annulee_retour'));     // Annuler Wtsp / Retourner / Retour agence / Retour reçu / Annuler société livraison / Annuler autres / Annuler pas de réponse
   return m;
 })();
 // État RÉEL des commandes du client (toutes étapes) → texte injecté à l'agent / renvoyé par l'outil statut_commande.
@@ -455,7 +456,18 @@ async function getOrderStatus(phone) {
     const city = (o.shippingAddress && o.shippingAddress.city) || '';
     return `• Commande ${o.orderNumber || o.id} — étape « ${String(st.name || '?').trim()} » [${cat}]${prods ? ' — ' + prods : ''}${city ? ' — ' + city : ''}`;
   });
-  return `ÉTAT RÉEL DES COMMANDES DU CLIENT (eGrow, en direct) :\n${lines.join('\n')}\n\nSignification des catégories → avant_envoi = pas encore expédiée : le client peut MODIFIER ou ANNULER SANS frais. en_route = déjà expédiée / en distribution : NE PAS modifier, dis-lui qu'elle arrive (24-72h). livree = déjà livrée : échange possible (48h après réception, ~45 dh, photo + étiquette). annulee_retour = annulée ou retournée.`;
+  return `ÉTAT RÉEL DES COMMANDES DU CLIENT (eGrow, en direct) :\n${lines.join('\n')}\n\n`
+    + `COMMENT RÉPONDRE SELON L'ÉTAPE EXACTE (nom affiché) :\n`
+    + `• « En attente » / « J1 Appelle N1 Matin » / « J1 Appel N2 Aprem » / « J2 Appel Wtsp+message » / « J3 Relance finale » = PAS encore confirmée → pousse-le à CONFIRMER (il peut encore modifier/annuler SANS frais).\n`
+    + `• « Confirmer Wtsp » / « Confirmer En Stock » / « Confirmer Fournisseur » / « Flocage PRO Confirmer » / « Traiter » = CONFIRMÉE, en préparation/expédition → rassure, elle arrive bientôt (ne propose pas de modif libre ; si vraie demande → escalate).\n`
+    + `• « Commande Incomplète » = un article manque temporairement → on envoie le reste et le manquant dès retour (ou on attend selon son choix) ; escalate.\n`
+    + `• « rappeler le stock » / « Rupture de stock » = produit en RUPTURE → propose un similaire dispo OU préviens au retour ; escalate.\n`
+    + `• « A contacter » = on doit le recontacter (problème/échange) → escalate.\n`
+    + `• « Ramassé » / « Expédier » / « Mise en distribution » / « En cours » = EXPÉDIÉE, chez le livreur → arrive 24-72h, NE PAS modifier (« Mise en distribution » = le livreur le contactera).\n`
+    + `• « Reporté » = livraison reportée à sa demande. « Pas de réponse » = le livreur n'a pas pu le joindre → escalate pour reprogrammer.\n`
+    + `• « Livrer » / « Recu » = déjà LIVRÉE → si problème : échange possible 48h après réception (~45 dh, photo+étiquette), l'opératrice tranche (escalate).\n`
+    + `• « Annuler Wtsp » / « Annuler pas de réponse » / « Annuler autres » / « Annuler société livraison » = ANNULÉE. « Retourner » / « Erreur société de livraison » = retour/souci en cours → l'équipe gère (escalate).\n`
+    + `⚠️ Beaucoup d'étapes envoient DÉJÀ un message/template automatique au client — NE répète PAS ces infos de toi-même ; réponds seulement à ce qu'il demande, court.`;
 }
 // Outils (function calling) que l'agent Claude peut appeler lui-même pour aller chercher la donnée live.
 const AGENT_TOOLS = [
