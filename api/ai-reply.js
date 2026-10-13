@@ -27,7 +27,7 @@ const STAGE_CANCEL = parseInt(process.env.EGROW_STAGE_CANCEL || '49149', 10);
 const STAGE_STOCK_WAIT = parseInt(process.env.EGROW_STAGE_STOCK_WAIT || '60669', 10); // stage "rappeler le stock"
 const STAGE_RUPTURE = parseInt(process.env.EGROW_STAGE_RUPTURE || '49430', 10);     // stage "Rupture"
 // On ne déplace QUE si la commande est encore dans une étape AVANT envoi (sinon expédiée → on ne touche pas).
-const MOVABLE_STAGES = (process.env.EGROW_MOVABLE_STAGES || '62357,49148,49149,60669,49430').split(',').map((s) => parseInt(s.trim(), 10)).filter(Boolean);
+const MOVABLE_STAGES = (process.env.EGROW_MOVABLE_STAGES || '65365,62357,49148,49149,60669,49430').split(',').map((s) => parseInt(s.trim(), 10)).filter(Boolean); // 65365 = "En attente" en V2 (ex-62357)
 // Notifications : opératrices e-commerce sur escalade ; marchand sur upsell/vente.
 // EGROW_OPERATOR_PHONE accepte plusieurs numéros séparés par une virgule — chaque opératrice
 // reçoit l'escalade, et chacune ouvre sa propre fenêtre de rattrapage en répondant.
@@ -305,140 +305,121 @@ async function egrowPost(path, params) {
   const r = await fetch(`${EGROW_BASE}${path}`, { method: 'POST', headers: { 'account-key': EGROW_AK, 'User-Agent': EGROW_UA, 'content-type': `multipart/form-data; boundary=${boundary}` }, body: raw });
   try { return await r.json(); } catch (e) { return null; }
 }
+// ───────── COUCHE COMMANDES eGrow V2 (api5 GraphQL) ─────────
+// eGrow a terminé la transition V1→V2 : les endpoints /deal/*.php (V1) sont obsolètes.
+// On passe par les mutations/queries V2. Les IDs d'étapes sont IDENTIQUES au V1 (49148 Confirmer, 49149 Annuler…),
+// SAUF « En attente » = 65365 en V2 (ex-62357). On garde des objets au format "deal" V1 pour ne pas toucher aux appelants.
+function v2OrderToDeal(o) {
+  if (!o) return null;
+  return {
+    id: o.id, order: 1, _v2: true,
+    stage: { id: (o.pipeline && o.pipeline.id) || 0, name: (o.pipeline && o.pipeline.name) || '' },
+    contact: { id: (o.customer && o.customer.id) || null, phone: o.phone || (o.customer && o.customer.phone) || '' },
+    deal_number: o.orderNumber || String(o.id),
+    deal_city: (o.shippingAddress && o.shippingAddress.city) || '',
+    deal_address: (o.shippingAddress && o.shippingAddress.address1) || '',
+    deal_customer_name: (o.customer && [o.customer.firstName, o.customer.lastName].filter(Boolean).join(' ')) || '',
+    deal_phone: o.phone || (o.customer && o.customer.phone) || '',
+    deal_value: parseFloat(o.total) || 0,
+    products: (o.lineItems || []).map((li) => ({ name: li.title, quantity: li.quantity || 1, price: li.price })),
+    deal_custom_fields: '{}',
+  };
+}
+// Toutes les commandes du client (par téléphone), les plus récentes d'abord.
+async function v2OrdersByPhone(phone) {
+  const digits = String(phone || '').replace(/\D/g, '');
+  if (!digits) return [];
+  const q = 'query($s:String){ orders(perPage:10, query:$s){ nodes{ id orderNumber phone total createdAt pipeline{ id name } customer{ id phone firstName lastName } shippingAddress{ city address1 } lineItems{ title quantity price } } } }';
+  let d = null;
+  try { d = await egrowV2Query(q, { s: digits }); } catch (e) { return []; }
+  const nodes = (d && d.orders && d.orders.nodes) || [];
+  const match = (o) => { const p = String(o.phone || (o.customer && o.customer.phone) || '').replace(/\D/g, ''); return p && (p === digits || p.endsWith(digits) || digits.endsWith(p) || (digits.length >= 9 && p.endsWith(digits.slice(-9)))); };
+  return nodes.filter(match).sort((a, b) => (Date.parse(b.createdAt || '') || 0) - (Date.parse(a.createdAt || '') || 0));
+}
+// Prix Shopify (best-effort) pour un nom de produit → nombre (0 si introuvable). Sert à valoriser la commande (COD).
+async function v2LookupPrice(name) {
+  try {
+    const toks = String(name || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\p{L}\p{N}\s]/gu, ' ').trim().split(/\s+/).filter((w) => w.length > 2).slice(0, 4);
+    if (!toks.length) return 0;
+    const qstr = toks.map((t) => `title:*${t}*`).join(' AND ');
+    const gq = `query{ products(first:3, query:${JSON.stringify(qstr)}){ edges{ node{ status variants(first:1){ edges{ node{ price } } } } } } }`;
+    const r = await fetch(`https://${SHOPIFY_DOMAIN}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`, { method: 'POST', headers: Object.assign({}, shopifyAdminHeaders(), { 'Content-Type': 'application/json' }), body: JSON.stringify({ query: gq }) });
+    const j = await r.json().catch(() => null);
+    const edges = (j && j.data && j.data.products && j.data.products.edges) || [];
+    for (const e of edges) { const v = e.node.variants && e.node.variants.edges && e.node.variants.edges[0]; if (v && v.node && v.node.price) return parseFloat(v.node.price) || 0; }
+  } catch (e) {}
+  return 0;
+}
+// Déplace une commande vers une étape (confirm/cancel/…). Retour { status:'success'|'error' } (compat moveDeal V1).
+async function v2MoveStage(orderId, stageId) {
+  const q = 'mutation($in:OrderPipelineUpdateInput!){ orderPipelineUpdate(input:$in){ userErrors{ field message } items{ orderId } } }';
+  try {
+    const d = await egrowV2Query(q, { in: { items: [{ orderId: Number(orderId), pipelineId: Number(stageId) }] } });
+    const node = d && d.orderPipelineUpdate;
+    const errs = (node && node.userErrors) || [];
+    return { status: node && node.items && node.items.length && !errs.length ? 'success' : 'error', userErrors: errs };
+  } catch (e) { return { status: 'error', message: String((e && e.message) || e) }; }
+}
 // Cherche la commande du client (par téléphone) DANS les étapes déplaçables (avant envoi). Retourne le deal ou null.
 async function findMovableDeal(phone) {
-  const digits = String(phone || '').replace(/\D/g, '');
-  if (!digits) return null;
-  const phoneMatch = (d) => {
-    const dp = String((d.contact && d.contact.phone) || '').replace(/\D/g, '');
-    return dp && (dp === digits || dp.endsWith(digits) || digits.endsWith(dp));
-  };
-  for (const sid of MOVABLE_STAGES) {
-    // Essai 1 : recherche par numéro (rapide)
-    const r = await egrowPost('/deal/getStageDeals.php', { stage: sid, search: digits, page: 1, limit: 5 });
-    const arr = Array.isArray(r) ? r : (r && r.data) || [];
-    const hit = arr.find(phoneMatch);
-    if (hit) return hit;
-    // Essai 2 : fallback scan complet (nécessaire pour Rupture/rappeler le stock où la recherche par tél ne fonctionne pas)
-    const maxPages = (sid === STAGE_RUPTURE || sid === STAGE_STOCK_WAIT) ? 7 : 1;
-    for (let page = 1; page <= maxPages; page++) {
-      const r2 = await egrowPost('/deal/getStageDeals.php', { stage: sid, search: '', page, limit: 20 });
-      const arr2 = Array.isArray(r2) ? r2 : (r2 && r2.data) || [];
-      if (!arr2.length) break;
-      const hit2 = arr2.find(phoneMatch);
-      if (hit2) return hit2;
-      if (arr2.length < 20) break;
-    }
-  }
-  return null;
+  const orders = await v2OrdersByPhone(phone);
+  const hit = orders.find((o) => MOVABLE_STAGES.includes((o.pipeline && o.pipeline.id) || 0));
+  return hit ? v2OrderToDeal(hit) : null;
 }
 // Cherche UNE commande récente non-expédiée pour ce numéro (toutes étapes avant envoi).
 // Utilisée pour détecter si on doit ajouter à une commande existante plutôt que d'en créer une nouvelle.
 async function findRecentUnshippedDeal(phone) {
-  const digits = String(phone || '').replace(/\D/g, '');
-  if (!digits) return null;
   try {
-    const r = await egrowPost('/deal/getStageDeals.php', { search: digits, page: 1, limit: 10 });
-    const deals = Array.isArray(r) ? r : (r && r.data) || [];
-    const phoneMatch = (d) => {
-      const dp = String((d.contact && d.contact.phone) || (d.deal_phone) || '').replace(/\D/g, '');
-      return dp && (dp === digits || dp.endsWith(digits) || digits.endsWith(dp));
-    };
-    const matched = deals.filter(phoneMatch);
-    // Retourner le premier deal avant_envoi (pas encore expédié)
-    return matched.find((d) => {
-      const stageId = d.stage && d.stage.id;
-      return STAGE_CAT[stageId] === 'avant_envoi';
-    }) || null;
+    const orders = await v2OrdersByPhone(phone);
+    const hit = orders.find((o) => STAGE_CAT[(o.pipeline && o.pipeline.id) || 0] === 'avant_envoi');
+    return hit ? v2OrderToDeal(hit) : null;
   } catch (e) { return null; }
 }
 // Ajoute des produits à un deal eGrow existant (avant envoi).
 async function addProductsToExistingDeal(existingDeal, order) {
-  const existingProducts = Array.isArray(existingDeal.products) ? existingDeal.products : [];
+  // V2 : on reconstruit la liste COMPLÈTE des lineItems (existants + nouveaux) et on met à jour la commande.
+  // (orderCreateOrUpdate avec id + lineItems REMPLACE la liste — vérifié par le self-test ?diagv2order=1.)
+  const existingLineItems = (existingDeal.products || []).map((p) => ({ title: String(p.name || '').slice(0, 250), quantity: p.quantity || 1, price: parseFloat(p.price) || 0, requiresShipping: !/flocage/i.test(p.name || '') }));
   const items = Array.isArray(order.products) && order.products.length > 0
     ? order.products
-    : [{ product: order.product, size: order.size, color: order.color, quantity: order.quantity }];
-
-  const newProductList = [];
+    : [{ product: order.product, size: order.size, color: order.color, quantity: order.quantity, flocage: order.flocage }];
+  const newLineItems = [];
   let addedValue = 0;
   const matchedNames = [];
-
   for (const item of items) {
-    const prods = await egrowSearchProduct(item.product);
-    const want = normTxt(item.product);
-    const wantDistinct = want.split(' ').filter((w) => w.length > 2 && !PROD_GENERIC.has(w));
-    const wantCat = [...PROD_CATEGORY].find((ch) => want.split(' ').includes(ch));
-    let p = prods.find((x) => normTxt(x.name) === want);
-    if (!p) {
-      const cand = prods.map((x) => { const nx = normTxt(x.name); return { x, dist: wantDistinct.filter((w) => nx.includes(w)).length, catOk: !wantCat || nx.includes(wantCat) }; }).filter((c) => c.dist >= 1 && c.catOk).sort((a, b) => b.dist - a.dist);
-      if (cand.length) p = cand[0].x;
-    }
-    if (!p) {
-      const candR = prods.map((x) => { const nx = normTxt(x.name); return { x, dist: wantDistinct.filter((w) => nx.includes(w)).length }; }).filter((c) => c.dist >= 1).sort((a, b) => b.dist - a.dist);
-      if (candR.length) p = candR[0].x;
-    }
-    if (!p) {
-      p = prods[0] ? Object.assign({}, prods[0], { name: item.product }) : { id: 0, name: item.product, price: '329', sku: '' };
-    }
     const qty = Math.max(1, parseInt(item.quantity || 1, 10) || 1);
-    let combId2 = '', combPrice2 = parseFloat(p.price) || 0;
-    if (item.size && Array.isArray(p.combinations) && p.combinations.length) {
-      const su = String(item.size).toUpperCase().trim();
-      const mc = p.combinations.find((c) => String(c.name || '').toUpperCase().trim() === su);
-      if (mc) { combId2 = String(mc.id); if (mc.price) combPrice2 = parseFloat(mc.price) || combPrice2; }
+    const price = await v2LookupPrice(item.product);
+    const title = (item.size ? `${item.product} - ${item.size}` : String(item.product || '')).slice(0, 250);
+    newLineItems.push({ title, quantity: qty, price: price || 0, requiresShipping: true });
+    addedValue += (price || 0) * qty;
+    matchedNames.push(`${qty}x ${item.product}${item.size ? ' taille ' + item.size : ''}`);
+    if (item.flocage && (item.flocage.name || item.flocage.number)) {
+      newLineItems.push({ title: 'Flocage Personnalisé PRO - Nom + Numéro', quantity: qty, price: 99, requiresShipping: false });
+      addedValue += 99 * qty;
     }
-    addedValue += combPrice2 * qty;
-    const pe = Object.assign({}, p, { quantity: qty, size: item.size || '', option: item.size || '' });
-    if (combId2) pe.combination = combId2;
-    newProductList.push(pe);
-    matchedNames.push(`${qty}x ${p.name}${item.size ? ' taille ' + item.size : ''}`);
   }
-
-  const mergedProducts = [...existingProducts, ...newProductList];
-  const newTotal = (parseFloat(existingDeal.deal_value) || 0) + addedValue;
-  const existingContactId = (existingDeal.contact && existingDeal.contact.id) || existingDeal.contact_id || null;
-
-  const body = {
+  const mergedValue = (parseFloat(existingDeal.deal_value) || 0) + addedValue;
+  const input = {
     id: existingDeal.id,
-    deal_city: existingDeal.deal_city || '', country: 'MA',
-    deal_address: existingDeal.deal_address || '',
-    deal_apartment: '', deal_province: '', deal_zip: '', deal_area: '', deal_street_name: '', deal_house_number: '', deal_nearest_place: '', deal_location: '', deal_district: '',
-    deal_customer_name: existingDeal.deal_customer_name || (existingDeal.contact && existingDeal.contact.name) || '',
-    deal_phone: existingDeal.deal_phone || (existingDeal.contact && existingDeal.contact.phone) || '',
-    deal_payment_method: 'Cash on Delivery (COD)', payment_status: 'pending',
-    deal_shipping_price: 0, deal_shipping: null,
-    contact_id: existingContactId,
-    type: 'deal', title: existingDeal.title || '',
-    deal_value: newTotal,
-    deal_currency: { id: 153, name: 'Dirham', code: 'MAD', symbol: 'MAD' },
-    deal_custom_fields: (() => {
-      let cf = {};
-      try { cf = JSON.parse(existingDeal.deal_custom_fields || '{}'); } catch (e) {}
-      const existingCount = Object.keys(cf).filter(k => /^item_\d+_maillot$/.test(k)).length;
-      newProductList.forEach((prod, idx) => {
-        const i = existingCount + idx + 1;
-        const item = items[idx];
-        cf[`item_${i}_maillot`] = item.size ? `${prod.name} - ${item.size}` : prod.name;
-        const fl = item.flocage;
-        if (fl && fl.name) cf[`item_${i}_name`] = fl.name;
-        if (fl && fl.number) cf[`item_${i}_numero`] = String(fl.number);
-      });
-      return JSON.stringify(cf);
-    })(),
-    products: JSON.stringify(mergedProducts),
-    pipeline_stage: (existingDeal.stage && existingDeal.stage.id) || STAGE_CONFIRM,
-    close_date: 0, deal_number: existingDeal.deal_number || '', deal_tracking_number: existingDeal.deal_tracking_number || '',
-    users: '[]', do_not_update_assigned: false, shipping_user_connection: 0,
+    lineItems: [...existingLineItems, ...newLineItems],
+    subtotal: mergedValue,
+    note: `AJOUT (agent IA) : ${matchedNames.join(' + ')}`.slice(0, 1500),
   };
-
-  const res = await egrowPost('/deal/add_or_update_deal.php', body);
+  const q = 'mutation($in:OrderCreateOrUpdateInput!){ orderCreateOrUpdate(input:$in){ userErrors{ field message } order{ id } } }';
+  let ok = false, userErrors = [];
+  try {
+    const d = await egrowV2Query(q, { in: input });
+    const node = d && d.orderCreateOrUpdate;
+    userErrors = (node && node.userErrors) || [];
+    ok = !!(node && node.order && node.order.id && !userErrors.length);
+  } catch (e) { userErrors = [{ message: String((e && e.message) || e) }]; }
   return {
-    ok: !!(res && res.status === 'success'),
-    dealId: existingDeal.id,
+    ok, dealId: existingDeal.id,
     product: matchedNames.join(' + '),
-    qty: newProductList.reduce((s, p) => s + (p.quantity || 1), 0),
+    qty: newLineItems.filter((l) => !/flocage/i.test(l.title)).reduce((s, l) => s + (l.quantity || 1), 0),
     value: addedValue,
     existingDealNumber: existingDeal.deal_number || String(existingDeal.id),
+    userErrors,
   };
 }
 // Catégorie d'une étape de pipeline eGrow → pour le suivi de commande.
@@ -450,8 +431,8 @@ const STAGE_CAT = (() => {
   //    « Success Ozone » / « Failed Ozone » NE sont PAS « expédiée » (c'est juste la création du colis chez Ozone).
   [49213, 49151, 49199, 49200, 49201, 49202].forEach((id) => (m[id] = 'en_route'));                  // Ramassé / Expédier / Mise en distribution / En cours / Reporté / Pas de réponse
   // PAS ENCORE EXPÉDIÉE : confirmation, traitement, créé chez Ozone mais PAS encore ramassé.
-  [49147, 62357, 49148, 49396, 63093, 53444, 51500, 60599, 55207, 49397, 63095, 60669, 49430, 49431,
-    49150, 49197, 49154, 49155, 49212, 49211].forEach((id) => (m[id] = 'avant_envoi'));              // En attente/relances/Traiter/Attente ramassage/Success Ozone/Failed Ozone/Erreur Ozone/Nouveau Colis/Rupture
+  [65365, 49147, 62357, 49148, 49396, 63093, 53444, 51500, 60599, 55207, 49397, 63095, 60669, 49430, 49431,
+    49150, 49197, 49154, 49155, 49212, 49211].forEach((id) => (m[id] = 'avant_envoi'));              // En attente(V2 65365 / V1 62357)/relances/Traiter/Attente ramassage/Success Ozone/Failed Ozone/Erreur Ozone/Nouveau Colis/Rupture
   // ANNULÉE / RETOUR
   [49149, 49153, 49205, 49206, 49265, 60359, 59765].forEach((id) => (m[id] = 'annulee_retour'));     // Annuler Wtsp / Retourner / Retour agence / Retour reçu / Annuler Ozone / Annuler autres / Annuler pas de réponse
   return m;
@@ -460,17 +441,14 @@ const STAGE_CAT = (() => {
 async function getOrderStatus(phone) {
   const digits = String(phone || '').replace(/\D/g, '');
   if (!digits) return 'Aucun numéro disponible pour retrouver la commande.';
-  let deals = [];
-  try {
-    const r = await egrowPost('/deal/getStageDeals.php', { search: digits, page: 1, limit: 10 });
-    deals = Array.isArray(r) ? r : (r && r.data) || [];
-  } catch (e) {}
-  deals = deals.filter((d) => { const dp = String((d.contact && d.contact.phone) || '').replace(/\D/g, ''); return dp && (dp === digits || dp.endsWith(digits) || digits.endsWith(dp)); });
-  if (!deals.length) return "Aucune commande trouvée pour ce client dans le système (peut-être pas encore commandé, ou via un autre numéro). Ne parle pas d'une commande existante ; aide-le à en passer une.";
-  const lines = deals.slice(0, 4).map((d) => {
-    const st = d.stage || {}; const cat = STAGE_CAT[st.id] || 'autre';
-    const prods = (Array.isArray(d.products) ? d.products : []).map((p) => `${p.quantity || 1}x ${String(p.name || '').trim()}`).join(', ');
-    return `• Commande ${d.deal_number || d.id} — étape « ${String(st.name || '?').trim()} » [${cat}]${prods ? ' — ' + prods : ''}${d.deal_city ? ' — ' + d.deal_city : ''}`;
+  let orders = [];
+  try { orders = await v2OrdersByPhone(digits); } catch (e) {}
+  if (!orders.length) return "Aucune commande trouvée pour ce client dans le système (peut-être pas encore commandé, ou via un autre numéro). Ne parle pas d'une commande existante ; aide-le à en passer une.";
+  const lines = orders.slice(0, 4).map((o) => {
+    const st = o.pipeline || {}; const cat = STAGE_CAT[st.id] || 'autre';
+    const prods = (Array.isArray(o.lineItems) ? o.lineItems : []).map((p) => `${p.quantity || 1}x ${String(p.title || '').trim()}`).join(', ');
+    const city = (o.shippingAddress && o.shippingAddress.city) || '';
+    return `• Commande ${o.orderNumber || o.id} — étape « ${String(st.name || '?').trim()} » [${cat}]${prods ? ' — ' + prods : ''}${city ? ' — ' + city : ''}`;
   });
   return `ÉTAT RÉEL DES COMMANDES DU CLIENT (eGrow, en direct) :\n${lines.join('\n')}\n\nSignification des catégories → avant_envoi = pas encore expédiée : le client peut MODIFIER ou ANNULER SANS frais. en_route = déjà expédiée / en distribution : NE PAS modifier, dis-lui qu'elle arrive (24-72h). livree = déjà livrée : échange possible (48h après réception, ~45 dh, photo + étiquette). annulee_retour = annulée ou retournée.`;
 }
@@ -576,10 +554,7 @@ function detectModeCommand(text) {
 }
 // Déplace un deal vers un stage (confirm = 49148, cancel = 49149).
 async function moveDeal(deal, targetStage) {
-  return egrowPost('/deal/updateDealOrderinNewStage.php', {
-    new_order: 1, old_order: deal.order || 1, stage_id: targetStage, deal_id: deal.id,
-    old_stage: (deal.stage && deal.stage.id) || (MOVABLE_STAGES[0] || 62357), update_stage_source: 'update order stage',
-  });
+  return v2MoveStage(deal.id, targetStage);
 }
 
 // ───────── #3 — création de commande ─────────
@@ -626,61 +601,19 @@ async function createOrderDeal(order, contactId) {
     ? order.products
     : [{ product: order.product, size: order.size, color: order.color, quantity: order.quantity }];
 
-  const productList = [];
+  // ── V2 : lineItems (titre + prix Shopify + qté) ──
+  const digits = String(order.phone || '').replace(/\D/g, '');
+  const lineItems = [];
   let value = 0;
   const matchedNames = [];
-
   for (const item of items) {
-    const prods = await egrowSearchProduct(item.product);
-    // Si eGrow ne trouve rien, on continue : Niveau 3 crée le deal quand même avec le nom du produit dans les notes.
-    // L'opératrice voit la commande et peut compléter manuellement. JAMAIS de commande perdue silencieusement.
-    const want = normTxt(item.product);
-    // GARDE-FOU MATCH : le produit choisi doit (a) être de la même CATÉGORIE et (b) partager ≥1 mot DISTINCTIF.
-    const wantDistinct = want.split(' ').filter((w) => w.length > 2 && !PROD_GENERIC.has(w));
-    const wantCat = [...PROD_CATEGORY].find((ch) => want.split(' ').includes(ch));
-    let p = prods.find((x) => normTxt(x.name) === want);
-    if (!p) {
-      // Niveau 1 : catégorie présente dans le nom (includes, pas split) + ≥1 mot distinctif
-      const cand = prods
-        .map((x) => { const nx = normTxt(x.name); return { x, dist: wantDistinct.filter((w) => nx.includes(w)).length, catOk: !wantCat || nx.includes(wantCat) }; })
-        .filter((c) => c.dist >= 1 && c.catOk)
-        .sort((a, b) => b.dist - a.dist);
-      if (cand.length) { p = cand[0].x; }
-    }
-    if (!p) {
-      // Niveau 2 : juste ≥1 mot distinctif (sans exiger la catégorie dans le nom eGrow)
-      const candR = prods
-        .map((x) => { const nx = normTxt(x.name); return { x, dist: wantDistinct.filter((w) => nx.includes(w)).length }; })
-        .filter((c) => c.dist >= 1)
-        .sort((a, b) => b.dist - a.dist);
-      if (candR.length) { p = candR[0].x; }
-    }
-    if (!p) {
-      // Niveau 3 : aucun produit eGrow trouvé → commande créée quand même avec le nom dans les notes
-      // On utilise le premier résultat de la recherche comme support de prix (ou prix par défaut 329)
-      p = prods[0] ? Object.assign({}, prods[0], { name: item.product }) : { id: 0, name: item.product, price: '329', sku: '' };
-    }
     const qty = Math.max(1, parseInt(item.quantity || 1, 10) || 1);
-    // Trouver la bonne combinaison (variante taille) pour que eGrow affiche la taille correctement
-    // eGrow attend `combination: id_variante` pour afficher la taille dans la commande
-    let combinationId = '';
-    let priceFromComb = parseFloat(p.price) || 0;
-    if (item.size && Array.isArray(p.combinations) && p.combinations.length) {
-      const sizeUpper = String(item.size).toUpperCase().trim();
-      const match = p.combinations.find((c) => String(c.name || '').toUpperCase().trim() === sizeUpper);
-      if (match) {
-        combinationId = String(match.id);
-        if (match.price) priceFromComb = parseFloat(match.price) || priceFromComb;
-      }
-    }
-    const price = priceFromComb;
-    value += price * qty;
-    const prodEntry = Object.assign({}, p, { quantity: qty, size: item.size || '', option: item.size || '' });
-    if (combinationId) prodEntry.combination = combinationId;
-    productList.push(prodEntry);
-    matchedNames.push(`${qty}x ${p.name}${item.size ? ' taille ' + item.size : ''}`);
+    const price = await v2LookupPrice(item.product);
+    const title = (item.size ? `${item.product} - ${item.size}` : String(item.product || '')).slice(0, 250);
+    lineItems.push({ title, quantity: qty, price: price || 0, requiresShipping: true });
+    value += (price || 0) * qty;
+    matchedNames.push(`${qty}x ${item.product}${item.size ? ' taille ' + item.size : ''}`);
   }
-
   // FLOCAGE : par article (multi-produit) ou global (produit unique)
   let flocageNote = '';
   const perItemFlocages = items.map((item, idx) => (item.flocage && (item.flocage.name || item.flocage.number)) ? { label: matchedNames[idx], flocage: item.flocage } : null).filter(Boolean);
@@ -688,68 +621,46 @@ async function createOrderDeal(order, contactId) {
   const hasGlobalFl = perItemFlocages.length === 0 && globalFl && (globalFl.name || globalFl.number);
   const totalFlocageQty = perItemFlocages.length > 0 ? perItemFlocages.length : (hasGlobalFl ? items.reduce((s, i) => s + Math.max(1, parseInt(i.quantity || 1, 10) || 1), 0) : 0);
   if (totalFlocageQty > 0) {
-    try {
-      const fres = await egrowSearchProduct('Flocage');
-      const fp = (fres || []).find((x) => /flocage/i.test(x.name || ''));
-      if (fp) {
-        productList.push(Object.assign({}, fp, { quantity: totalFlocageQty }));
-        value += (parseFloat(fp.price) || 99) * totalFlocageQty;
-      }
-    } catch (e) {}
-    if (perItemFlocages.length > 0) {
-      // Flocages distincts par maillot
-      flocageNote = ` | FLOCAGES (${totalFlocageQty}x) : ` + perItemFlocages.map((f) => `${f.label} → ${[f.flocage.name, f.flocage.number].filter(Boolean).join(' ')}`).join(' / ');
-    } else {
-      flocageNote = ` | FLOCAGE (${totalFlocageQty}x): ${[globalFl.name, globalFl.number].filter(Boolean).join(' ')}`;
-    }
+    lineItems.push({ title: 'Flocage Personnalisé PRO - Nom + Numéro', quantity: totalFlocageQty, price: 99, requiresShipping: false });
+    value += 99 * totalFlocageQty;
+    flocageNote = perItemFlocages.length > 0
+      ? ` | FLOCAGES (${totalFlocageQty}x) : ` + perItemFlocages.map((f) => `${f.label} → ${[f.flocage.name, f.flocage.number].filter(Boolean).join(' ')}`).join(' / ')
+      : ` | FLOCAGE (${totalFlocageQty}x): ${[globalFl.name, globalFl.number].filter(Boolean).join(' ')}`;
   }
-
   const isMulti = items.length > 1;
   const totalQty = items.reduce((s, i) => s + Math.max(1, parseInt(i.quantity || 1, 10) || 1), 0);
   const productSummary = matchedNames.join(' + ');
-  const dealTitle = isMulti
-    ? `${order.customer_name || ''} - ${items.length} maillots`.slice(0, 120)
-    : `${order.customer_name || ''} - ${productList[0].name}`.slice(0, 120);
-
-  // Custom fields structurés — format natif eGrow : item_N_maillot / item_N_name / item_N_numero
-  const customFieldsObj = {};
-  items.forEach((item, idx) => {
-    const i = idx + 1;
-    const egrowName = (productList[idx] && productList[idx].name) || item.product;
-    customFieldsObj[`item_${i}_maillot`] = item.size ? `${egrowName} - ${item.size}` : egrowName;
-    const fl = item.flocage || (hasGlobalFl && idx === 0 ? globalFl : null);
-    if (fl && fl.name) customFieldsObj[`item_${i}_name`] = fl.name;
-    if (fl && fl.number) customFieldsObj[`item_${i}_numero`] = String(fl.number);
-  });
-  // Note additionnelle : info supplémentaire seulement (couleur, remarque client)
-  const additionalNote = [
-    order.color ? `Couleur: ${order.color}` : null,
-    order.notes ? order.notes : null,
-  ].filter(Boolean).join(' | ');
-  if (additionalNote) customFieldsObj.note = additionalNote;
-
-  const body = {
-    id: 0, label: '', source: 'agent-ia-whatsapp',
-    deal_city: order.city || '', country: 'MA', deal_address: order.address || '',
-    deal_apartment: '', deal_province: '', deal_zip: '', deal_area: '', deal_street_name: '', deal_house_number: '', deal_nearest_place: '', deal_location: '', deal_district: '',
-    deal_customer_name: order.customer_name || '',
-    deal_phone: String(order.phone || '').replace(/\D/g, ''),
-    deal_payment_method: 'Cash on Delivery (COD)', payment_status: 'pending',
-    deal_shipping_price: 0, deal_shipping: null,
-    contact_id: contactId, type: 'deal', title: dealTitle,
-    deal_value: value, deal_currency: { id: 153, name: 'Dirham', code: 'MAD', symbol: 'MAD' },
-    deal_custom_fields: JSON.stringify(customFieldsObj),
-    products: JSON.stringify(productList),
-    pipeline_stage: order.waiting_stock && STAGE_STOCK_WAIT ? STAGE_STOCK_WAIT : STAGE_CONFIRM, close_date: 0, deal_number: '', deal_tracking_number: '',
-    users: '[]', do_not_update_assigned: false, shipping_user_connection: 0,
+  // Note = résumé produits + couleur + flocage + remarque (l'opératrice voit tout, rien de perdu)
+  const noteText = [productSummary, order.color ? `Couleur: ${order.color}` : '', flocageNote.replace(/^\s*\|\s*/, ''), order.notes || ''].filter(Boolean).join(' | ').slice(0, 1500);
+  const nameParts = String(order.customer_name || '').trim().split(/\s+/).filter(Boolean);
+  const input = {
+    phone: digits,
+    customer: { firstName: nameParts[0] || order.customer_name || '', lastName: nameParts.slice(1).join(' ') || '', phone: digits },
+    shippingAddress: { firstName: order.customer_name || '', phone: digits, city: order.city || '', address1: order.address || '', countryCode: 'MA' },
+    lineItems,
+    pipelineId: (order.waiting_stock && STAGE_STOCK_WAIT) ? STAGE_STOCK_WAIT : STAGE_CONFIRM,
+    note: noteText,
+    paymentMethod: 'Cash on Delivery (COD)',
+    currency: 'MAD',
+    subtotal: value,
+    sourceUserConnectionId: EGROW_V2_CONN,
   };
-  const res = await egrowPost('/deal/add_or_update_deal.php', body);
-  const dealId = (res && res.deal && res.deal.id) || null;
-  const price = isMulti ? 0 : (parseFloat(productList[0].price) || 0);
-  return { ok: !!(res && res.status === 'success'), dealId, product: productSummary, price, qty: totalQty, value, flocageNote, hasFlocage: !!flocageNote };
+  const q = 'mutation($in:OrderCreateOrUpdateInput!){ orderCreateOrUpdate(input:$in){ userErrors{ field message } order{ id orderNumber } } }';
+  let dealId = null, ok = false, userErrors = [];
+  try {
+    const d = await egrowV2Query(q, { in: input });
+    const node = d && d.orderCreateOrUpdate;
+    userErrors = (node && node.userErrors) || [];
+    if (node && node.order && node.order.id && !userErrors.length) { dealId = node.order.id; ok = true; }
+  } catch (e) { userErrors = [{ message: String((e && e.message) || e) }]; }
+  const price = isMulti ? 0 : ((lineItems[0] && lineItems[0].price) || 0);
+  return { ok, dealId, product: productSummary, price, qty: totalQty, value, flocageNote, hasFlocage: !!flocageNote, userErrors };
 }
 async function addDealNote(dealId, content) {
-  try { return await egrowPost('/notes/add_or_update_note.php', { id: 0, content: String(content).slice(0, 1200), type: 'deal', context: dealId, color: '' }); } catch (e) { return null; }
+  // V2 : la note est posée sur la commande via orderCreateOrUpdate(id, note) — mise à jour partielle (ne touche pas les lineItems).
+  if (!dealId) return null;
+  const q = 'mutation($in:OrderCreateOrUpdateInput!){ orderCreateOrUpdate(input:$in){ userErrors{ message } order{ id } } }';
+  try { return await egrowV2Query(q, { in: { id: Number(dealId), note: String(content || '').slice(0, 1500) } }); } catch (e) { return null; }
 }
 // Claim ATOMIQUE (anti-doublon) : insère msg_id et renvoie true UNIQUEMENT si c'est NOUS qui venons de l'insérer.
 // Deux runs simultanés (2 crons, ou un run qui chevauche le suivant) → un seul gagne le claim, l'autre reçoit false et skip
@@ -1582,6 +1493,51 @@ module.exports = async (req, res) => {
       fresh = (convs || []).map((c) => { const lm = c.lastMessage || {}; const incoming = lm.senderWaId && c.contactWaId && lm.senderWaId === c.contactWaId; return { id: c.id, phone: c.contactWaId, age_sec: nowSec - (c.lastMessageTime || 0), incoming, type: lm.type, body: String(lm.body || '').slice(0, 60) }; });
     } catch (e) { fresh = [{ error: String(e) }]; }
     return res.status(200).json({ now: new Date().toISOString(), fresh_window_sec: FRESH_WINDOW_SEC, v2_conn: EGROW_V2_CONN, raw_recent: raw, bot_sees_fresh: fresh });
+  }
+  // ── Diag LECTURE commande (statut) pour un téléphone donné ──
+  if (q.diagorderstatus === '1') {
+    const phone = String(q.phone || MERCHANT_PHONE).replace(/\D/g, '');
+    const txt = await getOrderStatus(phone);
+    const raw = await v2OrdersByPhone(phone);
+    return res.status(200).json({ phone, status_text: txt, orders: raw.map((o) => ({ id: o.id, num: o.orderNumber, stage: o.pipeline, total: o.total })) });
+  }
+  // ── SELF-TEST commande V2 (création→lecture→note→ajout→déplacement→SUPPRESSION) sur une commande FICTIVE ──
+  if (q.diagv2order === '1') {
+    const log = [];
+    const TEST_PHONE = '212600000' + String(Math.floor(Math.random() * 900) + 100); // numéro test aléatoire
+    let orderId = null;
+    try {
+      // 1) CRÉATION
+      const created = await createOrderDeal({ product: 'TEST BOT V2 - produit fictif a supprimer', size: 'L', quantity: 1, customer_name: 'TEST Bot V2', city: 'Casablanca', address: 'Adresse test', phone: TEST_PHONE }, null);
+      orderId = created.dealId;
+      log.push({ step: 'create', ok: created.ok, orderId, value: created.value, userErrors: created.userErrors });
+      if (!orderId) return res.status(200).json({ ok: false, log });
+      // 2) LECTURE
+      let r1 = await v2OrdersByPhone(TEST_PHONE);
+      const o1 = r1.find((o) => o.id === orderId) || r1[0];
+      log.push({ step: 'read', found: !!o1, stage: o1 && o1.pipeline, lineItems: o1 && (o1.lineItems || []).map((l) => l.title + ' x' + l.quantity) });
+      // 3) NOTE (mise à jour partielle) → lignes inchangées ?
+      await addDealNote(orderId, 'NOTE TEST V2 ' + Date.now());
+      let r2 = await v2OrdersByPhone(TEST_PHONE); const o2 = r2.find((o) => o.id === orderId);
+      log.push({ step: 'note_then_read', lineItems_count: o2 ? (o2.lineItems || []).length : null });
+      // 4) AJOUT produit (replace vs append ?)
+      const deal = v2OrderToDeal(o2 || o1);
+      const added = await addProductsToExistingDeal(deal, { product: 'TEST BOT V2 - 2e produit', size: 'M', quantity: 1 });
+      let r3 = await v2OrdersByPhone(TEST_PHONE); const o3 = r3.find((o) => o.id === orderId);
+      log.push({ step: 'add_product', ok: added.ok, userErrors: added.userErrors, lineItems_after: o3 ? (o3.lineItems || []).map((l) => l.title + ' x' + l.quantity) : null });
+      // 5) DÉPLACEMENT d'étape → Annuler (49149) puis Confirmer (49148)
+      const mvC = await moveDeal({ id: orderId }, STAGE_CANCEL);
+      let r4 = await v2OrdersByPhone(TEST_PHONE); const o4 = r4.find((o) => o.id === orderId);
+      log.push({ step: 'move_to_cancel', mv: mvC.status, userErrors: mvC.userErrors, stage_now: o4 && o4.pipeline });
+      // 6) SUPPRESSION (nettoyage)
+      try { const del = await egrowV2Query('mutation($id:Int!){ orderDelete(orderId:$id){ userErrors{ message } } }', { id: orderId }); log.push({ step: 'delete', res: del && del.orderDelete }); }
+      catch (e) { log.push({ step: 'delete', error: String(e) }); }
+      return res.status(200).json({ ok: true, test_phone: TEST_PHONE, orderId, log });
+    } catch (e) {
+      // tentative de nettoyage en cas d'erreur
+      if (orderId) { try { await egrowV2Query('mutation($id:Int!){ orderDelete(orderId:$id){ userErrors{ message } } }', { id: orderId }); } catch (e2) {} }
+      return res.status(200).json({ ok: false, error: String((e && e.stack) || e), log });
+    }
   }
   // Interrupteur global — BOT_ENABLED=0 dans Vercel pour couper le bot sans toucher au code
   if (process.env.BOT_ENABLED === '0') return res.status(200).json({ ok: true, status: 'bot_disabled' });
