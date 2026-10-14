@@ -12,6 +12,15 @@ const MAILLOT_TYPES = new Set(['Maillot', 'Maillot de football', 'Maillot Rétro
 const SELF = process.env.SELF_URL || 'https://touni-retour.vercel.app';
 const nrm = (s) => (s || '').toString().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim();
 
+// Flocage (nom + numéro) : tout article qui contient un MAILLOT — maillots, kits, ensembles d'entraînement (t-shirt + short),
+// ensembles « Maillot + Short ». Pas les survêtements (veste/capuche + pantalon), polos, t-shirts sport, shorts seuls.
+function flocageOk(p) {
+  const t = String(p.title || ''), ty = p.product_type || '';
+  if (MAILLOT_TYPES.has(ty) || ty === 'Kit Complet' || ty === 'Ensemble') return true;
+  if (/^survêtement|surv[eê]tement (sport|running)|capuche|zipp/i.test(t)) return false;
+  return /ensemble d.entra[iî]nement|\bkit\b|maillot \+ short|\(maillot/i.test(t);
+}
+
 let CACHE = null, REFRESHING = null;
 
 async function loadCatalog(secret) {
@@ -54,7 +63,7 @@ async function loadCatalog(secret) {
   patchs.forEach((x) => { x.kind = /champions league/i.test(x.title) ? 'cl' : 'cdm'; });
   const skip = new Set([...flocage, ...patchs].map((p) => p.id));
   const products = all.filter((p) => !skip.has(p.id) && !/Mystère|MYSTERE|Mystere/i.test(p.title))
-    .map((p) => { const m = map(p); const k = nrm(p.title); return Object.assign(m, { custom: MAILLOT_TYPES.has(p.product_type), stock: stock[k] || null, override: ovn[k] || null }); });
+    .map((p) => { const m = map(p); const k = nrm(p.title); return Object.assign(m, { custom: flocageOk(p), stock: stock[k] || null, override: ovn[k] || null }); });
   return { products, flocage, patchs, ts: Date.now() };
 }
 
