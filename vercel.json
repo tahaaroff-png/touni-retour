@@ -34,6 +34,7 @@
     { "source": "/rupture", "destination": "/rupture.html" },
     { "source": "/inventaire", "destination": "/inventaire.html" },
     { "source": "/catalogue", "destination": "/catalogue.html" },
+    { "source": "/precommande", "destination": "/precommande.html" },
     { "source": "/vitrine", "destination": "/catalogue.html" }
   ],
   "headers": [

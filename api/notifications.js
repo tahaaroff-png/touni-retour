@@ -8,6 +8,7 @@ const { SB_URL, supabaseHeaders, shopifyAdminHeaders, SHOPIFY_DOMAIN, SHOPIFY_AP
 // Réutilise le parsing du webhook (fonction exportée) — pour rester sous la limite de 12 fonctions Vercel
 const { parseVariantTitle } = require('./shopify-order-webhook.js');
 const lv = require('./_lv-shopify.js');
+const pre = require('./_precommande.js'); // précommande magasin (catalogue + création commande eGrow, étape 70661)
 
 // ── eGrow (pipelines) ──
 const EGROW_ME = process.env.EGROW_ME || '', EGROW_AK = process.env.EGROW_AK || '';
@@ -1053,6 +1054,18 @@ module.exports = async function handler(req, res) {
   if (req.method === 'GET' && req.query?.history) return historyList(req, res);
   if (req.method === 'GET' && req.query?.bestsellers) return bestSellers(req, res);
   if (req.method === 'GET' && req.query?.delivered) return deliveredSellers(req, res);
+
+  // Précommande magasin (page /precommande) : catalogue Shopify + stock magasin + prix ajustés ; création de la commande eGrow
+  if (req.method === 'GET' && req.query?.precommande === 'catalog') {
+    try { return res.status(200).json(await pre.catalog(providedSecret)); } catch (e) { return res.status(500).json({ error: String(e.message || e) }); }
+  }
+  if (req.method === 'POST' && req.query?.action === 'precommande_create') {
+    try {
+      let body = req.body; if (typeof body === 'string') { try { body = JSON.parse(body); } catch (e) { body = {}; } }
+      const live = await pre.createOrder(body || {}, EGROW_V2_KEY);
+      return res.status(200).json({ ok: true, live });
+    } catch (e) { return res.status(500).json({ ok: false, live: { ok: false, error: String(e.message || e) } }); }
+  }
 
   // Catalogue magasin (vitrine /catalogue — lecture seule)
   if (req.query?.cat === 'list') return catList(req, res);

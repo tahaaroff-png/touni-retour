@@ -1,0 +1,375 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Précommande magasin — Touni</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800;900&family=Jost:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#050506; --ink2:#0b0c10; --panel:#111319; --panel2:#15171f;
+  --line:rgba(255,255,255,.08); --line2:rgba(255,255,255,.14);
+  --txt:#f4f5f8; --muted:#8c93a3; --muted2:#5b616f;
+  --red:#E4121F; --red-ink:#B00D17; --red-soft:rgba(228,18,31,.14);
+  --green:#26d07c; --r:16px; --r-lg:22px; --r-sm:11px; --ease:cubic-bezier(.22,.61,.36,1);
+  --head:'Archivo',-apple-system,sans-serif; --body:'Jost',-apple-system,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%}
+body{font-family:var(--body);background:var(--ink);color:var(--txt);overflow:hidden;
+  background-image:radial-gradient(900px 500px at 12% -10%,rgba(228,18,31,.13),transparent 60%),radial-gradient(700px 480px at 100% 110%,rgba(228,18,31,.07),transparent 60%)}
+button{font-family:inherit;color:inherit;cursor:pointer}
+.app{display:grid;grid-template-columns:minmax(0,1fr) 400px;grid-template-rows:minmax(0,1fr);height:100vh;height:100dvh}
+@media(max-width:900px){.app{grid-template-columns:1fr}.cart{position:fixed;inset:auto 0 0 0;max-height:86%;border-radius:22px 22px 0 0;transform:translateY(calc(100% - 64px));transition:transform .35s var(--ease);z-index:30}.cart.open{transform:none}}
+/* gauche */
+.left{display:flex;flex-direction:column;min-width:0;min-height:0;height:100%;overflow:hidden}
+.top{flex:0 0 auto;padding:18px 22px 12px;border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:12px;margin-bottom:14px}
+.logo{height:46px;width:auto;display:block;filter:drop-shadow(0 0 14px rgba(228,18,31,.5))}
+.btitle{font-family:var(--head);font-weight:900;font-size:19px;letter-spacing:-.02em;line-height:1}
+.bsub{font-size:12px;color:var(--muted);margin-top:3px;letter-spacing:.06em;text-transform:uppercase}
+.tag{font-family:var(--head);font-size:9px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;padding:5px 9px;border-radius:99px;background:var(--red-soft);color:#ff6b73;border:1px solid rgba(228,18,31,.35)}
+.search{width:100%;font-family:var(--body);font-size:17px;color:var(--txt);background:var(--panel);border:1px solid var(--line2);border-radius:14px;padding:15px 18px 15px 46px;outline:none;transition:.2s}
+.search:focus{border-color:var(--red);box-shadow:0 0 0 3px var(--red-soft)}
+.sw{position:relative}.sw svg{position:absolute;left:16px;top:50%;transform:translateY(-50%);opacity:.55}
+.pills{display:flex;gap:8px;overflow-x:auto;padding-top:12px;scrollbar-width:none}
+.pills::-webkit-scrollbar{display:none}
+.pill{flex:0 0 auto;font-size:13.5px;font-weight:500;color:var(--muted);background:var(--panel);border:1px solid var(--line);border-radius:99px;padding:8px 15px;transition:.2s}
+.pill.on{color:#fff;background:var(--red);border-color:var(--red);box-shadow:0 0 18px rgba(228,18,31,.4)}
+.grid{flex:1 1 0;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;padding:18px 22px 40px;display:grid;grid-template-columns:repeat(auto-fill,minmax(172px,1fr));gap:14px;align-content:start;grid-auto-rows:max-content}
+.card{flex:0 0 auto;min-height:max-content;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;text-align:left;transition:.25s var(--ease);display:flex;flex-direction:column}
+.card:hover{transform:translateY(-3px);border-color:rgba(228,18,31,.5);box-shadow:0 12px 34px rgba(0,0,0,.5)}
+.ph{height:0;padding-top:133.33%;background:var(--ink2);position:relative;overflow:hidden;flex:0 0 auto}
+.ph img.fit{object-fit:contain;object-position:center;background:#fff;padding:6%}
+.ph img.fill{object-fit:cover;object-position:center 35%;transform:scale(1.18)}
+.ph img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:top center;display:block}
+.oos{position:absolute;bottom:9px;right:9px;font-family:var(--head);font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;padding:5px 10px;border-radius:99px;background:rgba(5,5,6,.78);color:#ff8a91;border:1px solid rgba(228,18,31,.45);backdrop-filter:blur(6px)}
+.ins{background:var(--green);color:#063;border-color:transparent}
+.old{font-size:12px;color:var(--muted2);text-decoration:line-through;margin-left:7px;font-weight:600}
+.cb{padding:11px 12px 13px}
+.pname{font-family:var(--head);font-weight:700;font-size:13.5px;line-height:1.28;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:35px}
+.price{margin-top:6px;font-family:var(--head);font-weight:800;font-size:15px;color:var(--red)}
+.state{grid-column:1/-1;text-align:center;color:var(--muted);padding:60px 20px}
+.state b{display:block;font-family:var(--head);font-size:18px;color:#fff;margin-bottom:8px}
+/* panier */
+.cart{background:var(--ink2);border-left:1px solid var(--line);display:flex;flex-direction:column;height:100%;min-height:0}
+.chead{padding:18px 20px;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--line);cursor:default}
+.chead h2{font-family:var(--head);font-weight:900;font-size:17px}
+.badge{background:var(--red);border-radius:99px;font-family:var(--head);font-weight:800;font-size:12px;padding:3px 9px}
+.clist{flex:1;overflow-y:auto;padding:14px 16px}
+.empty{color:var(--muted);text-align:center;padding:50px 16px;font-size:14px;line-height:1.5}
+.line{display:grid;grid-template-columns:62px 1fr auto;gap:12px;padding:12px;background:var(--panel);border:1px solid var(--line);border-radius:14px;margin-bottom:10px}
+.line img{width:62px;height:62px;object-fit:contain;border-radius:10px;background:#fff}
+.lt{font-family:var(--head);font-weight:700;font-size:13px;line-height:1.25}
+.lm{font-size:12px;color:var(--muted);margin-top:4px;line-height:1.45}
+.lm b{color:#fff;font-weight:600}
+.lp{font-family:var(--head);font-weight:800;font-size:14px;text-align:right}
+.rm{display:block;margin-top:6px;margin-left:auto;background:none;border:none;color:var(--muted2);font-size:12px}
+.rm:hover{color:var(--red)}
+.cform{padding:14px 16px 18px;border-top:1px solid var(--line);background:var(--ink)}
+.fld{margin-bottom:10px}
+.fld label{display:block;font-size:11.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);margin-bottom:5px;font-weight:600}
+.fld input,.fld textarea{width:100%;font-family:var(--body);font-size:16px;color:var(--txt);background:var(--panel);border:1px solid var(--line2);border-radius:11px;padding:12px 13px;outline:none}
+.fld input:focus,.fld textarea:focus{border-color:var(--red)}
+.tot{display:flex;justify-content:space-between;align-items:baseline;margin:12px 0}
+.tot span{color:var(--muted);font-size:14px}.tot b{font-family:var(--head);font-size:24px;font-weight:900}
+.go{width:100%;font-family:var(--head);font-weight:800;font-size:15px;letter-spacing:.04em;background:linear-gradient(135deg,var(--red),var(--red-ink));border:none;border-radius:14px;padding:16px;color:#fff;box-shadow:0 8px 28px rgba(228,18,31,.4);transition:.2s}
+.go:disabled{opacity:.35;box-shadow:none;cursor:not-allowed}
+.hint{font-size:11.5px;color:var(--muted2);text-align:center;margin-top:9px}
+/* modal produit */
+.ov{position:fixed;inset:0;background:rgba(0,0,0,.72);backdrop-filter:blur(6px);display:none;align-items:center;justify-content:center;z-index:50;padding:18px}
+.ov.on{display:flex}
+.modal{width:min(880px,100%);max-height:94vh;overflow:auto;background:var(--panel);border:1px solid var(--line2);border-radius:var(--r-lg);display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.05fr);animation:pop .3s var(--ease)}
+@keyframes pop{from{opacity:0;transform:scale(.96) translateY(10px)}}
+@media(max-width:700px){.modal{grid-template-columns:1fr}.mimg{height:clamp(260px,42vh,420px)}}
+@media(min-width:701px){.mimg{height:auto;min-height:100%}}
+.mimg{background:#fff;position:relative;min-height:0;height:clamp(300px,52vh,620px)}
+.mimg img{width:100%;height:100%;object-fit:contain;object-position:center;display:block;position:absolute;inset:0}
+.mbody{padding:22px 22px 20px;display:flex;flex-direction:column;gap:16px}
+.mt{font-family:var(--head);font-weight:800;font-size:19px;line-height:1.2}
+.mp{font-family:var(--head);font-weight:900;font-size:22px;color:var(--red);margin-top:4px}
+.sec h4{font-size:11.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);margin-bottom:8px;font-weight:600}
+.opts{display:flex;flex-wrap:wrap;gap:8px}
+.opt{min-width:54px;text-align:center;font-family:var(--head);font-weight:700;font-size:13.5px;background:var(--panel2);border:1px solid var(--line2);border-radius:11px;padding:10px 14px}
+.opt.on{background:var(--red);border-color:var(--red);box-shadow:0 0 16px rgba(228,18,31,.4)}
+.opt small{display:block;font-weight:500;color:var(--muted);font-size:11px}
+.opt.on small{color:#ffd0d3}
+.opt small.no{color:#ff8a91}
+.opt small.st{margin-top:3px;font-weight:700;border-top:1px solid var(--line2);padding-top:3px}
+.opt small.st.yes{color:var(--green)}
+.opt.on small.st.yes{color:#c9ffe4}.opt.on small.no{color:#ffd0d3}
+.opt{min-width:96px}
+.leg{font-size:11.5px;color:var(--muted);margin-top:8px;line-height:1.45}.leg b{color:var(--green)}
+.tgl{display:flex;align-items:center;justify-content:space-between;background:var(--panel2);border:1px solid var(--line2);border-radius:13px;padding:13px 15px}
+.tgl.on{border-color:var(--red);background:var(--red-soft)}
+.tgl b{font-family:var(--head);font-size:14px}.tgl span{display:block;font-size:12px;color:var(--muted);margin-top:2px}
+.sw2{width:44px;height:26px;border-radius:99px;background:#2a2d38;position:relative;transition:.2s;flex:0 0 auto}
+.sw2::after{content:'';position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:#fff;transition:.2s}
+.tgl.on .sw2{background:var(--red)}.tgl.on .sw2::after{left:21px}
+.sub{display:none;margin-top:10px;gap:8px}
+.sub.on{display:grid}
+.row2{display:grid;grid-template-columns:1fr 90px;gap:8px}
+.patchs{display:grid;grid-template-columns:repeat(auto-fill,minmax(112px,1fr));gap:8px}
+.pt{background:var(--panel2);border:1px solid var(--line2);border-radius:12px;padding:6px;text-align:center;font-size:11.5px;line-height:1.25}
+.pt img{width:100%;aspect-ratio:1/1;object-fit:cover;border-radius:8px;background:#fff;display:block;margin-bottom:5px}
+.pt.on{border-color:var(--red);box-shadow:0 0 14px rgba(228,18,31,.45)}
+.pt b{display:block;font-family:var(--head);color:var(--red);margin-top:2px}
+.mfoot{display:flex;gap:10px;align-items:center;margin-top:auto;padding-top:6px}
+.qty{display:flex;align-items:center;background:var(--panel2);border:1px solid var(--line2);border-radius:12px}
+.qty button{width:40px;height:44px;background:none;border:none;font-size:20px}
+.qty span{min-width:26px;text-align:center;font-family:var(--head);font-weight:800}
+.add{flex:1;font-family:var(--head);font-weight:800;font-size:14.5px;background:linear-gradient(135deg,var(--red),var(--red-ink));border:none;border-radius:13px;padding:14px;color:#fff;box-shadow:0 6px 22px rgba(228,18,31,.4)}
+.add:disabled{opacity:.35;box-shadow:none}
+.x{position:absolute;top:12px;right:12px;z-index:3;width:36px;height:36px;border-radius:50%;border:none;background:rgba(5,5,6,.7);color:#fff;font-size:18px}
+.done{text-align:center;padding:44px 28px}
+.done .ok{width:68px;height:68px;border-radius:50%;background:rgba(38,208,124,.15);border:1px solid var(--green);display:grid;place-items:center;margin:0 auto 18px;font-size:32px;color:var(--green)}
+.done h3{font-family:var(--head);font-size:21px;margin-bottom:8px}.done p{color:var(--muted);line-height:1.55;font-size:14.5px;margin-bottom:20px}
+.lv{display:flex;gap:10px;align-items:flex-start;font-size:12.5px;color:var(--muted);line-height:1.4;margin:4px 0 2px;cursor:pointer}.lv input{margin-top:3px;accent-color:var(--red);width:18px;height:18px}.lv b{color:#fff}
+.toast{position:fixed;left:50%;bottom:84px;width:max-content;max-width:90vw;text-align:center;transform:translateX(-50%);background:var(--green);color:#063;font-family:var(--head);font-weight:800;font-size:14px;padding:12px 20px;border-radius:99px;z-index:80;box-shadow:0 10px 30px rgba(0,0,0,.5);animation:pop .25s var(--ease)}
+.add2{font-family:var(--head);font-weight:800;font-size:13.5px;background:var(--panel2);border:1px solid var(--line2);border-radius:13px;padding:14px 16px;color:#fff}
+.add2:disabled{opacity:.35}
+.ed{display:flex;align-items:center;gap:6px;background:var(--panel);border:1px solid var(--line2);border-radius:12px;padding:4px 12px}.ed:focus-within{border-color:var(--red)}.ed input{width:110px;text-align:right;background:none;border:none;outline:none;color:#fff;font-family:var(--head);font-weight:900;font-size:22px}.ed i{font-style:normal;color:var(--muted);font-weight:700}
+.rst{background:none;border:none;color:var(--red);font-size:12.5px;margin:-4px 0 8px;cursor:pointer;font-weight:600}
+.hp .pr{display:none!important}
+.hp .mp{display:none}
+.cx{display:none;margin-left:auto;font-family:var(--head);font-weight:800;font-size:13px;background:var(--panel2);border:1px solid var(--line2);border-radius:99px;padding:9px 16px;color:#fff}
+.bd{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:25}
+@media(max-width:900px){.cx{display:block}.cart.open ~ .bd{display:block}.cart.open .cx{display:block}.cart:not(.open) .cx{display:none}.chead{position:sticky;top:0;background:var(--ink2);z-index:2}}
+</style>
+</head>
+<body class="hp">
+<div class="app">
+  <section class="left">
+    <div class="top">
+      <div class="brand"><img class="logo" src="/precommande-logo.png" alt="Touni"><div><div class="btitle">PRÉCOMMANDE MAGASIN</div><div class="bsub">Touni · retrait au magasin</div></div><button class="pill" id="tp" style="margin-left:auto">Prix : masqués · Afficher</button><a class="tag" href="/catalogue" style="text-decoration:none">← Catalogue</a></div>
+      <div class="sw"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input id="q" class="search" placeholder="Rechercher un article : équipe, joueur, survêtement…" autocomplete="off"></div>
+      <div class="pills" id="cats"></div>
+    </div>
+    <div class="grid" id="grid"><div class="state"><b>Chargement du catalogue…</b></div></div>
+  </section>
+
+  <aside class="cart" id="cart">
+    <div class="chead" onclick="if(innerWidth<=900)this.parentNode.classList.toggle('open')"><h2>Panier de précommande</h2><span class="badge" id="nb">0</span><button class="cx" id="cx" aria-label="Fermer le panier">✕ Fermer</button></div>
+    <div class="clist" id="clist"></div>
+    <div class="cform">
+      <div class="fld"><label>Nom du client</label><input id="cn" placeholder="Prénom Nom"></div>
+      <div class="fld"><label>Téléphone WhatsApp</label><input id="cp" inputmode="tel" placeholder="06 XX XX XX XX"></div>
+      <label class="lv"><input type="checkbox" id="live"> <span><b>Commande de test</b> : marquer la note [TEST] (la commande est créée dans « Attente retrait magasin »)</span></label>
+      <div class="tot"><span>Prix total <small id="calc" style="color:var(--muted2)"></small></span><span class="ed"><input id="tov" inputmode="numeric" placeholder="0"><i>DH</i></span></div>
+      <button class="rst" id="rst" style="display:none">↺ Revenir au prix calculé</button>
+      <button class="go" id="go" disabled>ENREGISTRER LA PRÉCOMMANDE</button>
+      <div class="hint">Le client sera prévenu sur WhatsApp dès que son article est prêt.</div>
+    </div>
+  </aside>
+  <div class="bd" id="bd"></div>
+</div>
+
+<div class="ov" id="ov"><div class="modal" id="modal"></div></div>
+
+<script>
+// Copié tel quel de touni-retour/catalogue.html (grille prix magasin). 
+const norm=s=>(s||'').toString().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+function seasonYear(n){
+  let s=' '+n+' ', reps=[];
+  const conv=v=>v>=90?1900+v:(v<=39?2000+v:NaN);
+  s=s.replace(/(19\d{2}|20\d{2})\s*[\/\-]\s*(19\d{2}|20\d{2})/g,(m,a)=>{reps.push(+a);return ' ';}); // ranges 4 chiffres → début
+  s=s.replace(/\b(\d{2})\s*[\/\-]\s*(\d{2})\b/g,(m,a)=>{reps.push(conv(+a));return ' ';});            // saisons XX/YY → conv(début)
+  s=s.replace(/\b(\d{2})\s*['’]/g,(m,a)=>{reps.push(conv(+a));return ' ';});                           // année apostrophée 98'
+  (s.match(/19\d{2}|20\d{2}/g)||[]).forEach(y=>reps.push(+y));                                         // années 4 chiffres restantes
+  reps=reps.filter(v=>!isNaN(v)&&v>=1900&&v<=2099);
+  return reps.length?Math.max(...reps):null;
+}
+
+function offrePricing(name){
+  const n=norm(name);
+  const SPECIAL=/\bedition\b|anniversaire|mamba|\bkobe\b|limited|limitee|collector|\bspecial/.test(n);
+  const TERRACE=/terrace/.test(n);
+  const TRAINING=/pre.?match|prematch|avant.?match|entrainement|training/.test(n);
+  const RETRO_KW=/retro|vintage/.test(n);
+  const CDM=/coupe du monde|\bcdm\b|world cup|mondial/.test(n);
+  if(/casquette|\bbob\b|bonnet|trucker/.test(n)){
+    // Luxe (249) = motifs à carreaux / monogramme / Gucci / Louis Vuitton (LV token) / Chanel.
+    const luxe=/carreaux|damier|monogramme|gucci|louis vuitton|chanel|\blv\b/.test(n);
+    return luxe?{cat:'Casquette luxe',price:249,old:299}:{cat:'Casquette',price:199,old:279};
+  }
+  if(/chaussette|socquette/.test(n)){
+    const p5=/pack ?5|x ?5|lot ?5|5 paires|5-pack/.test(n);
+    return p5?{cat:'Chaussettes pack 5',price:199,old:null}:{cat:'Chaussettes pack 3',price:149,old:null};
+  }
+  if(/\bgants?\b/.test(n)) return {cat:'Gants',price:199,old:279};
+  if(/serviette/.test(n)) return {cat:'Serviette',price:279,old:349};
+  if(/ballon/.test(n)) return {cat:'Ballon',price:449,old:499};
+  if(/sacoche|banane/.test(n)) return {cat:'Sacoche',price:229,old:329};
+  if(/sac a dos|sac de sport|\bsac\b|\bsacs\b/.test(n)) return {cat:'Sac à dos',price:299,old:399};
+  if(/chemise/.test(n)) return {cat:'Chemise',price:349,old:449};
+  if(/sweat|hoodie|demi.?zip|half.?zip|capuche/.test(n)) return {cat:'Sweat/Hoodie',price:379,old:499};
+  if(/\bpolo\b/.test(n)) return {cat:'Polo',price:349,old:449};
+  if(/t-?shirt|tee\b|tshirt/.test(n)) return {cat:'T-shirt',price:269,old:349};
+  // Pantalon seul (y.c. "pantalon de survêtement") → Pantalon Origins — AVANT l'ensemble
+  if((/\bpantalon\b|\blegging\b|\bjogging\b/.test(n))&&!/ensemble/.test(n)) return {cat:'Pantalon Origins',price:299,old:379};
+  // Ensemble survêtement complet (veste+pantalon ; UA, On, Nike, équipes)
+  if(/\bensemble\b|tracksuit|surv(e|ê)t/.test(n)) return {cat:'Ensemble survêtement',price:599,old:749};
+  // Kit (maillot + short) — terrace > pré-match > saison (début 2024/2025 → dernière)
+  if(/\bkit\b/.test(n)){
+    if(TERRACE)  return {cat:'Kit Terrace Icons',price:599,old:699};
+    if(TRAINING) return {cat:'Kit pré-match',price:549,old:649};
+    const y=seasonYear(n);
+    if(y===2024||y===2025) return {cat:'Kit saison dernière',price:529,old:629};
+    return {cat:'Kit nouvelle saison',price:549,old:649}; // 2026/2027 ou défaut
+  }
+  if(/\bshort\b/.test(n)) return {cat:'Short',price:249,old:299};
+  // ── MAILLOTS ──
+  // Priorité : entraînement/pré-match / rétro (mot-clé) / terrace / édition spéciale (349)
+  // puis par année de DÉBUT : ≤2023 → rétro 349 ; 2024-2025 → dernière 279 ; ≥2026 → nouvelle 299.
+  if(/maillot|jersey/.test(n)){
+    if(TRAINING) return {cat:"Maillot entraînement/pré-match",price:349,old:449};
+    if(RETRO_KW) return {cat:'Maillot rétro',price:349,old:449};
+    if(TERRACE)  return {cat:'Maillot Terrace Icons',price:349,old:449};
+    if(SPECIAL)  return {cat:'Édition spéciale',price:349,old:449};
+    if(CDM)      return {cat:'Maillot nouvelle saison',price:299,old:379};
+    const y=seasonYear(n);
+    if(y!=null){
+      if(y<=2023)            return {cat:'Maillot rétro',price:349,old:449};
+      if(y===2024||y===2025) return {cat:'Maillot saison dernière',price:279,old:349};
+      return {cat:'Maillot nouvelle saison',price:299,old:379}; // ≥2026
+    }
+    return {cat:'Maillot nouvelle saison',price:299,old:379}; // défaut sans année
+  }
+  if(RETRO_KW) return {cat:'Maillot rétro',price:349,old:449};
+  return null; // non classé → garder le prix Shopify
+}
+
+
+</script>
+<script>
+const SECRET='touni-sync-2026', API='/api/notifications';
+const $=s=>document.querySelector(s);
+const esc=s=>(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const IMG=(u,w)=>u?(u.startsWith('~')?'https://cdn.shopify.com/s/files/1/0774/1312/2267/'+u.slice(1):u)+(u.includes('?')?'&':'?')+'width='+w:'';
+const dh=n=>`<span class="pr">${Math.round(n)} DH</span>`;
+let LIM=40,DATA=null, ALL=[], cat='*', query='', CART=[], cur=null, sel={};
+
+const CATS=[['*','Tout'],['maillot','Maillots'],['survet','Survêtements'],['short','Shorts'],['casquette','Casquettes'],['autre','Autres']];
+function catOf(p){const t=norm(p.type+' '+p.title);
+  if(p.custom) return 'maillot';
+  if(/survet|ensemble|kit complet/.test(t)) return 'survet';
+  if(/short/.test(t)) return 'short';
+  if(/casquette/.test(t)) return 'casquette';
+  return 'autre';}
+
+function mapAll(list){return list.map(p=>{const g=offrePricing(p.title);let price=p.price,old=null;
+  if(p.override&&p.override.price!=null){price=Math.round(p.override.price);old=p.override.old_price!=null?Math.round(p.override.old_price):null;}
+  else if(g){price=g.price;old=g.old;}
+  const tot=p.av.length;
+  const mst=p.stock?Object.values(p.stock).reduce((a,b)=>a+b,0):0;
+  return {...p,shopPrice:p.price,price,old,tot,mst,_c:catOf(p),_s:norm(p.title+' '+p.type)};});}
+function fitImg(i,c){const r=i.naturalWidth/i.naturalHeight;if(r<=0.82)return;
+  if(c==='casquette'||c==='autre')i.classList.add('fit');   // accessoires : photo entière
+  else i.classList.add('fill');}                              // vêtements : on agrandit pour remplir la carte
+function start(d){DATA=d;ALL=mapAll(d.products);}
+async function init(){
+  $('#cats').innerHTML=CATS.map(([k,l],i)=>`<button class="pill ${i?'':'on'}" data-c="${k}">${l}</button>`).join('');
+  try{const c=localStorage.getItem('tpc');if(c){start(JSON.parse(c));render();}}catch(e){}
+  try{
+    const d=await (await fetch(API+'?precommande=catalog&secret='+SECRET)).json();
+    start(d);try{localStorage.setItem('tpc',JSON.stringify(d));}catch(e){}
+    $('#cats').innerHTML=CATS.map(([k,l],i)=>`<button class="pill ${i?'':'on'}" data-c="${k}">${l}</button>`).join('');
+    render();
+  }catch(e){$('#grid').innerHTML='<div class="state"><b>Catalogue indisponible</b>Réessaie dans un instant.</div>';}
+}
+function render(){
+  const words=norm(query).split(/\s+/).filter(Boolean);
+  const list=ALL.filter(p=>(cat==='*'||p._c===cat)&&words.every(w=>p._s.includes(w))).slice(0,LIM);
+  $('#grid').innerHTML=list.length?list.map(p=>`<button class="card" data-id="${p.id}"><div class="ph"><img loading="lazy" decoding="async" onload="fitImg(this,'${p._c}')" src="${esc(IMG(p.image,360))}" alt="">${p.mst?`<span class="oos ins">Magasin : ${p.mst}</span>`:(p.tot?'':'<span class="oos">Épuisé</span>')}</div><div class="cb"><div class="pname">${esc(p.title)}</div><div class="price">${dh(p.price)}${p.old?`<span class="old pr">${p.old} DH</span>`:''}</div></div></button>`).join(''):'<div class="state"><b>Aucun article trouvé</b>Essaie un autre mot (équipe, joueur, type).</div>';
+}
+$('#q').addEventListener('input',e=>{query=e.target.value;LIM=40;render();});
+$('#grid').addEventListener('scroll',e=>{const g=e.target;if(g.scrollTop+g.clientHeight>g.scrollHeight-600&&LIM<ALL.length){LIM+=40;render();}},{passive:true});
+$('#cats').addEventListener('click',e=>{const b=e.target.closest('[data-c]');if(!b)return;cat=b.dataset.c;LIM=40;document.querySelectorAll('#cats .pill').forEach(x=>x.classList.toggle('on',x===b));render();});
+$('#grid').addEventListener('click',e=>{const c=e.target.closest('[data-id]');if(c)openProd(+c.dataset.id);});
+
+
+function openProd(id){
+  cur=ALL.find(p=>p.id===id); sel={size:null,flo:false,nom:'',num:'',patches:[],qty:1};
+  drawModal(); $('#ov').classList.add('on');
+}
+function unit(){
+  let u=cur.price;
+  const fl=DATA.flocage[0];
+  if(sel.flo&&fl)u+=fl.price;
+  sel.patches.forEach(x=>u+=x.price);
+  return u;
+}
+function pList(p){const k=p.pk||[];return DATA.patchs.filter(x=>k.includes(x.kind));}
+function drawModal(){
+  const p=cur, fl=DATA.flocage[0];
+  const sizes=p.sizes;
+  const q=s=>p.av.includes(s);
+  const m=s=>p.stock?(p.stock[String(s).toUpperCase().replace('XXL','2XL')]||0):0;
+  $('#modal').innerHTML=`
+  <div class="mimg"><button class="x" onclick="closeM()">✕</button><img src="${esc(IMG(p.image,800))}" alt=""></div>
+  <div class="mbody">
+    <div><div class="mt">${esc(p.title)}</div><div class="mp">${dh(p.price)}${p.old?`<span class="old pr">${p.old} DH</span>`:''}</div></div>
+    ${sizes.length?`<div class="sec"><h4>Taille</h4><div class="leg">Web = stock Shopify (fournisseur). <b>Magasin</b> = pièces réellement en rayon.</div><div class="opts" style="margin-top:8px">${sizes.map(s=>`<button class="opt ${sel.size===s?'on':''} ${q(s)?'':'out'}" data-s="${esc(s)}">${esc(s)}<small class="sh ${q(s)?'':'no'}">Web : ${q(s)?'dispo':'épuisé'}</small><small class="st ${m(s)?'yes':'no'}">Magasin : ${m(s)}</small></button>`).join('')}</div></div>`:''}
+    ${p.custom&&fl?`
+    <div class="sec"><h4>Personnalisation (optionnel)</h4>
+      <div class="tgl ${sel.flo?'on':''}" id="tf"><div><b>Flocage nom + numéro</b><span>+ ${dh(fl.price)} · compté à part</span></div><div class="sw2"></div></div>
+      <div class="sub ${sel.flo?'on':''}"><div class="row2"><input class="fld" style="padding:12px;border-radius:11px;background:var(--panel2);border:1px solid var(--line2);color:#fff;font-size:16px" id="fn" maxlength="14" placeholder="NOM (ex : MESSI)" value="${esc(sel.nom)}"><input style="padding:12px;border-radius:11px;background:var(--panel2);border:1px solid var(--line2);color:#fff;font-size:16px" id="fnum" inputmode="numeric" maxlength="2" placeholder="N°" value="${esc(sel.num)}"></div></div>
+    </div>
+`:''}
+    <div class="mfoot"><div class="qty"><button onclick="qty(-1)">−</button><span id="qv">${sel.qty}</span><button onclick="qty(1)">+</button></div>
+      <button class="add2" id="addmore" ${sizes.length&&!sel.size?'disabled':''}>+ Ajouter au panier<br><small style="font-weight:500;color:var(--muted)">et continuer</small></button><button class="add" id="add" ${sizes.length&&!sel.size?'disabled':''}>Ajouter et voir le panier · ${dh(unit()*sel.qty)}</button></div>
+  </div>`;
+}
+function closeM(){$('#ov').classList.remove('on');}
+$('#ov').addEventListener('click',e=>{if(e.target.id==='ov')closeM();});
+$('#modal').addEventListener('click',e=>{
+  const s=e.target.closest('[data-s]');if(s){sel.size=s.dataset.s;drawModal();return;}
+  if(e.target.closest('#tf')){sel.flo=!sel.flo;drawModal();return;}
+  const pt=e.target.closest('[data-p]');if(pt){const x=DATA.patchs[+pt.dataset.p];const i=sel.patches.findIndex(y=>y.id===x.id&&y.title===x.title);
+    if(i>=0)sel.patches.splice(i,1);else{const mx=x.kind==='cl'?1:2;sel.patches=sel.patches.filter(y=>y.kind===x.kind);if(sel.patches.length>=mx)sel.patches.shift();sel.patches.push(x);}
+    drawModal();return;}
+  if(e.target.closest('#addmore')){addCart(true);return;}
+  if(e.target.closest('#add'))addCart();
+});
+$('#modal').addEventListener('input',e=>{if(e.target.id==='fn')sel.nom=e.target.value.toUpperCase();if(e.target.id==='fnum')sel.num=e.target.value.replace(/\D/g,'');});
+function qty(d){sel.qty=Math.max(1,Math.min(9,sel.qty+d));$('#qv').textContent=sel.qty;$('#add').innerHTML='Ajouter et voir le panier · '+dh(unit()*sel.qty);}
+function toast(t){const d=document.createElement('div');d.className='toast';d.textContent=t;document.body.appendChild(d);setTimeout(()=>d.remove(),2200);}
+function addCart(more){
+  CART.push({pid:cur.id,handle:cur.handle,title:cur.title,image:cur.image,size:sel.size,qty:sel.qty,vid:cur.vid,
+    flocage:sel.flo?{nom:sel.nom,numero:sel.num,prix:DATA.flocage[0].price,handle:DATA.flocage[0].handle,pid:DATA.flocage[0].id,vid:((Object.values(DATA.flocage[0].vid||{})[0])||{}).id}:null,
+    patches:sel.patches.map(x=>({titre:x.title,prix:x.price,handle:x.handle,pid:x.id,vid:((Object.values(x.vid||{})[0])||{}).id,image:x.image})),
+    unit:unit()});
+  closeM(); drawCart();
+  if(more){toast('Ajouté au panier — continue ta sélection ('+CART.reduce((a,l)=>a+l.qty,0)+' article(s))');}
+  else if(innerWidth<=900)$('#cart').classList.add('open');
+}
+let OVR=null;
+function calc(){return CART.reduce((a,l)=>a+l.unit*l.qty,0);}
+function total(){return OVR!=null?OVR:calc();}
+function drawCart(){
+  $('#nb').textContent=CART.reduce((a,l)=>a+l.qty,0);
+  $('#clist').innerHTML=CART.length?CART.map((l,i)=>`<div class="line"><img src="${esc(IMG(l.image,140))}" alt=""><div><div class="lt">${esc(l.title)}</div><div class="lm">${l.size?`Taille <b>${esc(l.size)}</b> · `:''}Qté <b>${l.qty}</b>${l.flocage?`<br>Flocage <b>${esc(l.flocage.nom||'—')} ${esc(l.flocage.numero||'')}</b> (+${dh(l.flocage.prix)})`:''}${(l.patches||[]).map(x=>`<br>Patch <b>${esc(x.titre.replace(/^Patch /,'').replace(' — Brodé Thermocollant',''))}</b> (+${dh(x.prix)})`).join('')}</div></div><div><div class="lp">${dh(l.unit*l.qty)}</div><button class="rm" onclick="CART.splice(${i},1);drawCart()">Retirer</button></div></div>`).join(''):'<div class="empty">Panier vide.<br>Cherche l\'article demandé par le client puis ajoute-le ici.</div>';
+  $('#tov').value=CART.length?total():'';$('#calc').textContent=(OVR!=null&&CART.length)?'(modifié · calculé '+calc()+' DH)':'';$('#rst').style.display=OVR!=null?'block':'none'; check();
+}
+function check(){$('#go').disabled=!(CART.length&&$('#cn').value.trim().length>1&&$('#cp').value.replace(/\D/g,'').length>=9);}
+['cn','cp'].forEach(i=>$('#'+i).addEventListener('input',check));
+$('#tov').addEventListener('input',e=>{const v=e.target.value.replace(/\D/g,'');OVR=v===''?null:parseInt(v,10);$('#calc').textContent=OVR!=null?'(modifié · calculé '+calc()+' DH)':'';$('#rst').style.display=OVR!=null?'block':'none';});
+$('#rst').addEventListener('click',()=>{OVR=null;drawCart();});
+$('#go').addEventListener('click',async()=>{
+  const body={client:{nom:$('#cn').value.trim(),telephone:$('#cp').value.replace(/\D/g,'')},lignes:CART,total:calc(),total_override:OVR,live:true,test:$('#live').checked};
+  $('#go').disabled=true;
+  const rr=await (await fetch(API+'?action=precommande_create&secret='+SECRET,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json();
+  $('#modal').innerHTML=`<div class="done" style="grid-column:1/-1"><div class="ok">✓</div>${body.live?(rr.live&&rr.live.ok?`<h3>Commande créée dans le pipeline</h3><p>Commande <b>#${esc(String(rr.live.order.orderNumber||rr.live.order.id))}</b> créée à l'étape « Attente retrait magasin » (70661). Vérifie-la dans eGrow.</p>`:`<h3 style="color:#ff8a91">Création refusée</h3><p>${esc(JSON.stringify((rr.live&&(rr.live.userErrors||rr.live.errors||rr.live.error))||'erreur inconnue')).slice(0,400)}</p>`):`<h3>Erreur</h3><p>Réessaie.</p>`}<button class="add" style="max-width:260px" onclick="closeM()">Nouvelle précommande</button></div>`;
+  $('#ov').classList.add('on'); CART=[];OVR=null; $('#cn').value='';$('#cp').value='';$('#live').checked=false; drawCart();
+});
+$('#tp').addEventListener('click',()=>{const h=document.body.classList.toggle('hp');$('#tp').classList.toggle('on',!h);$('#tp').textContent=h?'Prix : masqués · Afficher':'Prix : affichés · Masquer';});
+setInterval(async()=>{try{const d=await (await fetch(API+'?precommande=catalog&secret='+SECRET)).json();start(d);render();}catch(e){}},180000);
+$('#cx').addEventListener('click',e=>{e.stopPropagation();$('#cart').classList.remove('open');});
+$('#bd').addEventListener('click',()=>$('#cart').classList.remove('open'));
+drawCart(); init();
+</script>
+</body>
+</html>
