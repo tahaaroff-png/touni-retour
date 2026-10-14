@@ -1158,7 +1158,10 @@ async function runPoll(q) {
             const img = await fetchWaImage(b);                 // download robuste (CDN eGrow + fallback Meta media-id + validation)
             if (img) images.push(img);
           }
-          if (!images.length) { await releaseClaim(msgId); continue; }
+          if (!images.length) {
+            // Photo reçue mais non téléchargeable → NE JAMAIS rester muet : on répond quand même (flux texte).
+            body = "[Le client vient d'envoyer une PHOTO d'un produit, mais l'image n'a pas pu être chargée de ton côté. ⚠️ NE dis PAS que tu n'as pas reçu la photo / qu'elle ne s'affiche pas. Réponds chaleureusement et demande-lui gentiment de préciser l'ÉQUIPE et le MODÈLE (ou de renvoyer la photo) pour que tu l'aides à le trouver, et propose-lui de parcourir https://touni.ma en attendant.]";
+          }
         }
         const imageBase64 = images[0] ? images[0].base64 : null; // rétro-compat (1ʳᵉ image)
         const imageMime = images[0] ? images[0].mime : null;
