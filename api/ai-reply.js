@@ -18,7 +18,7 @@ const EGROW_V2_KEY         = process.env.EGROW_V2_KEY         || 'a9671816046a83
 const EGROW_V2_CONN        = parseInt(process.env.EGROW_V2_CONN        || '7887', 10); // userConnectionId (0625254090)
 const EGROW_V2_INTEGRATION = parseInt(process.env.EGROW_V2_INTEGRATION || '59', 10);   // integrationId (Whatsapp API)
 const FRESH_WINDOW_SEC = parseInt(process.env.EGROW_FRESH_SEC || '600', 10); // ne répond qu'aux messages des 10 dernières min
-const HUMAN_HANDOVER_SEC = parseInt(process.env.EGROW_HUMAN_HANDOVER_SEC || '3600', 10); // si un humain (équipe) a répondu il y a < 1h, le bot se tait ; il ne reprend qu'après 1h sans réponse humaine
+const HUMAN_HANDOVER_SEC = parseInt(process.env.EGROW_HUMAN_HANDOVER_SEC || '7200', 10); // si un humain (équipe) a répondu il y a < 2h, le bot se tait ; il ne reprend qu'à un NOUVEAU message du client après 2h sans réponse humaine
 const HISTORY_LIMIT = parseInt(process.env.EGROW_HISTORY_LIMIT || '8', 10);  // nb de messages d'historique lus (8 = suffisant, 20 = trop coûteux)
 const MAX_PER_RUN = parseInt(process.env.EGROW_MAX_PER_RUN || '8', 10);      // garde-fou anti-blast
 const MAX_REPLIES_PER_CONV = parseInt(process.env.EGROW_MAX_REPLIES_PER_CONV || '12', 10); // plafond de réponses du bot par conv (~2h) → anti-abuseur/blagueur, protège les crédits
@@ -1213,7 +1213,7 @@ async function runPoll(q) {
           let humanActive = false;
           try { humanActive = humanHandling(raw, nowSec, botSent, contactWaId); } catch (e) {}
           if (humanActive) {
-            if (!dry && claimedMsgId) { await releaseClaim(claimedMsgId); claimedMsgId = null; } // libère → on pourra répondre plus tard si l'humain reste inactif 1h
+            claimedMsgId = null; // NE PAS libérer : ce message client reçu pendant la fenêtre humaine est traité par l'humain — le bot ne le reprendra jamais (il ne répond qu'à un NOUVEAU message après la fenêtre)
             results.push({ conv: c.id, phone: contactWaId, msgId, body: body.slice(0, 60), decision: 'human_handover' });
             processed++; continue;
           }
