@@ -1241,6 +1241,23 @@ async function runPoll(q) {
           body = "[Le client vient d'essayer de nous APPELER. Réponds par un message chaleureux : explique gentiment que la ligne téléphonique est ouverte de 9h à 17h, mais que tu es là tout de suite par message pour l'aider (commande, taille, produit, livraison, suivi…). Invite-le à écrire ce dont il a besoin. S'il veut absolument un appel, dis qu'un conseiller le rappellera demain dès 9h.]";
         }
 
+        // RAFALE : le client a pu envoyer plusieurs messages d'affilée sans réponse (ex : « où est le magasin ? » puis une liste d'équipes) → on répond à TOUS, pas seulement au dernier.
+        if (type === 'text' && !isImage && !isAudio && !isCall) {
+          try {
+            const prev = []; let seen = false;
+            for (const m of raw) {                                   // récent d'abord
+              if (m.mine === true || m.mine === 'true') break;         // un message de l'équipe/bot coupe la rafale
+              if (String(m.id || '') === msgId) { seen = true; continue; }
+              if (!seen) continue;
+              if (String(m.type || '') !== 'text') continue;
+              const x = String((m.body || (m.content && m.content.body) || '')).trim();
+              if (x) prev.push(x.slice(0, 300));
+              if (prev.length >= 4) break;
+            }
+            if (prev.length) body = "[Le client a envoyé PLUSIEURS messages à la suite sans réponse — réponds à CHACUN dans un seul message (ex : s'il demande où est le magasin → adresse + lien Google, ET réponds aussi aux autres messages)]\n" + prev.reverse().concat([body]).map((x) => '- ' + x).join('\n');
+          } catch (e) {}
+        }
+
         // Historique de la conversation → réponse en contexte (multi-tours)
         // NB: les réponses du bot font souvent plusieurs bulles (= plusieurs messages eGrow) → on prend une fenêtre plus large
         // pour garder le contexte d'il y a 1-2h (ex: maillot déjà évoqué). Les PHOTOS sont gardées comme marqueur (sinon le fil est perdu).
