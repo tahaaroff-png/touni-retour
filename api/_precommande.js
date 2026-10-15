@@ -155,4 +155,4 @@ async function createOrder(b, egrowKey) {
   return { ok: !(n.userErrors || []).length && !!n.order, userErrors: n.userErrors, order: n.order, unlinked };
 }
 
-module.exports = { catalog, createOrder };
+module.exports = { catalog, createOrder, resolveEgrow, SHOPIFY_CONN };

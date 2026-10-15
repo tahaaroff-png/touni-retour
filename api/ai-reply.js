@@ -3,6 +3,7 @@
 //   - GET  /api/ai-reply?poll=1     → POLLER : lit l'inbox eGrow, répond via Claude, envoie via l'API eGrow.
 // Sécurisé par ?secret=. Clé Claude + tokens eGrow en env. Anti-doublon Supabase (table wa_agent_replied).
 const { handleIncoming, isButton } = require('./_agent.js');
+const pre = require('./_precommande.js');
 const { SB_URL, supabaseHeaders, shopifyAdminHeaders, SHOPIFY_DOMAIN, SHOPIFY_API_VERSION } = require('./_shopify-helpers.js');
 
 const SECRET = 'touni-sync-2026';
@@ -356,6 +357,53 @@ async function v2LookupPrice(name) {
   } catch (e) {}
   return 0;
 }
+
+// ── Ligne de commande LIÉE au vrai produit (prix + photo + variante de taille), pour les commandes créées par le bot ──
+// Le catalogue public Shopify (products.json, rupture incluse) sert de référence ; rapprochement par titre normalisé puis par recouvrement de mots.
+let _PCAT = { ts: 0, list: [] };
+async function _shopifyCatalog() {
+  if (Date.now() - _PCAT.ts < 300000 && _PCAT.list.length) return _PCAT.list;
+  try {
+    let all = [];
+    for (let pg = 1; pg <= 10; pg++) {
+      const r = await fetch(`https://touni.ma/products.json?limit=250&page=${pg}`, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+      const x = ((await r.json()).products) || []; all = all.concat(x); if (x.length < 250) break;
+    }
+    if (all.length) _PCAT = { ts: Date.now(), list: all };
+  } catch (e) {}
+  return _PCAT.list;
+}
+function _words(s) { return normTxt(s).split(' ').filter((w) => w.length > 1); }
+async function findShopifyProduct(name, size, color) {
+  const list = await _shopifyCatalog(); if (!list.length) return null;
+  const n = normTxt(name); const qw = _words(name); if (!qw.length) return null;
+  let best = list.find((p) => normTxt(p.title) === n), bestScore = best ? 1 : 0;
+  if (!best) for (const p of list) {
+    const tw = new Set(_words(p.title)); const hit = qw.filter((w) => tw.has(w)).length;
+    const score = (hit / qw.length) * 0.7 + (hit / Math.max(tw.size, 1)) * 0.3;
+    if (score > bestScore) { bestScore = score; best = p; }
+  }
+  if (!best || bestScore < 0.6) return null;
+  const sz = String(size || '').trim().toLowerCase(), col = normTxt(color || '');
+  const vs = best.variants || [];
+  const bySize = vs.filter((v) => sz && String(v.title).split(' / ')[0].trim().toLowerCase() === sz);
+  const v = (col && bySize.find((x) => normTxt(x.title).includes(col))) || bySize[0] || vs[0];
+  return { pid: best.id, title: best.title, vid: v && v.id, sku: (v && v.sku) || '', price: v ? parseFloat(v.price) || 0 : 0,
+    image: (best.images && best.images[0] && best.images[0].src) || '' };
+}
+// Construit la ligne article : titre/prix/photo/variante du vrai produit, liée à la fiche eGrow (productId/variantId) si elle existe.
+async function buildProductLine(item, qty) {
+  const m = await findShopifyProduct(item.product, item.size, item.color);
+  const title = (item.size ? `${(m && m.title) || item.product} - ${item.size}` : String((m && m.title) || item.product || '')).slice(0, 250);
+  if (!m) { const price = await v2LookupPrice(item.product); return { line: { title, quantity: qty, price: price || 0, requiresShipping: true }, price: price || 0, linked: false }; }
+  const line = { title, quantity: qty, price: m.price, requiresShipping: true, sku: m.sku || undefined, imageUrl: m.image || undefined,
+    metadata: { source: 'agent_ia_whatsapp', taille: item.size || null } };
+  let hit = null;
+  try { hit = await pre.resolveEgrow(EGROW_V2_KEY, m.title, String(m.pid), m.vid ? String(m.vid) : undefined); } catch (e) {}
+  if (hit) { line.productId = hit.productId; if (hit.variantId) line.variantId = hit.variantId; }
+  else { line.userConnectionId = pre.SHOPIFY_CONN; line.externalProductId = String(m.pid); if (m.vid) line.externalVariantId = String(m.vid); }
+  return { line, price: m.price, linked: true };
+}
 // Déplace une commande vers une étape (confirm/cancel/…). Retour { status:'success'|'error' } (compat moveDeal V1).
 async function v2MoveStage(orderId, stageId) {
   const q = 'mutation($in:OrderPipelineUpdateInput!){ orderPipelineUpdate(input:$in){ userErrors{ field message } items{ orderId } } }';
@@ -394,9 +442,8 @@ async function addProductsToExistingDeal(existingDeal, order) {
   const matchedNames = [];
   for (const item of items) {
     const qty = Math.max(1, parseInt(item.quantity || 1, 10) || 1);
-    const price = await v2LookupPrice(item.product);
-    const title = (item.size ? `${item.product} - ${item.size}` : String(item.product || '')).slice(0, 250);
-    newLineItems.push({ title, quantity: qty, price: price || 0, requiresShipping: true });
+    const bl = await buildProductLine(item, qty); const price = bl.price;
+    newLineItems.push(bl.line);
     addedValue += (price || 0) * qty;
     matchedNames.push(`${qty}x ${item.product}${item.size ? ' taille ' + item.size : ''}`);
     if (item.flocage && (item.flocage.name || item.flocage.number)) {
@@ -651,9 +698,8 @@ async function createOrderDeal(order, contactId) {
   const matchedNames = [];
   for (const item of items) {
     const qty = Math.max(1, parseInt(item.quantity || 1, 10) || 1);
-    const price = await v2LookupPrice(item.product);
-    const title = (item.size ? `${item.product} - ${item.size}` : String(item.product || '')).slice(0, 250);
-    lineItems.push({ title, quantity: qty, price: price || 0, requiresShipping: true });
+    const bl = await buildProductLine(item, qty); const price = bl.price;
+    lineItems.push(bl.line);
     value += (price || 0) * qty;
     matchedNames.push(`${qty}x ${item.product}${item.size ? ' taille ' + item.size : ''}`);
   }
