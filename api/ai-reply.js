@@ -405,6 +405,12 @@ async function buildProductLine(item, qty) {
   else { line.userConnectionId = pre.SHOPIFY_CONN; line.externalProductId = String(m.pid); if (m.vid) line.externalVariantId = String(m.vid); }
   return { line, price: m.price, linked: true };
 }
+// Tags « bot » : on FUSIONNE avec les tags existants (orderCreateOrUpdate remplace la liste).
+async function mergeTags(orderId, add, existing) {
+  let cur = existing;
+  if (!cur) { try { const d = await egrowV2Query('query($id:Int!){ order(id:$id){ tags } }', { id: Number(orderId) }); cur = (d && d.order && d.order.tags) || []; } catch (e) { cur = []; } }
+  return [...new Set([].concat(cur || [], add))].join(',');
+}
 // Déplace une commande vers une étape (confirm/cancel/…). Retour { status:'success'|'error' } (compat moveDeal V1).
 async function v2MoveStage(orderId, stageId) {
   const q = 'mutation($in:OrderPipelineUpdateInput!){ orderPipelineUpdate(input:$in){ userErrors{ field message } items{ orderId } } }';
@@ -454,13 +460,14 @@ async function addProductsToExistingDeal(existingDeal, order) {
       addedValue += 99 * qty;
     }
   }
-  let _oldNote = ''; try { const nd = await egrowV2Query('query($id:Int!){ order(id:$id){ note } }', { id: Number(existingDeal.id) }); _oldNote = (nd && nd.order && nd.order.note) || ''; } catch (e) {} // on ne perd plus la note existante
+  let _oldNote = '', _oldTags = []; try { const nd = await egrowV2Query('query($id:Int!){ order(id:$id){ note tags } }', { id: Number(existingDeal.id) }); _oldNote = (nd && nd.order && nd.order.note) || ''; _oldTags = (nd && nd.order && nd.order.tags) || []; } catch (e) {} // on ne perd plus la note existante
   const mergedValue = (parseFloat(existingDeal.deal_value) || 0) + addedValue;
   const input = {
     id: existingDeal.id,
     lineItems: [...existingLineItems, ...newLineItems],
     subtotal: mergedValue,
     note: (`AJOUT (agent IA) : ${matchedNames.join(' + ')}` + (_oldNote ? ' | ' + _oldNote : '')).slice(0, 1500),
+    tags: await mergeTags(existingDeal.id, ['modification bot'], _oldTags),
   };
   const q = 'mutation($in:OrderCreateOrUpdateInput!){ orderCreateOrUpdate(input:$in){ userErrors{ field message } order{ id } } }';
   let ok = false, userErrors = [];
@@ -733,6 +740,7 @@ async function createOrderDeal(order, contactId) {
     lineItems,
     pipelineId: order.pipelineId ? Number(order.pipelineId) : ((order.waiting_stock && STAGE_STOCK_WAIT) ? STAGE_STOCK_WAIT : STAGE_CONFIRM), // order.pipelineId = étape forcée (ex 70661 Attente retrait magasin)
     note: noteText,
+    tags: 'création bot',
     paymentMethod: 'Cash on Delivery (COD)',
     currency: 'MAD',
     subtotal: value,
@@ -1381,10 +1389,11 @@ async function runPoll(q) {
                 const pd = pdo ? v2OrderToDeal(pdo) : null;
                 if (pd) {
                   const day = String(decision.pickup.day || '').trim() || 'jour non précisé', extra = String(decision.pickup.note || '').trim();
-                  const noteLine = `RETRAIT MAGASIN : le client souhaite récupérer sa commande au magasin — ${day}${extra ? ' (' + extra + ')' : ''}.`;
+                  const noteLine = `RETRAIT MAGASIN : le client souhaite récupérer sa commande au magasin — ${day}${extra ? ' (' + extra + ')' : ''}. Prix = ceux de la commande (non recalculés).`;
                   let oldNote = ''; try { const nd = await egrowV2Query('query($id:Int!){ order(id:$id){ note } }', { id: Number(pd.id) }); oldNote = (nd && nd.order && nd.order.note) || ''; } catch (e) {}
                   let mv = { status: 'already_there' };
                   if ((pd.stage && pd.stage.id) !== 70661) mv = await v2MoveStage(pd.id, 70661);
+                  try { await egrowV2Query('mutation($in:OrderCreateOrUpdateInput!){ orderCreateOrUpdate(input:$in){ userErrors{ message } order{ id } } }', { in: { id: Number(pd.id), tags: await mergeTags(pd.id, ['modification bot']) } }); } catch (e) {}
                   await addDealNote(pd.id, (noteLine + (oldNote ? ' | ' + oldNote : '')).slice(0, 1500));
                   entry.pickup = { deal: pd.id, from: pd.stage && pd.stage.id, to: 70661, ok: mv && mv.status, day };
                   const pmsg = `🏬 *Retrait magasin*\n👤 ${c.title || contactWaId} (${contactWaId})\n📦 Commande #${pd.deal_number}\n📅 ${day}${extra ? '\n📝 ' + extra : ''}\n➡️ Déplacée vers « Attente retrait magasin ».`;
