@@ -99,7 +99,7 @@ async function createOrder(b, egrowKey) {
   if (!b || !b.client || !Array.isArray(b.lignes) || !b.lignes.length) return { ok: false, userErrors: [{ message: 'Panier vide' }] };
   const digits = String(b.client.telephone || '').replace(/\D/g, '').replace(/^0/, '212');
   if (digits.length < 11) return { ok: false, userErrors: [{ message: 'Téléphone invalide' }] };
-  const lineItems = []; let value = 0; const notes = [];
+  const lineItems = []; let value = 0; const notes = []; const attrs = [];
   const img = (u) => (u || '').replace(/^~/, 'https://cdn.shopify.com/s/files/1/0774/1312/2267/');
   for (const l of b.lignes) {
     const qty = Math.max(1, parseInt(l.qty, 10) || 1);
@@ -109,6 +109,11 @@ async function createOrder(b, egrowKey) {
       userConnectionId: SHOPIFY_CONN, externalProductId: String(l.pid), externalVariantId: v.id ? String(v.id) : undefined, sku: v.sku || undefined, imageUrl: img(l.image) || undefined,
       metadata: { source: 'precommande_magasin', taille: l.size || null, flocage: l.flocage ? { nom: l.flocage.nom, numero: l.flocage.numero } : null, patch: (l.patches || (l.patch ? [l.patch] : [])).map((x) => x.titre) } });
     value += base * qty;
+    // Custom fields eGrow : un bloc par maillot (nom du maillot + taille + flocage associé + patch(s) associé(s))
+    { const n = attrs.filter((x) => /^Maillot \d+$/.test(x.key)).length + 1, pts = (l.patches || (l.patch ? [l.patch] : [])).map((x) => x.titre);
+      attrs.push({ key: `Maillot ${n}`, value: String(l.size ? `${l.title} - ${l.size}` : l.title).slice(0, 250) });
+      attrs.push({ key: `Flocage ${n}`, value: l.flocage ? ([l.flocage.nom, l.flocage.numero].filter(Boolean).join(' ') || 'Oui') : 'Aucun' });
+      attrs.push({ key: `Patch ${n}`, value: pts.length ? pts.join(' + ').slice(0, 250) : 'Aucun' }); }
     if (l.flocage) {
       lineItems.push({ title: 'Flocage Personnalisé PRO - Nom + Numéro', quantity: qty, price: l.flocage.prix, requiresShipping: false, userConnectionId: SHOPIFY_CONN, externalProductId: String(l.flocage.pid),
         externalVariantId: l.flocage.vid ? String(l.flocage.vid) : undefined, metadata: { source: 'precommande_magasin', pour: l.title, nom: l.flocage.nom, numero: l.flocage.numero } });
@@ -140,7 +145,7 @@ async function createOrder(b, egrowKey) {
   const parts = String(b.client.nom || '').trim().split(/\s+/);
   const input = { phone: digits, customer: { firstName: parts[0] || '', lastName: parts.slice(1).join(' '), phone: digits },
     shippingAddress: { firstName: b.client.nom, phone: digits, city: 'Casablanca', address1: 'Retrait magasin Touni (Sidi Maârouf)', countryCode: 'MA' },
-    lineItems, pipelineId: STAGE_ATTENTE_RETRAIT, note: ('PRÉCOMMANDE MAGASIN (retrait au magasin) ' + (b.test ? '[TEST] ' : '') + '| ' + notes.join(' / ')).slice(0, 1500),
+    lineItems, pipelineId: STAGE_ATTENTE_RETRAIT, tags: 'magasin', customAttributes: attrs, note: ('PRÉCOMMANDE MAGASIN (retrait au magasin) ' + (b.test ? '[TEST] ' : '') + '| ' + notes.join(' / ')).slice(0, 1500),
     paymentMethod: 'Cash on Delivery (COD)', currency: 'MAD', subtotal: value, sourceUserConnectionId: WA_CONN };
   const r = await fetch('https://api5.egrow.com/graphql', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-API-Key': egrowKey, 'User-Agent': 'Mozilla/5.0' },
     body: JSON.stringify({ query: 'mutation($in:OrderCreateOrUpdateInput!){ orderCreateOrUpdate(input:$in){ userErrors{ field message } order{ id orderNumber } } }', variables: { in: input } }) });
