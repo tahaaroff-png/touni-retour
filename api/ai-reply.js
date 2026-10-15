@@ -20,6 +20,7 @@ const EGROW_V2_CONN        = parseInt(process.env.EGROW_V2_CONN        || '7887'
 const EGROW_V2_INTEGRATION = parseInt(process.env.EGROW_V2_INTEGRATION || '59', 10);   // integrationId (Whatsapp API)
 const FRESH_WINDOW_SEC = parseInt(process.env.EGROW_FRESH_SEC || '600', 10); // ne répond qu'aux messages des 10 dernières min
 const HUMAN_HANDOVER_SEC = parseInt(process.env.EGROW_HUMAN_HANDOVER_SEC || '7200', 10); // si un humain (équipe) a répondu il y a < 2h, le bot se tait ; il ne reprend qu'à un NOUVEAU message du client après 2h sans réponse humaine
+const MIN_AGE_SEC = parseInt(process.env.EGROW_MIN_AGE_SEC || '150', 10); // laisse 2 min30 à l'équipe pour répondre en premier (texte/vocal) avant que le bot ne réponde
 const HISTORY_LIMIT = parseInt(process.env.EGROW_HISTORY_LIMIT || '8', 10);  // nb de messages d'historique lus (8 = suffisant, 20 = trop coûteux)
 const MAX_PER_RUN = parseInt(process.env.EGROW_MAX_PER_RUN || '8', 10);      // garde-fou anti-blast
 const MAX_REPLIES_PER_CONV = parseInt(process.env.EGROW_MAX_REPLIES_PER_CONV || '12', 10); // plafond de réponses du bot par conv (~2h) → anti-abuseur/blagueur, protège les crédits
@@ -328,7 +329,7 @@ function v2OrderToDeal(o) {
     deal_customer_name: (o.customer && [o.customer.firstName, o.customer.lastName].filter(Boolean).join(' ')) || '',
     deal_phone: o.phone || (o.customer && o.customer.phone) || '',
     deal_value: parseFloat(o.total) || 0,
-    products: (o.lineItems || []).map((li) => ({ name: li.title, quantity: li.quantity || 1, price: li.price })),
+    products: (o.lineItems || []).map((li) => ({ name: li.title, quantity: li.quantity || 1, price: li.price, _pid: li.product && li.product.id, _vid: li.variant && li.variant.id, _img: li.imageUrl })),
     deal_custom_fields: '{}',
   };
 }
@@ -336,7 +337,7 @@ function v2OrderToDeal(o) {
 async function v2OrdersByPhone(phone) {
   const digits = String(phone || '').replace(/\D/g, '');
   if (!digits) return [];
-  const q = 'query($s:String){ orders(perPage:10, query:$s){ nodes{ id orderNumber phone total createdAt pipeline{ id name } customer{ id phone firstName lastName } shippingAddress{ city address1 } lineItems{ title quantity price } } } }';
+  const q = 'query($s:String){ orders(perPage:10, query:$s){ nodes{ id orderNumber phone total createdAt pipeline{ id name } customer{ id phone firstName lastName } shippingAddress{ city address1 } lineItems{ title quantity price imageUrl product{ id } variant{ id } } } } }';
   let d = null;
   try { d = await egrowV2Query(q, { s: digits }); } catch (e) { return []; }
   const nodes = (d && d.orders && d.orders.nodes) || [];
@@ -433,7 +434,9 @@ async function findRecentUnshippedDeal(phone) {
 async function addProductsToExistingDeal(existingDeal, order) {
   // V2 : on reconstruit la liste COMPLÈTE des lineItems (existants + nouveaux) et on met à jour la commande.
   // (orderCreateOrUpdate avec id + lineItems REMPLACE la liste — vérifié par le self-test ?diagv2order=1.)
-  const existingLineItems = (existingDeal.products || []).map((p) => ({ title: String(p.name || '').slice(0, 250), quantity: p.quantity || 1, price: parseFloat(p.price) || 0, requiresShipping: !/flocage/i.test(p.name || '') }));
+  const existingLineItems = (existingDeal.products || []).map((p) => ({ title: String(p.name || '').slice(0, 250), quantity: p.quantity || 1, price: parseFloat(p.price) || 0, requiresShipping: !/flocage/i.test(p.name || ''),
+    // on GARDE le lien produit/variante/photo des lignes existantes (sinon la mise à jour les réécrit en simples titres sans photo)
+    productId: p._pid || undefined, variantId: p._vid || undefined, imageUrl: (!p._pid && p._img) || undefined }));
   const items = Array.isArray(order.products) && order.products.length > 0
     ? order.products
     : [{ product: order.product, size: order.size, color: order.color, quantity: order.quantity, flocage: order.flocage }];
@@ -1147,6 +1150,7 @@ async function runPoll(q) {
         if (!incoming) continue;
         if (!lastTime || (nowSec - lastTime) > FRESH_WINDOW_SEC) continue;        // frais uniquement (jamais le backlog)
         if (!msgId) continue;
+        if (!onlyPhone && (nowSec - lastTime) < MIN_AGE_SEC && !(MERCHANT_PHONE && contactWaId.replace(/\D/g, '') === MERCHANT_PHONE)) continue; // trop frais : l'humain a peut-être déjà commencé à répondre (vocal en cours) → repris au prochain passage
         const isImage = type === 'image';
         const isAudio = type === 'audio' || type === 'voice' || type === 'ptt';     // message vocal
         const isCall = /call/i.test(type);                                          // appel (manqué) — détection best-effort
@@ -1352,6 +1356,10 @@ async function runPoll(q) {
             // BOUTON : eGrow a déjà répondu (un template) juste après le clic → on ne double PAS. L'agent se tait.
             await releaseClaim(msgId); entry.sent = 'skip:template_a_repondu'; entry.decision = 'bouton_gere_par_template';
           } else {
+            // RE-VÉRIFICATION JUSTE AVANT L'ENVOI : pendant que le bot rédigeait, un humain (opératrice/patron) a pu répondre (texte, vocal, image) → le bot se tait.
+            let _late = false;
+            if (!_isMerchantHere) { try { _late = humanHandling(await egrowGetMessages(c.id, HISTORY_LIMIT), Math.floor(Date.now() / 1000), await recentBotSent(c.id), contactWaId); } catch (e) {} }
+            if (_late) { claimedMsgId = null; entry.decision = 'human_handover_late'; entry.sent = 'skip:humain_entre_temps'; results.push(entry); processed++; continue; }
             const sendRes = await egrowSend(integrationId, contactWaId, decision.reply, c.id); // c.id = fil exact (fiable pour les leads pub)
             entry.sent = sendRes && sendRes.status;
             if (sendRes && sendRes.status === 'success') { claimedMsgId = null; await markBotSent(c.id, integrationId, sendRes, decision.reply); } // envoi OK → ne PAS libérer + mémoriser le texte (handover + anti-doublon)
