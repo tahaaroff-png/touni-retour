@@ -85,6 +85,13 @@ button{font-family:inherit;color:inherit;cursor:pointer}
 @keyframes pop{from{opacity:0;transform:scale(.96) translateY(10px)}}
 @media(max-width:700px){.modal{grid-template-columns:1fr}.mimg{height:clamp(260px,42vh,420px)}}
 @media(min-width:701px){.mimg{height:auto;min-height:100%}}
+/* galerie produit (toutes les photos, scroll/swipe + flèches) */
+.gal{position:absolute;inset:0;display:flex;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.gal::-webkit-scrollbar{display:none}
+.gal img{position:static!important;flex:0 0 100%;width:100%;height:100%;object-fit:contain;scroll-snap-align:center}
+.gnav{position:absolute;top:50%;transform:translateY(-50%);width:42px;height:42px;border-radius:50%;border:0;background:rgba(0,0,0,.55);color:#fff;font-size:22px;cursor:pointer;z-index:3}
+.gnav.l{left:10px}.gnav.r{right:10px}
+.gcount{position:absolute;bottom:10px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.6);color:#fff;font-size:12px;padding:3px 10px;border-radius:99px;z-index:3}
 .mimg{background:#fff;position:relative;min-height:0;height:clamp(300px,52vh,620px)}
 .mimg img{width:100%;height:100%;object-fit:contain;object-position:center;display:block;position:absolute;inset:0}
 .mbody{padding:22px 22px 20px;display:flex;flex-direction:column;gap:16px}
@@ -292,7 +299,7 @@ $('#grid').addEventListener('click',e=>{const c=e.target.closest('[data-id]');if
 
 
 function openProd(id){
-  cur=ALL.find(p=>p.id===id); sel={size:null,flo:false,nom:'',num:'',patches:[],qty:1};
+  GI=0; cur=ALL.find(p=>p.id===id); sel={size:null,flo:false,nom:'',num:'',patches:[],qty:1};
   drawModal(); $('#ov').classList.add('on');
 }
 function unit(){
@@ -309,7 +316,7 @@ function drawModal(){
   const q=s=>p.av.includes(s);
   const m=s=>p.stock?(p.stock[String(s).toUpperCase().replace('XXL','2XL')]||0):0;
   $('#modal').innerHTML=`
-  <div class="mimg"><button class="x" onclick="closeM()">✕</button><img src="${esc(IMG(p.image,800))}" alt=""></div>
+  <div class="mimg"><button class="x" onclick="closeM()">✕</button>${(p.imgs&&p.imgs.length>1)?`<div class="gal" id="gal" onscroll="galUpd()">${p.imgs.map(s=>`<img src="${esc(IMG(s,800))}" alt="" loading="lazy">`).join('')}</div><button class="gnav l" onclick="galGo(-1)" aria-label="Précédente">‹</button><button class="gnav r" onclick="galGo(1)" aria-label="Suivante">›</button><span class="gcount" id="gcount">1 / ${p.imgs.length}</span>`:`<img src="${esc(IMG(p.image,800))}" alt="">`}</div>
   <div class="mbody">
     <div><div class="mt">${esc(p.title)}</div><div class="mp">${dh(p.price)}${p.old?`<span class="old pr">${p.old} DH</span>`:''}</div></div>
     ${sizes.length?`<div class="sec"><h4>Taille</h4><div class="leg">Web = stock Shopify (fournisseur). <b>Magasin</b> = pièces réellement en rayon.</div><div class="opts" style="margin-top:8px">${sizes.map(s=>`<button class="opt ${sel.size===s?'on':''} ${q(s)?'':'out'}" data-s="${esc(s)}">${esc(s)}<small class="sh ${q(s)?'':'no'}">Web : ${q(s)?'dispo':'épuisé'}</small><small class="st ${m(s)?'yes':'no'}">Magasin : ${m(s)}</small></button>`).join('')}</div></div>`:''}
@@ -319,10 +326,18 @@ function drawModal(){
       <div class="sub ${sel.flo?'on':''}"><div class="row2"><input class="fld" style="padding:12px;border-radius:11px;background:var(--panel2);border:1px solid var(--line2);color:#fff;font-size:16px" id="fn" maxlength="14" placeholder="NOM (ex : MESSI)" value="${esc(sel.nom)}"><input style="padding:12px;border-radius:11px;background:var(--panel2);border:1px solid var(--line2);color:#fff;font-size:16px" id="fnum" inputmode="numeric" maxlength="2" placeholder="N°" value="${esc(sel.num)}"></div></div>
     </div>
 `:''}
+    ${p.custom&&pList(p).length?`
+    <div class="sec"><h4>Patch (optionnel)</h4><div class="leg">${pList(p)[0].kind==='cl'?'Patch Champions League — 1 maximum.':'Patchs Coupe du Monde 2026 — 2 maximum.'}</div>
+      <div class="patchs" style="margin-top:8px">${pList(p).map(x=>`<div class="pt ${sel.patches.some(y=>y.id===x.id&&y.title===x.title)?'on':''}" data-p="${DATA.patchs.indexOf(x)}"><img src="${esc(IMG(x.image,200))}" alt="">${esc(x.title.replace(/^Patch /,'').replace(' — Brodé Thermocollant',''))}<b>+ ${dh(x.price)}</b></div>`).join('')}</div>
+    </div>`:''}
     <div class="mfoot"><div class="qty"><button onclick="qty(-1)">−</button><span id="qv">${sel.qty}</span><button onclick="qty(1)">+</button></div>
       <button class="add2" id="addmore" ${sizes.length&&!sel.size?'disabled':''}>+ Ajouter au panier<br><small style="font-weight:500;color:var(--muted)">et continuer</small></button><button class="add" id="add" ${sizes.length&&!sel.size?'disabled':''}>Ajouter et voir le panier · ${dh(unit()*sel.qty)}</button></div>
   </div>`;
+  const _g=document.getElementById('gal');if(_g&&GI){_g.scrollLeft=GI*_g.clientWidth;galUpd();}
 }
+function galGo(d){const g=document.getElementById('gal');if(g)g.scrollBy({left:d*g.clientWidth,behavior:'smooth'});}
+let GI=0;
+function galUpd(){const g=document.getElementById('gal'),c=document.getElementById('gcount');if(g&&c){GI=Math.round(g.scrollLeft/g.clientWidth);c.textContent=(GI+1)+' / '+g.children.length;}}
 function closeM(){$('#ov').classList.remove('on');}
 $('#ov').addEventListener('click',e=>{if(e.target.id==='ov')closeM();});
 $('#modal').addEventListener('click',e=>{
@@ -338,7 +353,7 @@ $('#modal').addEventListener('input',e=>{if(e.target.id==='fn')sel.nom=e.target.
 function qty(d){sel.qty=Math.max(1,Math.min(9,sel.qty+d));$('#qv').textContent=sel.qty;$('#add').innerHTML='Ajouter et voir le panier · '+dh(unit()*sel.qty);}
 function toast(t){const d=document.createElement('div');d.className='toast';d.textContent=t;document.body.appendChild(d);setTimeout(()=>d.remove(),2200);}
 function addCart(more){
-  CART.push({pid:cur.id,handle:cur.handle,title:cur.title,image:cur.image,size:sel.size,qty:sel.qty,vid:cur.vid,
+  CART.push({pid:cur.id,handle:cur.handle,title:cur.title,image:cur.image,size:sel.size,qty:sel.qty,vid:cur.vid,maillot:!!cur.custom,
     flocage:sel.flo?{nom:sel.nom,numero:sel.num,prix:DATA.flocage[0].price,handle:DATA.flocage[0].handle,pid:DATA.flocage[0].id,vid:((Object.values(DATA.flocage[0].vid||{})[0])||{}).id}:null,
     patches:sel.patches.map(x=>({titre:x.title,prix:x.price,handle:x.handle,pid:x.id,vid:((Object.values(x.vid||{})[0])||{}).id,image:x.image})),
     unit:unit()});
@@ -349,9 +364,18 @@ function addCart(more){
 let OVR=null;
 function calc(){return CART.reduce((a,l)=>a+l.unit*l.qty,0);}
 function total(){return OVR!=null?OVR:calc();}
+let GIFT_OFF=false;
+// 3 maillots (ou plus) = maillot mystère offert, comme sur le site : ligne cadeau à 0 DH ajoutée/retirée automatiquement.
+function syncGift(){
+  const n=CART.filter(l=>!l.gift&&l.maillot).reduce((a,l)=>a+l.qty,0), has=CART.findIndex(l=>l.gift), g=DATA&&DATA.gift;
+  if(n<3){GIFT_OFF=false;if(has>=0)CART.splice(has,1);return;}
+  if(g&&has<0&&!GIFT_OFF)CART.push({pid:g.id,handle:g.handle,title:g.title,image:g.image,size:null,qty:1,vid:g.vid,flocage:null,patches:[],unit:0,gift:true});
+}
+function rmLine(i){if(CART[i]&&CART[i].gift)GIFT_OFF=true;CART.splice(i,1);drawCart();}
 function drawCart(){
+  syncGift();
   $('#nb').textContent=CART.reduce((a,l)=>a+l.qty,0);
-  $('#clist').innerHTML=CART.length?CART.map((l,i)=>`<div class="line"><img src="${esc(IMG(l.image,140))}" alt=""><div><div class="lt">${esc(l.title)}</div><div class="lm">${l.size?`Taille <b>${esc(l.size)}</b> · `:''}Qté <b>${l.qty}</b>${l.flocage?`<br>Flocage <b>${esc(l.flocage.nom||'—')} ${esc(l.flocage.numero||'')}</b> (+${dh(l.flocage.prix)})`:''}${(l.patches||[]).map(x=>`<br>Patch <b>${esc(x.titre.replace(/^Patch /,'').replace(' — Brodé Thermocollant',''))}</b> (+${dh(x.prix)})`).join('')}</div></div><div><div class="lp">${dh(l.unit*l.qty)}</div><button class="rm" onclick="CART.splice(${i},1);drawCart()">Retirer</button></div></div>`).join(''):'<div class="empty">Panier vide.<br>Cherche l\'article demandé par le client puis ajoute-le ici.</div>';
+  $('#clist').innerHTML=CART.length?CART.map((l,i)=>`<div class="line"><img src="${esc(IMG(l.image,140))}" alt=""><div><div class="lt">${esc(l.title)}${l.gift?' <b style="color:#3ddc84">· OFFERT (3 maillots)</b>':''}</div><div class="lm">${l.size?`Taille <b>${esc(l.size)}</b> · `:''}Qté <b>${l.qty}</b>${l.flocage?`<br>Flocage <b>${esc(l.flocage.nom||'—')} ${esc(l.flocage.numero||'')}</b> (+${dh(l.flocage.prix)})`:''}${(l.patches||[]).map(x=>`<br>Patch <b>${esc(x.titre.replace(/^Patch /,'').replace(' — Brodé Thermocollant',''))}</b> (+${dh(x.prix)})`).join('')}</div></div><div><div class="lp">${dh(l.unit*l.qty)}</div><button class="rm" onclick="rmLine(${i})">Retirer</button></div></div>`).join(''):'<div class="empty">Panier vide.<br>Cherche l\'article demandé par le client puis ajoute-le ici.</div>';
   $('#tov').value=CART.length?total():'';$('#calc').textContent=(OVR!=null&&CART.length)?'(modifié · calculé '+calc()+' DH)':'';$('#rst').style.display=OVR!=null?'block':'none'; check();
 }
 function check(){$('#go').disabled=!(CART.length&&$('#cn').value.trim().length>1&&$('#cp').value.replace(/\D/g,'').length>=9);}

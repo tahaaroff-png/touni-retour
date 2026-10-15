@@ -37,6 +37,7 @@ async function loadCatalog(secret) {
   const map = (p) => ({
     id: p.id, handle: p.handle, title: p.title, type: p.product_type || '',
     image: ((p.images[0] && p.images[0].src) || '').replace(/^https:\/\/cdn\.shopify\.com\/s\/files\/1\/0774\/1312\/2267\//, '~'),
+    imgs: (p.images || []).slice(0, 12).map((i) => (i.src || '').replace(/^https:\/\/cdn\.shopify\.com\/s\/files\/1\/0774\/1312\/2267\//, '~')),
     price: Math.min(...p.variants.map((v) => parseFloat(v.price))),
     sizes: ((p.options.find((o) => /taille|size/i.test(o.name)) || {}).values) || [],
     av: p.variants.filter((v) => v.available).map((v) => v.title.split(' / ')[0]),
@@ -61,10 +62,13 @@ async function loadCatalog(secret) {
     });
   });
   patchs.forEach((x) => { x.kind = /champions league/i.test(x.title) ? 'cl' : 'cdm'; });
-  const skip = new Set([...flocage, ...patchs].map((p) => p.id));
-  const products = all.filter((p) => !skip.has(p.id) && !/Mystère|MYSTERE|Mystere/i.test(p.title))
+  // TOUS les produits du site sont cherchables (patchs, flocage, packs/maillot mystère inclus) ; flocage/patchs restent aussi proposés comme OPTIONS d'un maillot.
+  const products = all
     .map((p) => { const m = map(p); const k = nrm(p.title); return Object.assign(m, { custom: flocageOk(p), stock: stock[k] || null, override: ovn[k] || null }); });
-  return { products, flocage, patchs, ts: Date.now() };
+  // Cadeau « 3 maillots = maillot mystère offert » : produit Shopify à 0 DH.
+  const gp = all.find((p) => /maillot myst[eè]re/i.test(p.title) && Math.max(...p.variants.map((v) => parseFloat(v.price))) === 0);
+  const gift = gp ? Object.assign(map(gp), { price: 0 }) : null;
+  return { products, flocage, patchs, gift, ts: Date.now() };
 }
 
 // Sert l'ancienne version tout de suite si périmée (>3 min) et rafraîchit en arrière-plan.
