@@ -454,12 +454,13 @@ async function addProductsToExistingDeal(existingDeal, order) {
       addedValue += 99 * qty;
     }
   }
+  let _oldNote = ''; try { const nd = await egrowV2Query('query($id:Int!){ order(id:$id){ note } }', { id: Number(existingDeal.id) }); _oldNote = (nd && nd.order && nd.order.note) || ''; } catch (e) {} // on ne perd plus la note existante
   const mergedValue = (parseFloat(existingDeal.deal_value) || 0) + addedValue;
   const input = {
     id: existingDeal.id,
     lineItems: [...existingLineItems, ...newLineItems],
     subtotal: mergedValue,
-    note: `AJOUT (agent IA) : ${matchedNames.join(' + ')}`.slice(0, 1500),
+    note: (`AJOUT (agent IA) : ${matchedNames.join(' + ')}` + (_oldNote ? ' | ' + _oldNote : '')).slice(0, 1500),
   };
   const q = 'mutation($in:OrderCreateOrUpdateInput!){ orderCreateOrUpdate(input:$in){ userErrors{ field message } order{ id } } }';
   let ok = false, userErrors = [];
@@ -1371,6 +1372,25 @@ async function runPoll(q) {
               } catch (e) { entry.dealMove = 'err'; }
             } else if (isAction) {
               entry.dealMove = deal ? 'already_there' : 'no_movable_deal';
+            }
+            // RETRAIT MAGASIN d'une commande existante : le client accepte de venir la récupérer → étape « Attente retrait magasin » (70661) + note + alerte opératrice.
+            if (decision.pickup && sendRes && sendRes.status === 'success') {
+              try {
+                // toute commande PAS ENCORE EXPÉDIÉE (en attente, relances J1-J3, confirmées…) — pas seulement les étapes « déplaçables » du bouton Confirmer/Annuler
+                const pdo = (await v2OrdersByPhone(contactWaId)).find((o) => STAGE_CAT[(o.pipeline && o.pipeline.id) || 0] === 'avant_envoi' && !(o.pipeline && o.pipeline.id === 70663));
+                const pd = pdo ? v2OrderToDeal(pdo) : null;
+                if (pd) {
+                  const day = String(decision.pickup.day || '').trim() || 'jour non précisé', extra = String(decision.pickup.note || '').trim();
+                  const noteLine = `RETRAIT MAGASIN : le client souhaite récupérer sa commande au magasin — ${day}${extra ? ' (' + extra + ')' : ''}.`;
+                  let oldNote = ''; try { const nd = await egrowV2Query('query($id:Int!){ order(id:$id){ note } }', { id: Number(pd.id) }); oldNote = (nd && nd.order && nd.order.note) || ''; } catch (e) {}
+                  let mv = { status: 'already_there' };
+                  if ((pd.stage && pd.stage.id) !== 70661) mv = await v2MoveStage(pd.id, 70661);
+                  await addDealNote(pd.id, (noteLine + (oldNote ? ' | ' + oldNote : '')).slice(0, 1500));
+                  entry.pickup = { deal: pd.id, from: pd.stage && pd.stage.id, to: 70661, ok: mv && mv.status, day };
+                  const pmsg = `🏬 *Retrait magasin*\n👤 ${c.title || contactWaId} (${contactWaId})\n📦 Commande #${pd.deal_number}\n📅 ${day}${extra ? '\n📝 ' + extra : ''}\n➡️ Déplacée vers « Attente retrait magasin ».`;
+                  for (const _op of OPERATOR_PHONES) { try { await sendAndQueue(integrationId, _op, pmsg); } catch (e) {} }
+                } else entry.pickup = 'no_movable_deal';
+              } catch (e) { entry.pickup = 'err'; }
             }
             // Escalade → OPÉRATRICE = TOUTES les réclamations (mais dédupliquées) ; PATRON (perso) = CRITIQUE uniquement.
             if (decision.intent === 'escalate') {
