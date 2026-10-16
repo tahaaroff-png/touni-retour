@@ -1927,6 +1927,14 @@ module.exports = async (req, res) => {
       return res.status(200).json({ ok: true, status: r.status, status_label: r.status_label, level: r.level, reasons: r.reasons, metrics: r.metrics });
     } catch (e) { return res.status(200).json({ ok: false, error: String((e && e.message) || e).slice(0, 120) }); }
   }
+  // ── Liste des templates WhatsApp (nom/statut/catégorie/aperçu corps) pour suivre l'approbation — lecture seule ──
+  if (q.diagtpls === '1') {
+    try {
+      const d = await egrowV2Query('query($c:ID!,$s:String){ whatsappTemplates(userConnectionId:$c, search:$s, limit:40){ items{ id name language status category components } } }', { c: String(EGROW_V2_CONN), s: String(q.s || '') });
+      const items = ((d && d.whatsappTemplates && d.whatsappTemplates.items) || []).map((x) => { const comps = Array.isArray(x.components) ? x.components : []; const body = (comps.find((c) => /body/i.test(c.type || '')) || {}).text || ''; const btns = ((comps.find((c) => /button/i.test(c.type || '')) || {}).buttons || []).map((b) => b.text); return { id: x.id, name: x.name, status: x.status, category: x.category, body: body.slice(0, 220), buttons: btns }; });
+      return res.status(200).json({ items });
+    } catch (e) { return res.status(200).json({ ok: false, error: String((e && e.message) || e).slice(0, 120) }); }
+  }
   // ── Test d'envoi CONTRÔLÉ d'un TEMPLATE (sans variable) via Cloud API — uniquement vers le numéro du patron par défaut ──
   if (q.diagtpl === '1') {
     const to = String(q.to || MERCHANT_PHONE).replace(/\D/g, '');
