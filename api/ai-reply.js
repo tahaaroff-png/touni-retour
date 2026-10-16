@@ -1891,6 +1891,13 @@ module.exports = async (req, res) => {
       return res.status(200).json({ ok: dr.ok, app_id: data.app_id, system_user_id: data.user_id, system_user: me, is_valid: data.is_valid, expires_at: data.expires_at, whatsapp_scopes: waScopes, assigned_wabas: wabas });
     } catch (e) { return res.status(200).json({ ok: false, error: String(e) }); }
   }
+  // ── Test d'envoi CONTRÔLÉ d'un TEMPLATE (sans variable) via Cloud API — uniquement vers le numéro du patron par défaut ──
+  if (q.diagtpl === '1') {
+    const to = String(q.to || MERCHANT_PHONE).replace(/\D/g, '');
+    if (to !== MERCHANT_PHONE && !OPERATOR_PHONES.includes(to)) return res.status(200).json({ error: 'numéro non autorisé pour ce test' });
+    const result = await egrowSendTemplate(INTEGRATIONS[0], to, String(q.tpl || AD_WELCOME_TEMPLATE), 'fr', []);
+    return res.status(200).json({ to: to.slice(0, 5) + '…', tpl: q.tpl || AD_WELCOME_TEMPLATE, status: result && result.status, error: result && result.error ? (result.error.message || '').slice(0, 160) : null });
+  }
   // ── Test d'envoi CONTRÔLÉ via Cloud API (1 seul message) — avant le kill-switch ──
   if (q.diagsend === '1') {
     const to = String(q.to || MERCHANT_PHONE).replace(/\D/g, '');
