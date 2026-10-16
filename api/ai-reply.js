@@ -690,6 +690,7 @@ async function setCourier(phone, on) {
 // Emoji d'ouverture des notifications opératrice, selon le type de demande.
 function escalationHeader(note, body, critical) {
   const s = `${note || ''} ${body || ''}`.toLowerCase();
+  if (/^\s*gros lead|gros lead\s*:|grosse commande|commande en gros|revend|grossiste/.test(s)) return '🚨 *GROS LEAD — urgent*';
   if (/livreur|ozon|amazon|transporteur|coursier|livraison.*(probl|echou|échou)|client absent/.test(s)) return '🚚 *LIVREUR*';
   if (critical || /urgen|vite|plainte|arnaque|escroc|police|avocat|fraude|colis (perdu|non re)/.test(s)) return '🚨 *URGENT — client à gérer*';
   if (/[ée]chang|changer (la )?taille|remplac|trop (grand|petit)|mauvaise taille|bonne taille/.test(s)) return '🔄 *ÉCHANGE — client à gérer*';
@@ -1595,6 +1596,9 @@ async function runPoll(q) {
                     ? `⚠️ *Réclamation CRITIQUE (vocal client)*\n👤 ${clientName} (${contactWaId})\n📝 Points clés : ${note.slice(0, 400) || '(voir la conversation)'}`
                     : `⚠️ *Réclamation CRITIQUE*\n👤 ${clientName} (${contactWaId})\n📝 ${note.slice(0, 400) || '(voir la conversation)'}\n💬 « ${_ob.slice(0, 220)} »`;
                   try { await sendAndQueue(integrationId, MERCHANT_PHONE, pmsg); entry.merchantNotified = true; } catch (e) { entry.merchantNotified = 'err'; }
+                }
+                if (/gros lead|grosse commande|commande en gros|grossiste/i.test(note) && MERCHANT_PHONE && !OPERATOR_PHONES.includes(MERCHANT_PHONE)) {
+                  try { await sendAndQueue(integrationId, MERCHANT_PHONE, summary); entry.merchantNotified = true; } catch (e) {}   // un gros lead est une urgence : le patron est prévenu aussi
                 }
                 entry.escalateCritical = critical;
                 await logEscalation(contactWaId, sig, note, critical);
