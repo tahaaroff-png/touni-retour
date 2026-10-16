@@ -735,7 +735,7 @@ async function egrowV2SendTemplate(convId, templateName) {
   } catch (e) { return { status: 'error', message: String((e && e.message) || e) }; }
 }
 // ── PUBS MAGASIN : suivi du parcours (table ad_conversation) + accueil + relance J+1 ──────────────────────────────
-const AD_WELCOME_TEMPLATE = process.env.AD_WELCOME_TEMPLATE || 'touni_accueil_v2';      // 3 boutons statiques (site / itinéraire / autre) — déjà créé et approuvé
+const AD_WELCOME_TEMPLATE = process.env.AD_WELCOME_TEMPLATE || 'touni_accueil_v4';      // 3 boutons statiques (site / itinéraire / autre). v4 créé le 16/10 : tant qu'il n'est pas APPROUVÉ, l'envoi échoue et le bot répond lui-même par texte (pas de repli sur v2, jugé inadapté)
 const AD_VISIT_RE = /(je passe|j.arrive|jarrive|je viens|je vien\b|je serai la|ce soir|demain|aujourd.?hui|tout a l.heure|dans (une|1) heure|nji\b|غادي نجي|غدا|اليوم)/i;
 function adIntent(text) {
   const s = normTxt(String(text || ''));
