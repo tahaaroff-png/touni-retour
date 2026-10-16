@@ -1935,6 +1935,13 @@ module.exports = async (req, res) => {
       return res.status(200).json({ items });
     } catch (e) { return res.status(200).json({ ok: false, error: String((e && e.message) || e).slice(0, 120) }); }
   }
+  // ── Message d'information AU PATRON uniquement (jamais un client) : ?tellpatron=1&msg=... (POST conseillé pour les textes longs) ──
+  if (q.tellpatron === '1') {
+    const m = String(q.msg || (req.body && req.body.msg) || '').slice(0, 1500);
+    if (!m || !MERCHANT_PHONE) return res.status(200).json({ ok: false, error: 'msg/patron manquant' });
+    await sendAndQueue(INTEGRATIONS[0], MERCHANT_PHONE, m);
+    return res.status(200).json({ ok: true });
+  }
   // ── Test d'envoi CONTRÔLÉ d'un TEMPLATE (sans variable) via Cloud API — uniquement vers le numéro du patron par défaut ──
   if (q.diagtpl === '1') {
     const to = String(q.to || MERCHANT_PHONE).replace(/\D/g, '');
