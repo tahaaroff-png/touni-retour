@@ -699,6 +699,16 @@ function escalationHeader(note, body, critical) {
 }
 // Notification aux OPÉRATRICES uniquement (le patron ne reçoit que : avis clients, urgences/réclamations graves, nouvelles commandes WhatsApp).
 async function notifyOps(integrationId, msg) { for (const _op of OPERATOR_PHONES) { try { await sendAndQueue(integrationId, _op, msg); } catch (e) {} } }
+// Texte « propre » du message client pour les ALERTES (on retire les marqueurs internes injectés pour le modèle : sinon ils fuitent dans l'alerte
+// et déclenchent à tort la détection « critique » — ex. « NE dis PAS que tu n'as pas reçu la photo » contient « pas reçu »).
+function cleanOpsText(b) {
+  let s = String(b || '');
+  if (/^\[Le client vient d'envoyer une PHOTO/.test(s)) return '📷 photo envoyée (image non chargée)';
+  if (/^\[Le client vient d'essayer de nous APPELER/.test(s)) return '📞 appel manqué';
+  if (/VOCAL ILLISIBLE/.test(s)) return '🎤 vocal illisible';
+  s = s.replace(/^\[Le client a envoy[ée] PLUSIEURS[\s\S]*?\]\s*/, '').replace(/^\[CONTEXTE SYST[ÈE]ME[\s\S]*?\]\s*/, '');
+  return s.trim();
+}
 // Mode du patron (persisté) : 'patron' (assistant données, défaut) ou 'client' (teste l'expérience de vente).
 async function getMerchantMode() {
   try {
@@ -1281,11 +1291,11 @@ async function runPoll(q) {
             const mine = (m.mine === true || m.mine === 'true');
             if (mine) break;                                   // un message du bot coupe la rafale
             if (String(m.type || '') !== 'image') { if (burst.length) break; else continue; }
-            const u = (m.content && m.content.url) || '';
+            const u = (m.content && (m.content.url || m.content.link)) || '';
             if (u) burst.push({ url: u, mime: (m.content && m.content.mime_type) || 'image/jpeg', id: (m.content && m.content.id) || '' });
             if (burst.length >= 4) break;                      // garde-fou coût (max 4 photos)
           }
-          if (!burst.length) { const u = (lm.content && lm.content.url) || ''; if (u) burst.push({ url: u, mime: (lm.content && lm.content.mime_type) || 'image/jpeg', id: (lm.content && lm.content.id) || '' }); }
+          if (!burst.length) { const u = (lm.content && (lm.content.url || lm.content.link)) || ''; if (u) burst.push({ url: u, mime: (lm.content && lm.content.mime_type) || 'image/jpeg', id: (lm.content && lm.content.id) || '' }); }
           for (const b of burst.reverse()) {                   // ordre chronologique (ancienne → récente)
             const img = await fetchWaImage(b);                 // download robuste (CDN eGrow + fallback Meta media-id + validation)
             if (img) images.push(img);
@@ -1299,7 +1309,7 @@ async function runPoll(q) {
         const imageMime = images[0] ? images[0].mime : null;
         // Message VOCAL → transcrire (Groq Whisper) puis traiter comme du texte normal
         if (isAudio) {
-          const aurl = (lm.content && lm.content.url) || '';
+          const aurl = (lm.content && (lm.content.url || lm.content.link)) || '';
           const txt = aurl ? await transcribeAudio(aurl) : '';
           if (!txt) {
             // Vocal illisible (transcription vide) → on RÉPOND quand même (on ne boucle pas en silence).
@@ -1566,14 +1576,15 @@ async function runPoll(q) {
             if (decision.intent === 'escalate') {
               const note = (decision.note || '').trim();
               const clientName = c.title || contactWaId;
-              const sig = escSig(note || body);
+              const _ob = cleanOpsText(body);
+              const sig = escSig(note || _ob);
               const isVocalMsg = isAudio || type === 'ptt' || type === 'voice';
               const alreadySeen = await escalationSeenRecently(contactWaId, sig);
               if (alreadySeen) {
                 entry.escalateSkipped = 'doublon'; // même client + même sujet déjà escaladé < 6h → on ne renvoie pas
               } else {
-                const critical = isCriticalEscalation(note, body);
-                const summary = `${escalationHeader(note, body, critical)}\n👤 ${clientName}\n📱 ${contactWaId}\n📝 ${note.slice(0, 400) || 'voir la conversation'}\n💬 « ${body.slice(0, 220)} »`;
+                const critical = isCriticalEscalation(note, _ob);
+                const summary = `${escalationHeader(note, _ob, critical)}\n👤 ${clientName}\n📱 ${contactWaId}\n📝 ${note.slice(0, 400) || 'voir la conversation'}\n💬 « ${_ob.slice(0, 220)} »`;
                 // Opératrice : TOUTES les réclamations (elle traite tout)
                 for (const _op of OPERATOR_PHONES) {
                   try { await sendAndQueue(integrationId, _op, summary); entry.operatorNotified = true; } catch (e) { entry.operatorNotified = 'err'; }
@@ -1582,7 +1593,7 @@ async function runPoll(q) {
                 if (critical && MERCHANT_PHONE && !OPERATOR_PHONES.includes(MERCHANT_PHONE)) {
                   const pmsg = isVocalMsg
                     ? `⚠️ *Réclamation CRITIQUE (vocal client)*\n👤 ${clientName} (${contactWaId})\n📝 Points clés : ${note.slice(0, 400) || '(voir la conversation)'}`
-                    : `⚠️ *Réclamation CRITIQUE*\n👤 ${clientName} (${contactWaId})\n📝 ${note.slice(0, 400) || '(voir la conversation)'}\n💬 « ${body.slice(0, 220)} »`;
+                    : `⚠️ *Réclamation CRITIQUE*\n👤 ${clientName} (${contactWaId})\n📝 ${note.slice(0, 400) || '(voir la conversation)'}\n💬 « ${_ob.slice(0, 220)} »`;
                   try { await sendAndQueue(integrationId, MERCHANT_PHONE, pmsg); entry.merchantNotified = true; } catch (e) { entry.merchantNotified = 'err'; }
                 }
                 entry.escalateCritical = critical;
