@@ -1594,7 +1594,7 @@ async function runPoll(q) {
             if (_ref && !adRow && !dry) { adRow = { conv_id: String(c.id), intent: _intent }; await adLog(c.id, { ad_source_id: String((_ref && _ref.sourceId) || ''), intent: _intent, phone_hash: _sha(contactWaId), first_msg_at: new Date().toISOString() }); }
             if ((adRow || _ref) && AD_VISIT_RE.test(_clean) && !dry) { await adLog(c.id, { intent_visit: /demain/i.test(_clean) ? 'tomorrow' : (/ce soir|aujourd|tout a l|heure/i.test(normTxt(_clean)) ? 'today' : 'soon'), intent_visit_at: new Date().toISOString() }); }
             // Accueil général (template à 3 boutons) : UNIQUEMENT 1er contact + message vague + aucune commande + jamais déjà envoyé
-            if (_firstContact && !orderCtx && _intent === 'vague' && !(adRow && adRow.welcome_sent_at) && type === 'text') {
+            if ((process.env.AD_WELCOME_TEMPLATE_ENABLED || '') === '1' && _firstContact && !orderCtx && _intent === 'vague' && !(adRow && adRow.welcome_sent_at) && type === 'text') {   // désactivé par défaut : l'envoi du template par API est refusé (Paid Message Account / eGrow « Server Error ») → texte d'accueil du bot
               if (dry) { results.push({ conv: c.id, phone: contactWaId, decision: 'would_send_welcome_template' }); processed++; continue; }
               // 1) vrai numéro WhatsApp (≤ 13 chiffres) → template 3 boutons via l'API Cloud ; 2) identifiant de référence Meta des leads pub (15 chiffres, pas un numéro) → le template ne peut pas partir : on retombe sur le texte d'accueil du bot
               const _isPhone = /^\d{9,13}$/.test(String(contactWaId || '').replace(/\D/g, ''));
