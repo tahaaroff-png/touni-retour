@@ -4,6 +4,7 @@
 // Sécurisé par ?secret=. Clé Claude + tokens eGrow en env. Anti-doublon Supabase (table wa_agent_replied).
 const { handleIncoming, isButton } = require('./_agent.js');
 const pre = require('./_precommande.js');
+const adsMonitor = require('./_ads_monitor.js');
 const { SB_URL, supabaseHeaders, shopifyAdminHeaders, SHOPIFY_DOMAIN, SHOPIFY_API_VERSION } = require('./_shopify-helpers.js');
 
 const SECRET = 'touni-sync-2026';
@@ -789,6 +790,21 @@ async function runAdMaintenance(integrationId, dry) {
   } catch (e) {}
   return out;
 }
+// Alerte facturation pub Meta : au plus 1 vérification / heure (cadence gérée dans _ads_monitor via app_settings), dédup 12 h.
+// warning -> patron seul ; critical -> patron + opératrices. dry : rien envoyé, rien écrit.
+async function runAdsBillingWatch(integrationId, dry, force) {
+  try {
+    const token = process.env.META_ADS_TOKEN; if (!token) return { level: 'no_token' };
+    const r = await adsMonitor.runAdsMonitor({
+      token, accountId: process.env.META_ADS_ACCOUNT_ID || 'act_1404371898503365', dry, force,
+      send: async (level, message) => {
+        if (MERCHANT_PHONE) await sendAndQueue(integrationId, MERCHANT_PHONE, message);
+        if (level === 'critical') for (const _op of OPERATOR_PHONES) { if (_op !== MERCHANT_PHONE) { try { await sendAndQueue(integrationId, _op, message); } catch (e) {} } }
+      },
+    });
+    return r.ran && (r.sent || r.level !== 'ok') ? { level: r.level, sent: r.sent, skipped: r.skipped } : (force ? { level: r.level, ran: r.ran } : null);
+  } catch (e) { return null; }
+}
 function maroccoHourLocal() { try { return parseInt(new Intl.DateTimeFormat('en-GB', { timeZone: 'Africa/Casablanca', hour: '2-digit', hour12: false }).format(new Date()), 10); } catch (e) { return 12; } }
 // Mode du patron (persisté) : 'patron' (assistant données, défaut) ou 'client' (teste l'expérience de vente).
 async function getMerchantMode() {
@@ -1304,6 +1320,7 @@ async function runPoll(q) {
   const results = [];
   let processed = 0;
   try { const _m = await runAdMaintenance(INTEGRATIONS[0], dry); if (_m.followups || _m.visited) results.push({ decision: 'ad_maintenance', ..._m }); } catch (e) {}
+  try { const _ab = await runAdsBillingWatch(INTEGRATIONS[0], dry); if (_ab) results.push({ decision: 'ads_billing_watch', ..._ab }); } catch (e) {}
 
   for (const integrationId of INTEGRATIONS) {
     const convs = await egrowGetConversations(integrationId, 1);
@@ -1890,6 +1907,14 @@ module.exports = async (req, res) => {
       try { wabas = await (await fetch(`https://graph.facebook.com/v21.0/me/assigned_whatsapp_business_accounts?fields=id,name&access_token=${META_WA_TOKEN}`)).json(); } catch (e) {}
       return res.status(200).json({ ok: dr.ok, app_id: data.app_id, system_user_id: data.user_id, system_user: me, is_valid: data.is_valid, expires_at: data.expires_at, whatsapp_scopes: waScopes, assigned_wabas: wabas });
     } catch (e) { return res.status(200).json({ ok: false, error: String(e) }); }
+  }
+  // ── Diag facturation pub Meta (lecture seule, aucun envoi, aucun secret renvoyé) ──
+  if (q.diagads === '1') {
+    try {
+      const token = process.env.META_ADS_TOKEN; if (!token) return res.status(200).json({ ok: false, error: 'META_ADS_TOKEN absent sur Vercel' });
+      const r = await adsMonitor.checkAdsAccount({ token, accountId: process.env.META_ADS_ACCOUNT_ID || 'act_1404371898503365' });
+      return res.status(200).json({ ok: true, status: r.status, status_label: r.status_label, level: r.level, reasons: r.reasons, metrics: r.metrics });
+    } catch (e) { return res.status(200).json({ ok: false, error: String((e && e.message) || e).slice(0, 120) }); }
   }
   // ── Test d'envoi CONTRÔLÉ d'un TEMPLATE (sans variable) via Cloud API — uniquement vers le numéro du patron par défaut ──
   if (q.diagtpl === '1') {
