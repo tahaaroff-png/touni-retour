@@ -1953,6 +1953,14 @@ module.exports = async (req, res) => {
     if (!cid) return res.status(400).json({ error: 'conv requis' });
     return res.status(200).json(await reopenWindow(cid));
   }
+  // ── Envoi manuel du template d'accueil à une conversation précise : ?sendwelcome=1&conv=ID ──
+  if (q.sendwelcome === '1') {
+    const cid = String(q.conv || '').replace(/\D/g, ''); if (!cid) return res.status(400).json({ error: 'conv requis' });
+    let _t = null, used = null;
+    for (const _cand of AD_WELCOME_CANDIDATES) { _t = await egrowV2SendTemplate(cid, _cand, 'UTILITY'); if (_t && _t.status === 'success') { used = _cand; break; } }
+    if (used) await adLog(cid, { welcome_sent_at: new Date().toISOString(), intent: 'vague' });
+    return res.status(200).json({ ok: !!used, template: used, result: _t });
+  }
   // ── Test de l'accueil réel (même chemin que le bot) vers la conversation DU PATRON uniquement ──
   if (q.diagwelcome === '1') {
     try {
