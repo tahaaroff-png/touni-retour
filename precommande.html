@@ -90,6 +90,7 @@ button{font-family:inherit;color:inherit;cursor:pointer}
 @keyframes pop{from{opacity:0;transform:scale(.96) translateY(10px)}}
 @media(max-width:700px){.modal{grid-template-columns:1fr}.mimg{height:clamp(260px,42vh,420px)}}
 @media(min-width:701px){.mimg{height:auto;min-height:100%}}
+.line.floline{margin-top:-6px;border-style:dashed;background:rgba(228,18,31,.05)}
 /* galerie produit (toutes les photos, scroll/swipe + flèches) */
 .gal{position:absolute;inset:0;display:flex;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;-webkit-overflow-scrolling:touch}
 .gal::-webkit-scrollbar{display:none}
@@ -359,7 +360,7 @@ function qty(d){sel.qty=Math.max(1,Math.min(9,sel.qty+d));$('#qv').textContent=s
 function toast(t){const d=document.createElement('div');d.className='toast';d.textContent=t;document.body.appendChild(d);setTimeout(()=>d.remove(),2200);}
 function addCart(more){
   CART.push({pid:cur.id,handle:cur.handle,title:cur.title,image:cur.image,size:sel.size,qty:sel.qty,vid:cur.vid,maillot:!!cur.custom,
-    flocage:sel.flo?{nom:sel.nom,numero:sel.num,prix:DATA.flocage[0].price,handle:DATA.flocage[0].handle,pid:DATA.flocage[0].id,vid:((Object.values(DATA.flocage[0].vid||{})[0])||{}).id}:null,
+    flocage:sel.flo?{nom:sel.nom,numero:sel.num,image:DATA.flocage[0].image,prix:DATA.flocage[0].price,handle:DATA.flocage[0].handle,pid:DATA.flocage[0].id,vid:((Object.values(DATA.flocage[0].vid||{})[0])||{}).id}:null,
     patches:sel.patches.map(x=>({titre:x.title,prix:x.price,handle:x.handle,pid:x.id,vid:((Object.values(x.vid||{})[0])||{}).id,image:x.image})),
     unit:unit()});
   closeM(); drawCart();
@@ -380,7 +381,7 @@ function rmLine(i){if(CART[i]&&CART[i].gift)GIFT_OFF=true;CART.splice(i,1);drawC
 function drawCart(){
   syncGift();
   $('#nb').textContent=CART.reduce((a,l)=>a+l.qty,0);
-  $('#clist').innerHTML=CART.length?CART.map((l,i)=>`<div class="line"><img src="${esc(IMG(l.image,140))}" alt=""><div><div class="lt">${esc(l.title)}${l.gift?' <b style="color:#3ddc84">· OFFERT (3 maillots)</b>':''}</div><div class="lm">${l.size?`Taille <b>${esc(l.size)}</b> · `:''}Qté <b>${l.qty}</b>${l.flocage?`<br>Flocage <b>${esc(l.flocage.nom||'—')} ${esc(l.flocage.numero||'')}</b> (+${dh(l.flocage.prix)})`:''}${(l.patches||[]).map(x=>`<br>Patch <b>${esc(x.titre.replace(/^Patch /,'').replace(' — Brodé Thermocollant',''))}</b> (+${dh(x.prix)})`).join('')}</div></div><div><div class="lp">${dh(l.unit*l.qty)}</div><button class="rm" onclick="rmLine(${i})">Retirer</button></div></div>`).join(''):'<div class="empty">Panier vide.<br>Cherche l\'article demandé par le client puis ajoute-le ici.</div>';
+  $('#clist').innerHTML=CART.length?CART.map((l,i)=>`<div class="line"><img src="${esc(IMG(l.image,140))}" alt=""><div><div class="lt">${esc(l.title)}${l.gift?' <b style="color:#3ddc84">· OFFERT (3 maillots)</b>':''}</div><div class="lm">${l.size?`Taille <b>${esc(l.size)}</b> · `:''}Qté <b>${l.qty}</b>${(l.patches||[]).map(x=>`<br>Patch <b>${esc(x.titre.replace(/^Patch /,'').replace(' — Brodé Thermocollant',''))}</b> (+${dh(x.prix)})`).join('')}</div></div><div><div class="lp">${dh((l.unit-(l.flocage?l.flocage.prix:0))*l.qty)}</div><button class="rm" onclick="rmLine(${i})">Retirer</button></div></div>${l.flocage?`<div class="line floline"><img src="${esc(IMG(l.flocage.image||'',140))}" alt=""><div><div class="lt">Flocage Personnalisé PRO <b style="color:#ff6b73">· ${esc(l.flocage.nom||'—')} ${esc(l.flocage.numero||'')}</b></div><div class="lm">Pour <b>${esc(l.title)}</b>${l.size?` · taille ${esc(l.size)}`:''} · Qté <b>${l.qty}</b></div></div><div><div class="lp">${dh(l.flocage.prix*l.qty)}</div></div></div>`:''}`).join(''):'<div class="empty">Panier vide.<br>Cherche l\'article demandé par le client puis ajoute-le ici.</div>';
   $('#tov').value=CART.length?total():'';$('#calc').textContent=(OVR!=null&&CART.length)?'(modifié · calculé '+calc()+' DH)':'';$('#rst').style.display=OVR!=null?'block':'none'; check();
 }
 function check(){$('#go').disabled=!(CART.length&&$('#cn').value.trim().length>1&&$('#cp').value.replace(/\D/g,'').length>=9);}

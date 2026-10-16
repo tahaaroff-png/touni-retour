@@ -15,10 +15,19 @@ const nrm = (s) => (s || '').toString().toLowerCase().normalize('NFD').replace(/
 // Flocage (nom + numéro) : tout article qui contient un MAILLOT — maillots, kits, ensembles d'entraînement (t-shirt + short),
 // ensembles « Maillot + Short ». Pas les survêtements (veste/capuche + pantalon), polos, t-shirts sport, shorts seuls.
 function flocageOk(p) {
-  const t = String(p.title || ''), ty = p.product_type || '';
-  if (MAILLOT_TYPES.has(ty) || ty === 'Kit Complet' || ty === 'Ensemble') return true;
-  if (/^survêtement|surv[eê]tement (sport|running)|capuche|zipp/i.test(t)) return false;
-  return /ensemble d.entra[iî]nement|\bkit\b|maillot \+ short|\(maillot/i.test(t);
+  // MIROIR de la règle du site (templates/product.json, bloc Flocage) : tag « Maillot » OU type maillot/kit OU titre contenant « maillot »
+  // ; exclus : survêtements, ensembles/hauts d'entraînement, maillot mystère.
+  const t = String(p.title || '').toLowerCase(), ty = String(p.product_type || p.type || '').toLowerCase();
+  const tags = (Array.isArray(p.tags) ? p.tags : String(p.tags || '').split(',')).map((x) => String(x).trim());
+  let f = false;
+  if (tags.includes('Maillot')) f = true;
+  if (ty === 'maillot' || ty === 'kit' || ty === 'kit complet') f = true;
+  if (t.includes('maillot')) f = true;   // (« Débardeur Sport » générique sans écusson = pas de flocage)
+  if (/surv[êe]tement/.test(t)) f = false;
+  if (t.includes('ensemble') && t.includes('entra')) f = false;
+  if (t.includes('haut d') && t.includes('entra')) f = false;
+  if (/myst[èe]re/.test(t)) f = false;
+  return f;
 }
 
 let CACHE = null, REFRESHING = null;
@@ -120,7 +129,7 @@ async function createOrder(b, egrowKey) {
       attrs.push({ key: `Patch ${n}`, value: pts.length ? pts.join(' + ').slice(0, 250) : 'Aucun' }); }
     if (l.flocage) {
       lineItems.push({ title: 'Flocage Personnalisé PRO - Nom + Numéro', quantity: qty, price: l.flocage.prix, requiresShipping: false, userConnectionId: SHOPIFY_CONN, externalProductId: String(l.flocage.pid),
-        externalVariantId: l.flocage.vid ? String(l.flocage.vid) : undefined, metadata: { source: 'precommande_magasin', pour: l.title, nom: l.flocage.nom, numero: l.flocage.numero } });
+        externalVariantId: l.flocage.vid ? String(l.flocage.vid) : undefined, imageUrl: img(l.flocage.image) || undefined, metadata: { source: 'precommande_magasin', pour: l.title, nom: l.flocage.nom, numero: l.flocage.numero } });
       value += l.flocage.prix * qty; notes.push(`FLOCAGE ${l.title}: ${[l.flocage.nom, l.flocage.numero].filter(Boolean).join(' ')}`);
     }
     for (const pt of (l.patches || (l.patch ? [l.patch] : []))) {
@@ -131,8 +140,16 @@ async function createOrder(b, egrowKey) {
   }
   // Liaison produit : id internes eGrow si le produit existe côté Touni, sinon on garde les ids Shopify et on signale.
   const unlinked = [];
+  const LINE_MODE = process.env.PRECOMMANDE_LINE_MODE || 'image';
   for (const li of lineItems) {
     if (!li.externalProductId) continue;
+    if (LINE_MODE === 'image') {
+      // MODE « image » (validé par Tahar le 16/10) : ligne NON liée à la fiche eGrow mais avec la PHOTO + le prix ; eGrow efface imageUrl dès qu'une ligne est liée.
+      // (De toute façon les produits créés après le 14/10 n'existent pas encore dans eGrow.) Les ids Shopify restent en metadata.
+      li.metadata = Object.assign({}, li.metadata, { shopify_product_id: li.externalProductId, shopify_variant_id: li.externalVariantId || null });
+      delete li.userConnectionId; delete li.externalProductId; delete li.externalVariantId;
+      continue;
+    }
     const hit = await resolveEgrow(egrowKey, li.title.replace(/ - [^-]+$/, '').replace(/ · .*$/, ''), li.externalProductId, li.externalVariantId);
     if (hit) { li.productId = hit.productId; if (hit.variantId) li.variantId = hit.variantId; delete li.externalProductId; delete li.externalVariantId; delete li.userConnectionId; }
     else unlinked.push(li.title);
