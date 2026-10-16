@@ -59,18 +59,29 @@ function stockKey(product, size) {
   return normTitle(product) + '§' + normSizeKey(size);
 }
 
+
+// Fetch Supabase paginé (PostgREST plafonne à 1000 lignes par réponse)
+async function sbFetchAll(pathAndQuery) {
+  const out = [];
+  for (let page = 0; page < 20; page++) {
+    const res = await fetch(`${SB_URL}${pathAndQuery}`, {
+      headers: { ...supabaseHeaders(true), Range: `${page * 1000}-${page * 1000 + 999}` },
+    });
+    if (!res.ok) throw new Error(pathAndQuery.split('?')[0] + ': HTTP ' + res.status);
+    const rows = await res.json();
+    out.push(...rows);
+    if (rows.length < 1000) break;
+  }
+  return out;
+}
+
 // ── Réconciliation complète ──────────────────────────────────────────────────
 // Statuts vendables : mêmes que le flux « Expédier » du gestionnaire.
 const SELLABLE_STATUSES = 'retour,stock,flocage_joueur';
 
 async function reconcileInventory() {
   // 1) Totaux réels par (produit, taille) — inclut les lignes à 0 pour les ruptures
-  const stockRes = await fetch(
-    `${SB_URL}/rest/v1/stock?select=product,size,qty,status,shopify_pushed_at&deleted_at=is.null&status=in.(${SELLABLE_STATUSES})&limit=2000`,
-    { headers: supabaseHeaders(true) }
-  );
-  if (!stockRes.ok) throw new Error('stock fetch: HTTP ' + stockRes.status);
-  const rows = await stockRes.json();
+  const rows = await sbFetchAll(`/rest/v1/stock?select=product,size,qty,status,shopify_pushed_at&deleted_at=is.null&status=in.(${SELLABLE_STATUSES})&order=id`);
   const totals = {};
   const touniPushed = new Set();
   for (const r of rows) {
@@ -80,10 +91,7 @@ async function reconcileInventory() {
   }
 
   // 2) Push Le Vestiaire — toutes les variantes mappées, quantité absolue
-  const cacheRes = await fetch(`${SB_URL}/rest/v1/lv_variants_cache?select=product_title,size,inventory_item_id&limit=2000`, {
-    headers: supabaseHeaders(true),
-  });
-  const cache = cacheRes.ok ? await cacheRes.json() : [];
+  const cache = await sbFetchAll(`/rest/v1/lv_variants_cache?select=product_title,size,inventory_item_id&order=variant_id`);
   const quantities = cache.map(c => ({
     inventoryItemId: `gid://shopify/InventoryItem/${c.inventory_item_id}`,
     locationId: LV_LOCATION_GID,
@@ -108,10 +116,7 @@ async function reconcileInventory() {
   // 3) Push Touni — uniquement les (produit, taille) déjà poussés vers Touni
   let touniSet = 0;
   if (touniPushed.size) {
-    const tRes = await fetch(`${SB_URL}/rest/v1/shopify_variants_cache?select=product_title,size,color,inventory_item_id&limit=3000`, {
-      headers: supabaseHeaders(true),
-    });
-    const tCache = tRes.ok ? await tRes.json() : [];
+    const tCache = await sbFetchAll(`/rest/v1/shopify_variants_cache?select=product_title,size,color,inventory_item_id&order=inventory_item_id`);
     const locationId = process.env.SHOPIFY_LOCATION_ID;
     for (const c of tCache) {
       const sizeKey = c.color ? `${c.size} | ${c.color}` : c.size;

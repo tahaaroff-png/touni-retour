@@ -710,6 +710,62 @@ function cleanOpsText(b) {
   s = s.replace(/^\[Le client a envoy[ée] PLUSIEURS[\s\S]*?\]\s*/, '').replace(/^\[CONTEXTE SYST[ÈE]ME[\s\S]*?\]\s*/, '');
   return s.trim();
 }
+// ── PUBS MAGASIN : suivi du parcours (table ad_conversation) + accueil + relance J+1 ──────────────────────────────
+const AD_WELCOME_TEMPLATE = process.env.AD_WELCOME_TEMPLATE || 'touni_accueil_v2';      // 3 boutons statiques (site / itinéraire / autre) — déjà créé et approuvé
+const AD_VISIT_RE = /(je passe|j.arrive|jarrive|je viens|je vien\b|je serai la|ce soir|demain|aujourd.?hui|tout a l.heure|dans (une|1) heure|nji\b|غادي نجي|غدا|اليوم)/i;
+function adIntent(text) {
+  const s = normTxt(String(text || ''));
+  if (/itiner|horaire|adresse|localisation|emplacement|ou est le magasin|ou se trouve|fin kayn|فين|العنوان|الموقع/.test(s) || /itiner/.test(s)) return 'itineraire';
+  if (/vu votre pub/.test(s)) return 'itineraire';   // anciens messages de pub : même logique que l'itinéraire
+  if (/offre d.?ouverture|offre|279|profiter|maider a choisir|m aider a choisir|promo/.test(s)) return 'offre';
+  if (!s || /^(bonjour|bonsoir|salut|salam|salam alaykoum|salam alikom|slt|cc|coucou|hello|hi|hey|info|infos|bjr|bsr|السلام عليكم|سلام|مرحبا)( touni)?$/.test(s) || /en savoir plus|plus d.?info|j aimerais en savoir|puis je en savoir|ce sujet|vu votre pub|vu votre publicite/.test(s)) return 'vague';
+  return 'autre';
+}
+const _sha = (p) => { try { return require('crypto').createHash('sha256').update(String(p || '').replace(/\D/g, '').slice(-9)).digest('hex'); } catch (e) { return null; } };
+async function adGet(convId) {
+  try {
+    const r = await fetch(`${SB_URL}/rest/v1/ad_conversation?conv_id=eq.${encodeURIComponent(String(convId))}&select=*`, { headers: supabaseHeaders(true) });
+    const j = await r.json().catch(() => []); return (Array.isArray(j) && j[0]) || null;
+  } catch (e) { return null; }
+}
+async function adLog(convId, patch) {
+  try {
+    await fetch(`${SB_URL}/rest/v1/ad_conversation?on_conflict=conv_id`, { method: 'POST', headers: Object.assign({}, supabaseHeaders(true), { 'Content-Type': 'application/json', 'Prefer': 'resolution=merge-duplicates' }),
+      body: JSON.stringify(Object.assign({ conv_id: String(convId), updated_at: new Date().toISOString() }, patch)) });
+  } catch (e) {}
+}
+// Relance J+1 (UNE seule fois) : clients pub qui ont reçu l'itinéraire hier, sans intention de venir ni visite ; uniquement si leur dernier message date de < 23 h (fenêtre WhatsApp 24 h).
+// + détection des « venus » (commande récupérée au magasin) pour les conversations pub récentes. Exécuté au plus 1 fois par heure.
+async function runAdMaintenance(integrationId, dry) {
+  const out = { followups: 0, visited: 0 };
+  try {
+    const now = new Date(); if (now.getUTCMinutes() >= 5 && !dry) return out;
+    const since = new Date(Date.now() - 5 * 86400000).toISOString();
+    const r = await fetch(`${SB_URL}/rest/v1/ad_conversation?select=*&first_msg_at=gte.${encodeURIComponent(since)}&visited_at=is.null&order=first_msg_at.desc&limit=60`, { headers: supabaseHeaders(true) });
+    const rows = await r.json().catch(() => []); if (!Array.isArray(rows)) return out;
+    const hr = maroccoHourLocal();
+    for (const row of rows) {
+      const msgs = await egrowGetMessages(row.conv_id, 15);
+      if (!msgs.length) continue;
+      const blob = msgs.map((m) => `${(m.body || (m.content && m.content.body) || '')}`).join(' | ');
+      if (/Retrait magasin r[ée]cup[ée]r[ée]|bien [ée]t[ée] r[ée]cup[ée]r[ée]e/i.test(blob)) { await adLog(row.conv_id, { visited_at: new Date().toISOString(), visited_order: 'retrait' }); out.visited++; continue; }
+      const due = row.location_sent_at && !row.intent_visit_at && !row.followup_sent_at;
+      const age = row.location_sent_at ? (Date.now() - Date.parse(row.location_sent_at)) / 3600000 : 0;
+      if (!due || age < 18 || age > 40 || hr < 10 || hr >= 20) continue;
+      const lastIn = msgs.filter((m) => !(m.mine === true || m.mine === 'true')).sort((a, b) => (b.sentAt || 0) - (a.sentAt || 0))[0];
+      if (!lastIn || (Math.floor(Date.now() / 1000) - (lastIn.sentAt || 0)) > 23 * 3600) { continue; }   // fenêtre 24 h fermée : pas de relance (pas de nouveau template)
+      const lastMine = msgs.filter((m) => m.mine === true || m.mine === 'true').sort((a, b) => (b.sentAt || 0) - (a.sentAt || 0))[0];
+      if (lastMine && (lastMine.sentAt || 0) > (lastIn.sentAt || 0) && (Math.floor(Date.now() / 1000) - lastMine.sentAt) < 4 * 3600) continue;  // un humain/bot vient d'écrire
+      if (dry) { out.followups++; continue; }
+      const to = lastIn.waFrom || '';
+      const res = await egrowSend(integrationId, to, 'Vous passez aujourd’hui au magasin ? 😊 On est ouverts jusqu’à 22h (Sidi Maârouf).', row.conv_id);
+      if (res && res.status === 'success') { await adLog(row.conv_id, { followup_sent_at: new Date().toISOString() }); out.followups++; }
+      if (out.followups >= 12) break;
+    }
+  } catch (e) {}
+  return out;
+}
+function maroccoHourLocal() { try { return parseInt(new Intl.DateTimeFormat('en-GB', { timeZone: 'Africa/Casablanca', hour: '2-digit', hour12: false }).format(new Date()), 10); } catch (e) { return 12; } }
 // Mode du patron (persisté) : 'patron' (assistant données, défaut) ou 'client' (teste l'expérience de vente).
 async function getMerchantMode() {
   try {
@@ -1223,6 +1279,7 @@ async function runPoll(q) {
   const nowSec = Math.floor(Date.now() / 1000);
   const results = [];
   let processed = 0;
+  try { const _m = await runAdMaintenance(INTEGRATIONS[0], dry); if (_m.followups || _m.visited) results.push({ decision: 'ad_maintenance', ..._m }); } catch (e) {}
 
   for (const integrationId of INTEGRATIONS) {
     const convs = await egrowGetConversations(integrationId, 1);
@@ -1503,8 +1560,35 @@ async function runPoll(q) {
             if (_rec) orderCtx = `[CONTEXTE SYSTÈME — NE PAS CITER : ce client a DÉJÀ une commande #${String(_rec.orderNumber || _rec.id).replace(/^#/, '')} (étape « ${(_rec.pipeline && _rec.pipeline.name) || '?'} », ${((_rec.lineItems || []).map((l) => l.title).join(' + ') || 'produits')} ${String(_rec.createdAt || '').slice(0, 10)}). Ce n'est PAS un nouveau contact : N'ENVOIE JAMAIS le message d'accueil « Bienvenue chez Touni ». S'il dit juste « ok / oki / salam / merci / wah », réponds en UNE courte phrase liée à sa commande (elle est bien prise en compte, l'équipe l'appelle pour la confirmation, ou un simple remerciement) sans reposer de question de bienvenue ; s'il demande autre chose, réponds normalement.]`;
           } catch (e) {}
         }
+        // PUBS MAGASIN : suivi du parcours + accueil à 3 boutons (message vague d'un NOUVEAU client) + consigne selon l'intention du 1er message.
+        let adRow = null, adCtx = '';
+        if (!isMerchant) {
+          try {
+            const _clean = cleanOpsText(body);
+            const _ref = (raw || []).map((m) => m.content && m.content.referral).find(Boolean);
+            adRow = await adGet(c.id);
+            const _firstContact = (raw || []).length < HISTORY_LIMIT && !(raw || []).some((m) => m.mine === true || m.mine === 'true') && !(botSent && botSent.ids && botSent.ids.size);
+            const _intent = adIntent(_clean);
+            if (_ref && !adRow && !dry) { adRow = { conv_id: String(c.id), intent: _intent }; await adLog(c.id, { ad_source_id: String((_ref && _ref.sourceId) || ''), intent: _intent, phone_hash: _sha(contactWaId), first_msg_at: new Date().toISOString() }); }
+            if ((adRow || _ref) && AD_VISIT_RE.test(_clean) && !dry) { await adLog(c.id, { intent_visit: /demain/i.test(_clean) ? 'tomorrow' : (/ce soir|aujourd|tout a l|heure/i.test(normTxt(_clean)) ? 'today' : 'soon'), intent_visit_at: new Date().toISOString() }); }
+            // Accueil général (template à 3 boutons) : UNIQUEMENT 1er contact + message vague + aucune commande + jamais déjà envoyé
+            if (_firstContact && !orderCtx && _intent === 'vague' && !(adRow && adRow.welcome_sent_at) && type === 'text') {
+              if (dry) { results.push({ conv: c.id, phone: contactWaId, decision: 'would_send_welcome_template' }); processed++; continue; }
+              const _t = await egrowSendTemplate(integrationId, contactWaId, AD_WELCOME_TEMPLATE, 'fr', []);
+              if (_t && _t.status === 'success') {
+                claimedMsgId = null;
+                await adLog(c.id, { welcome_sent_at: new Date().toISOString(), intent: 'vague', ad_source_id: _ref ? String(_ref.sourceId || '') : (adRow && adRow.ad_source_id) || null, phone_hash: _sha(contactWaId) });
+                results.push({ conv: c.id, phone: contactWaId, msgId, decision: 'welcome_template' });
+                processed++; continue;
+              }
+            }
+            if ((adRow || _ref) && (_intent === 'itineraire' || _intent === 'offre' || (_firstContact && _intent !== 'vague'))) {
+              adCtx = `[CONTEXTE SYSTÈME — PUB MAGASIN : ce client vient d'une pub du magasin ; intention du 1er message = « ${_intent} ». Applique la section « PUBS MAGASIN (OUVERTURE) » du prompt : réponds DIRECTEMENT, sans question préalable.]`;
+            }
+          } catch (e) { console.error('[ad]', String((e && e.message) || e)); }
+        }
         const decision = await handleIncoming(
-          { text: (orderCtx ? orderCtx + '\n' : '') + body, name: c.title || (c.contact && c.contact.name) || '', city: (c.contact && c.contact.city) || '', history,
+          { text: (orderCtx ? orderCtx + '\n' : '') + (adCtx ? adCtx + '\n' : '') + body, name: c.title || (c.contact && c.contact.name) || '', city: (c.contact && c.contact.city) || '', history,
             catalog: isMerchant ? '' : catalog, collectionsBlock: isMerchant ? '' : collectionsBlock, imageBase64, imageMime, images,
             tools: isMerchant ? MERCHANT_TOOLS : AGENT_TOOLS,
             runTool: isMerchant ? ((n, i) => runMerchantTool(n, i)) : ((n, i) => runAgentTool(n, i, contactWaId)),
@@ -1543,7 +1627,7 @@ async function runPoll(q) {
             if (_late) { claimedMsgId = null; entry.decision = 'human_handover_late'; entry.sent = 'skip:humain_entre_temps'; results.push(entry); processed++; continue; }
             const sendRes = await egrowSend(integrationId, contactWaId, decision.reply, c.id); // c.id = fil exact (fiable pour les leads pub)
             entry.sent = sendRes && sendRes.status;
-            if (sendRes && sendRes.status === 'success') { claimedMsgId = null; await markBotSent(c.id, integrationId, sendRes, decision.reply); } // envoi OK → ne PAS libérer + mémoriser le texte (handover + anti-doublon)
+            if (sendRes && sendRes.status === 'success') { claimedMsgId = null; await markBotSent(c.id, integrationId, sendRes, decision.reply); if (adRow) { try { const _p = {}; if (/maps\.google|google\.com\/maps|g\.page\/r|goo\.gl\/maps/.test(decision.reply)) _p.location_sent_at = new Date().toISOString(); if (/de c[ôo]t[ée]|r[ée]serv/i.test(decision.reply)) { _p.item_reserved_at = new Date().toISOString(); _p.item_reserved = (decision.order && decision.order.product) || 'article'; } if (Object.keys(_p).length) await adLog(c.id, _p); } catch (e) {} } } // envoi OK → ne PAS libérer + mémoriser le texte (handover + anti-doublon)
             else await releaseClaim(msgId);                                       // envoi raté → libère pour réessayer au prochain run
             if (isAction && deal && curStage !== target) {
               try {

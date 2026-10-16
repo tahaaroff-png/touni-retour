@@ -27,6 +27,75 @@ function verifySignature(rawBody, signature, secret) {
   }
 }
 
+// ── TikTok Events API (server-side CAPI) : envoie CompletePayment sur chaque commande ──
+// Le pixel navigateur ne peut PAS tracker l'achat sur le checkout sandboxé Shopify → on l'envoie ici.
+// event_source_id = CODE du pixel (pas l'ID numérique). event_id = order.id → déduplication.
+const TT_TOKEN = process.env.TIKTOK_ACCESS_TOKEN || '';
+const TT_PIXEL = process.env.TIKTOK_PIXEL_CODE || 'D5SHUEBC77U5QAK8RN4G';
+const TT_API = 'https://business-api.tiktok.com/open_api/v1.3/event/track/';
+
+function ttHash(v) {
+  if (!v) return undefined;
+  return crypto.createHash('sha256').update(String(v).trim().toLowerCase()).digest('hex');
+}
+function ttNormPhone(p) {
+  if (!p) return undefined;
+  let d = String(p).replace(/[^\d+]/g, '');
+  if (d.startsWith('00')) d = '+' + d.slice(2);
+  else if (d.startsWith('0') && d.length === 10) d = '+212' + d.slice(1); // 06.. / 07.. → +2126.. (Maroc)
+  else if (!d.startsWith('+')) d = '+' + d;
+  return d;
+}
+
+async function sendTikTokPurchase(order) {
+  if (!TT_TOKEN) { console.warn('[tiktok-capi] TIKTOK_ACCESS_TOKEN manquant → skip'); return; }
+  try {
+    const email = order.email || order.contact_email || order.customer?.email;
+    const phone = ttNormPhone(order.phone || order.customer?.phone || order.shipping_address?.phone || order.billing_address?.phone);
+    const cd = order.client_details || {};
+    const user = {};
+    const he = ttHash(email); if (he) user.email = he;
+    const hp = ttHash(phone); if (hp) user.phone = hp;
+    if (cd.browser_ip) user.ip = cd.browser_ip;
+    if (cd.user_agent) user.user_agent = cd.user_agent;
+
+    const contents = (order.line_items || []).map(li => ({
+      content_id: String(li.product_id || li.variant_id || li.sku || ''),
+      content_type: 'product',
+      content_name: li.title,
+      quantity: Number(li.quantity) || 1,
+      price: parseFloat(li.price || 0),
+    }));
+
+    const body = {
+      event_source: 'web',
+      event_source_id: TT_PIXEL,
+      data: [{
+        event: 'CompletePayment',
+        event_time: Math.floor(new Date(order.created_at || Date.now()).getTime() / 1000),
+        event_id: String(order.id),
+        user,
+        properties: {
+          currency: order.currency || 'MAD',
+          value: parseFloat(order.total_price || 0),
+          contents,
+          content_type: 'product',
+        },
+      }],
+    };
+
+    const r = await fetch(TT_API, {
+      method: 'POST',
+      headers: { 'Access-Token': TT_TOKEN, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const j = await r.json().catch(() => ({}));
+    console.log(`[tiktok-capi] order ${order.id} value=${body.data[0].properties.value} ${order.currency || 'MAD'} → code=${j.code} msg=${j.message}`);
+  } catch (e) {
+    console.error('[tiktok-capi] error:', e.message);
+  }
+}
+
 // Extract size + color from a Shopify line_item via variant_title
 // Variant title pattern : "S / Black" or "M" or "Black"
 function parseVariantTitle(variantTitle) {
@@ -185,6 +254,10 @@ async function handler(req, res) {
     console.error('[order-webhook] JSON parse error:', e.message, '| rawBody[:100]:', rawBody.slice(0, 100));
     return res.status(400).json({ error: 'Invalid JSON', detail: e.message });
   }
+
+  // TikTok CAPI : envoyer l'achat UNIQUEMENT sur orders/create (pas orders/cancelled).
+  // Awaité mais protégé → ne peut jamais faire échouer le webhook.
+  if (topic === 'orders/create') await sendTikTokPurchase(order);
 
   try {
     const orderId = order.id;
