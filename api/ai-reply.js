@@ -715,7 +715,7 @@ let _TPL_CACHE = {};
 async function egrowV2SendTemplate(convId, templateName) {
   try {
     if (!_TPL_CACHE[templateName]) {
-      const d = await egrowV2Query('query($c:ID!,$s:String){ whatsappTemplates(userConnectionId:$c, search:$s, limit:10){ items{ id name language status components } } }', { c: String(EGROW_V2_CONN), s: templateName });
+      const d = await egrowV2Query('query($c:ID!,$s:String){ whatsappTemplates(userConnectionId:$c, search:$s, limit:10){ items{ id name language status category components parameterFormat qualityScore } } }', { c: String(EGROW_V2_CONN), s: templateName });
       const it = ((d && d.whatsappTemplates && d.whatsappTemplates.items) || []).find((x) => x.name === templateName && x.status === 'APPROVED');
       if (!it) return { status: 'error', message: 'template introuvable/non approuvé' };
       _TPL_CACHE[templateName] = it;
@@ -723,9 +723,10 @@ async function egrowV2SendTemplate(convId, templateName) {
     const tpl = _TPL_CACHE[templateName];
     const body = ((tpl.components || []).find((c) => c.type === 'BODY') || {}).text || '';
     const btns = ((tpl.components || []).find((c) => c.type === 'BUTTONS') || {}).buttons || [];
+    // Format VALIDÉ le 16/10 (identique à ce que stocke eGrow pour ses automatismes) : language = {code}, components en minuscules avec parameters (vides ici), template d'origine complet dans messageTemplate.
     const input = { integrationId: EGROW_V2_INTEGRATION, userConnectionId: EGROW_V2_CONN, conversationId: Number(convId), messageType: 'template',
-      messageContent: { body, name: tpl.name, buttons: btns },
-      messageTemplate: { id: tpl.id, name: tpl.name, language: tpl.language, status: tpl.status, body: [], header: [], buttons: [], components: tpl.components, parameterFormat: 'POSITIONAL' } };
+      messageContent: { name: tpl.name, language: { code: tpl.language || 'fr' }, components: [{ type: 'body', parameters: [] }, { type: 'header', parameters: [] }], buttons: btns, body },
+      messageTemplate: Object.assign({}, tpl, { body: [], header: [], buttons: [] }) };
     const d = await egrowV2Query('mutation($in:InboxSendConversationMessageInput!){ inboxSendConversationMessage(input:$in){ userErrors{field message} message{ id } } }', { in: input });
     const node = d && d.inboxSendConversationMessage;
     if (node && node.message && node.message.id && !((node.userErrors || []).length)) return { status: 'success', id: node.message.id };
@@ -773,9 +774,10 @@ async function runAdMaintenance(integrationId, dry) {
       if (/Retrait magasin r[ée]cup[ée]r[ée]|bien [ée]t[ée] r[ée]cup[ée]r[ée]e/i.test(blob)) { await adLog(row.conv_id, { visited_at: new Date().toISOString(), visited_order: 'retrait' }); out.visited++; continue; }
       const due = row.location_sent_at && !row.intent_visit_at && !row.followup_sent_at;
       const age = row.location_sent_at ? (Date.now() - Date.parse(row.location_sent_at)) / 3600000 : 0;
-      if (!due || age < 18 || age > 40 || hr < 10 || hr >= 20) continue;
+      if (!due || hr < 10 || hr >= 20) continue;
       const lastIn = msgs.filter((m) => !(m.mine === true || m.mine === 'true')).sort((a, b) => (b.sentAt || 0) - (a.sentAt || 0))[0];
-      if (!lastIn || (Math.floor(Date.now() / 1000) - (lastIn.sentAt || 0)) > 23 * 3600) { continue; }   // fenêtre 24 h fermée : pas de relance (pas de nouveau template)
+      const _ageIn = lastIn ? (Math.floor(Date.now() / 1000) - (lastIn.sentAt || 0)) / 3600 : 0;
+      if (!lastIn || _ageIn < 20 || _ageIn > 23.5) { continue; }   // « J+1 » : ~20 à 23,5 h après le dernier message du client, TOUJOURS avant la fermeture de la fenêtre 24 h (sinon WhatsApp refuse)
       const lastMine = msgs.filter((m) => m.mine === true || m.mine === 'true').sort((a, b) => (b.sentAt || 0) - (a.sentAt || 0))[0];
       if (lastMine && (lastMine.sentAt || 0) > (lastIn.sentAt || 0) && (Math.floor(Date.now() / 1000) - lastMine.sentAt) < 4 * 3600) continue;  // un humain/bot vient d'écrire
       if (dry) { out.followups++; continue; }
@@ -1594,11 +1596,9 @@ async function runPoll(q) {
             if (_ref && !adRow && !dry) { adRow = { conv_id: String(c.id), intent: _intent }; await adLog(c.id, { ad_source_id: String((_ref && _ref.sourceId) || ''), intent: _intent, phone_hash: _sha(contactWaId), first_msg_at: new Date().toISOString() }); }
             if ((adRow || _ref) && AD_VISIT_RE.test(_clean) && !dry) { await adLog(c.id, { intent_visit: /demain/i.test(_clean) ? 'tomorrow' : (/ce soir|aujourd|tout a l|heure/i.test(normTxt(_clean)) ? 'today' : 'soon'), intent_visit_at: new Date().toISOString() }); }
             // Accueil général (template à 3 boutons) : UNIQUEMENT 1er contact + message vague + aucune commande + jamais déjà envoyé
-            if ((process.env.AD_WELCOME_TEMPLATE_ENABLED || '') === '1' && _firstContact && !orderCtx && _intent === 'vague' && !(adRow && adRow.welcome_sent_at) && type === 'text') {   // désactivé par défaut : l'envoi du template par API est refusé (Paid Message Account / eGrow « Server Error ») → texte d'accueil du bot
+            if ((process.env.AD_WELCOME_TEMPLATE_DISABLED || '') !== '1' && _firstContact && !orderCtx && _intent === 'vague' && !(adRow && adRow.welcome_sent_at) && type === 'text') {
               if (dry) { results.push({ conv: c.id, phone: contactWaId, decision: 'would_send_welcome_template' }); processed++; continue; }
-              // 1) vrai numéro WhatsApp (≤ 13 chiffres) → template 3 boutons via l'API Cloud ; 2) identifiant de référence Meta des leads pub (15 chiffres, pas un numéro) → le template ne peut pas partir : on retombe sur le texte d'accueil du bot
-              const _isPhone = /^\d{9,13}$/.test(String(contactWaId || '').replace(/\D/g, ''));
-              const _t = _isPhone ? await egrowSendTemplate(integrationId, contactWaId, AD_WELCOME_TEMPLATE, 'fr', []) : { status: 'skip' };
+              const _t = await egrowV2SendTemplate(c.id, AD_WELCOME_TEMPLATE);   // template 3 boutons envoyé dans le fil exact de la conversation (marche aussi pour les leads pub sans vrai numéro)
               if (_t && _t.status === 'success') {
                 claimedMsgId = null;
                 await adLog(c.id, { welcome_sent_at: new Date().toISOString(), intent: 'vague', ad_source_id: _ref ? String(_ref.sourceId || '') : (adRow && adRow.ad_source_id) || null, phone_hash: _sha(contactWaId) });
