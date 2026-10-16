@@ -737,6 +737,12 @@ async function egrowV2SendTemplate(convId, templateName, needCategory) {
 // ── PUBS MAGASIN : suivi du parcours (table ad_conversation) + accueil + relance J+1 ──────────────────────────────
 const AD_WELCOME_TEMPLATE = process.env.AD_WELCOME_TEMPLATE || 'touni_accueil_v8';      // 3 boutons statiques (site / itinéraire / autre). v4 créé le 16/10 : tant qu'il n'est pas APPROUVÉ, l'envoi échoue et le bot répond lui-même par texte (pas de repli sur v2, jugé inadapté)
 const AD_WELCOME_CANDIDATES = (process.env.AD_WELCOME_CANDIDATES || 'touni_accueil_v8,touni_accueil_v9,touni_accueil_v10').split(',').map((x) => x.trim()).filter(Boolean);
+// Template général pour ROUVRIR la fenêtre de 24 h d'un client (conversation fermée) : reprise_v1 en priorité, sinon reprise_v2 (approuvé).
+const REOPEN_TEMPLATES = (process.env.REOPEN_TEMPLATES || 'touni_reprise_v1,touni_reprise_v2').split(',').map((x) => x.trim()).filter(Boolean);
+async function reopenWindow(convId) {
+  for (const t of REOPEN_TEMPLATES) { const r = await egrowV2SendTemplate(convId, t); if (r && r.status === 'success') return Object.assign({ template: t }, r); }
+  return { status: 'error', message: 'aucun template de reprise approuvé' };
+}
 const AD_VISIT_RE = /(je passe|j.arrive|jarrive|je viens|je vien\b|je serai la|ce soir|demain|aujourd.?hui|tout a l.heure|dans (une|1) heure|nji\b|غادي نجي|غدا|اليوم)/i;
 function adIntent(text) {
   const s = normTxt(String(text || ''));
@@ -1937,6 +1943,12 @@ module.exports = async (req, res) => {
       const items = ((d && d.whatsappTemplates && d.whatsappTemplates.items) || []).map((x) => { const comps = Array.isArray(x.components) ? x.components : []; const body = (comps.find((c) => /body/i.test(c.type || '')) || {}).text || ''; const btns = ((comps.find((c) => /button/i.test(c.type || '')) || {}).buttons || []).map((b) => b.text); return { id: x.id, name: x.name, status: x.status, category: x.category, body: body.slice(0, 220), buttons: btns }; });
       return res.status(200).json({ items });
     } catch (e) { return res.status(200).json({ ok: false, error: String((e && e.message) || e).slice(0, 120) }); }
+  }
+  // ── Rouvrir la fenêtre 24 h d'une conversation : ?reopen=1&conv=ID (template de reprise, v1 sinon v2) ──
+  if (q.reopen === '1') {
+    const cid = String(q.conv || '').replace(/\D/g, '');
+    if (!cid) return res.status(400).json({ error: 'conv requis' });
+    return res.status(200).json(await reopenWindow(cid));
   }
   // ── Test de l'accueil réel (même chemin que le bot) vers la conversation DU PATRON uniquement ──
   if (q.diagwelcome === '1') {
