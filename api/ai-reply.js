@@ -792,18 +792,28 @@ async function runAdMaintenance(integrationId, dry) {
 }
 // Alerte facturation pub Meta : au plus 1 vérification / heure (cadence gérée dans _ads_monitor via app_settings), dédup 12 h.
 // warning -> patron seul ; critical -> patron + opératrices. dry : rien envoyé, rien écrit.
+// Surveillance facturation Meta : un contrôle par compte pub (Touni + Le Vestiaire). Alertes au patron, + opératrices si critique.
+const ADS_ACCOUNTS = [
+  { tag: '', label: '', tokenEnv: 'META_ADS_TOKEN', idEnv: 'META_ADS_ACCOUNT_ID', id: 'act_1404371898503365' },                               // Touni
+  { tag: 'lv', label: 'LE VESTIAIRE', tokenEnv: 'META_ADS_TOKEN_LV', idEnv: 'META_ADS_ACCOUNT_ID_LV', id: 'act_25143480048619630' },       // Le Vestiaire
+];
 async function runAdsBillingWatch(integrationId, dry, force) {
-  try {
-    const token = process.env.META_ADS_TOKEN; if (!token) return { level: 'no_token' };
-    const r = await adsMonitor.runAdsMonitor({
-      token, accountId: process.env.META_ADS_ACCOUNT_ID || 'act_1404371898503365', dry, force,
-      send: async (level, message) => {
-        if (MERCHANT_PHONE) await sendAndQueue(integrationId, MERCHANT_PHONE, message);
-        if (level === 'critical') for (const _op of OPERATOR_PHONES) { if (_op !== MERCHANT_PHONE) { try { await sendAndQueue(integrationId, _op, message); } catch (e) {} } }
-      },
-    });
-    return r.ran && (r.sent || r.level !== 'ok') ? { level: r.level, sent: r.sent, skipped: r.skipped } : (force ? { level: r.level, ran: r.ran } : null);
-  } catch (e) { return null; }
+  const outAll = [];
+  for (const a of ADS_ACCOUNTS) {
+    try {
+      const token = process.env[a.tokenEnv]; if (!token) { if (a.tag) continue; outAll.push({ level: 'no_token' }); continue; }
+      const r = await adsMonitor.runAdsMonitor({
+        token, accountId: process.env[a.idEnv] || a.id, tag: a.tag, label: a.label, dry, force,
+        send: async (level, message) => {
+          if (MERCHANT_PHONE) await sendAndQueue(integrationId, MERCHANT_PHONE, message);
+          if (level === 'critical') for (const _op of OPERATOR_PHONES) { if (_op !== MERCHANT_PHONE) { try { await sendAndQueue(integrationId, _op, message); } catch (e) {} } }
+        },
+      });
+      const o = r.ran && (r.sent || r.level !== 'ok') ? { account: a.label || 'touni', level: r.level, sent: r.sent, skipped: r.skipped } : (force ? { account: a.label || 'touni', level: r.level, ran: r.ran } : null);
+      if (o) outAll.push(o);
+    } catch (e) {}
+  }
+  return outAll.length ? { accounts: outAll } : null;
 }
 function maroccoHourLocal() { try { return parseInt(new Intl.DateTimeFormat('en-GB', { timeZone: 'Africa/Casablanca', hour: '2-digit', hour12: false }).format(new Date()), 10); } catch (e) { return 12; } }
 // Mode du patron (persisté) : 'patron' (assistant données, défaut) ou 'client' (teste l'expérience de vente).
@@ -1911,8 +1921,9 @@ module.exports = async (req, res) => {
   // ── Diag facturation pub Meta (lecture seule, aucun envoi, aucun secret renvoyé) ──
   if (q.diagads === '1') {
     try {
-      const token = process.env.META_ADS_TOKEN; if (!token) return res.status(200).json({ ok: false, error: 'META_ADS_TOKEN absent sur Vercel' });
-      const r = await adsMonitor.checkAdsAccount({ token, accountId: process.env.META_ADS_ACCOUNT_ID || 'act_1404371898503365' });
+      const _lv = q.account === 'lv';
+      const token = _lv ? process.env.META_ADS_TOKEN_LV : process.env.META_ADS_TOKEN; if (!token) return res.status(200).json({ ok: false, error: (_lv ? 'META_ADS_TOKEN_LV' : 'META_ADS_TOKEN') + ' absent sur Vercel' });
+      const r = await adsMonitor.checkAdsAccount({ token, accountId: _lv ? (process.env.META_ADS_ACCOUNT_ID_LV || 'act_25143480048619630') : (process.env.META_ADS_ACCOUNT_ID || 'act_1404371898503365') });
       return res.status(200).json({ ok: true, status: r.status, status_label: r.status_label, level: r.level, reasons: r.reasons, metrics: r.metrics });
     } catch (e) { return res.status(200).json({ ok: false, error: String((e && e.message) || e).slice(0, 120) }); }
   }

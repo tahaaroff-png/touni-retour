@@ -146,23 +146,24 @@ async function checkAdsAccount({ token, accountId } = {}) {
   }
 }
 
-function buildAlertMessage(result) {
+function buildAlertMessage(result, label) {
   if (!result || result.level === 'ok') return '';
   const m = result.metrics || {}; const link = BILLING_URL(m.account_id || ACCOUNT_ID_DEFAULT);
   const lines = [];
+  const L = label ? ` — ${label}` : '';
   if (result.level === 'critical') {
-    lines.push('🚨 *PUBS META : RISQUE DE COUPURE*');
+    lines.push(`🚨 *PUBS META${L} : RISQUE DE COUPURE*`);
     lines.push(...result.reasons.map((r) => `• ${r}`));
     lines.push('');
     lines.push('👉 Vérifie ton argent / ta carte bancaire (solde, plafond, 3D Secure), puis reviens payer dans Ads Manager > Facturation :');
   } else if (/imminent|dépasse/.test(result.reasons.join(' ')) || m.signature.startsWith('precharge')) {
-    lines.push('⚠️ *Les publicités sont presque arrivées à la limite.*');
+    lines.push(`⚠️ *Les publicités${label ? ' ' + label : ''} sont presque arrivées à la limite.*`);
     lines.push('Vérifie si tu as de l\'argent au niveau de ta banque ou de ta carte bancaire.');
     lines.push(...result.reasons.map((r) => `• ${r}`));
     lines.push('');
     lines.push('Si besoin, règle à la main dans Ads Manager > Facturation :');
   } else {
-    lines.push('⚠️ *PUBS META : à vérifier*');
+    lines.push(`⚠️ *PUBS META${L} : à vérifier*`);
     lines.push(...result.reasons.map((r) => `• ${r}`));
     lines.push('');
     lines.push('Vérifie dans Ads Manager > Facturation :');
@@ -182,30 +183,31 @@ function defaultStore() {
 }
 
 // Orchestration : cadence 1 h + déduplication + envoi. send(level, message) est fourni par ai-reply.js (WhatsApp). dry = rien envoyé, rien écrit.
-async function runAdsMonitor({ token, accountId, dry, force, send, store, now } = {}) {
+async function runAdsMonitor({ token, accountId, dry, force, send, store, now, tag, label } = {}) {
+  const ns = tag ? tag + ':' : '';   // espace de clés par compte pub (Touni = sans préfixe, clés historiques)
   const st = store || (dry ? { get: async () => '', set: async () => {} } : defaultStore());
   const t = (now || new Date()).getTime();
   const out = { ran: false, level: null, sent: false, skipped: null, message: '', result: null };
   if (!dry && !force) {
-    const last = parseInt(await st.get('ads_monitor:last_run'), 10) || 0;
+    const last = parseInt(await st.get('ads_monitor:' + ns + 'last_run'), 10) || 0;
     if (t - last < T.RUN_EVERY_MIN * 60000) { out.skipped = 'cadence'; return out; }
-    await st.set('ads_monitor:last_run', String(t));
+    await st.set('ads_monitor:' + ns + 'last_run', String(t));
   }
   const result = await checkAdsAccount({ token, accountId });
   out.ran = true; out.result = result; out.level = result.level;
   if (result.metrics && result.metrics.transient) return out;
   if (result.level === 'ok') {
-    if (!dry) { for (const lv of ['warning', 'critical']) { if (await st.get('ads_alert:' + lv)) await st.set('ads_alert:' + lv, ''); } }   // incident terminé : prochain incident = alerte immédiate
+    if (!dry) { for (const lv of ['warning', 'critical']) { if (await st.get('ads_alert:' + ns + lv)) await st.set('ads_alert:' + ns + lv, ''); } }   // incident terminé : prochain incident = alerte immédiate
     return out;
   }
   const sig = (result.metrics && result.metrics.signature) || result.level;
-  const key = 'ads_alert:' + result.level;
+  const key = 'ads_alert:' + ns + result.level;
   let prev = null; try { prev = JSON.parse(await st.get(key) || 'null'); } catch (e) {}
   const ageH = prev && prev.t ? (t - prev.t) / 3600000 : Infinity;
   const sameSig = prev && prev.sig === sig;
   // critique : même signature -> max 1 fois / 12 h ; warning pré-prélèvement : 1 seule fois par cycle de facturation ; autre warning : 1 fois / 12 h
   const dedupe = sameSig && (sig.startsWith('precharge:') ? true : ageH < T.DEDUPE_HOURS);
-  out.message = buildAlertMessage(result);
+  out.message = buildAlertMessage(result, label);
   if (dedupe) { out.skipped = 'dedupe'; return out; }
   if (dry) { out.skipped = 'dry'; return out; }
   if (typeof send === 'function') { try { await send(result.level, out.message); out.sent = true; } catch (e) { out.skipped = 'send_error'; return out; } }
