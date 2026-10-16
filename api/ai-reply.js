@@ -388,27 +388,36 @@ async function findShopifyProduct(name, size, color) {
   const sz = String(size || '').trim().toLowerCase(), col = normTxt(color || '');
   const vs = best.variants || [];
   const bySize = vs.filter((v) => sz && String(v.title).split(' / ')[0].trim().toLowerCase() === sz);
-  const v = (col && bySize.find((x) => normTxt(x.title).includes(col))) || bySize[0] || vs[0];
-  return { pid: best.id, title: best.title, vid: v && v.id, sku: (v && v.sku) || '', price: v ? parseFloat(v.price) || 0 : 0,
+  let v = (col && bySize.find((x) => normTxt(x.title).includes(col))) || bySize[0];
+  let sizeMissing = false;
+  if (!v) {
+    // taille demandée ABSENTE du produit en ligne (ex. S/XS sur un survêtement M→4XL) : on prend la variante M (coloris demandé si possible), sinon la 1re, et on le signale dans la note
+    sizeMissing = !!sz;
+    const isM = (x) => String(x.title).split(' / ')[0].trim().toLowerCase() === 'm';
+    v = (col && vs.find((x) => isM(x) && normTxt(x.title).includes(col))) || vs.find(isM) || (col && vs.find((x) => normTxt(x.title).includes(col))) || vs[0];
+  }
+  return { sizeMissing, vtitle: v ? String(v.title) : '', pid: best.id, title: best.title, vid: v && v.id, sku: (v && v.sku) || '', price: v ? parseFloat(v.price) || 0 : 0,
     image: (best.images && best.images[0] && best.images[0].src) || '' };
 }
 // Construit la ligne article : titre/prix/photo/variante du vrai produit, liée à la fiche eGrow (productId/variantId) si elle existe.
 async function buildProductLine(item, qty) {
   const m = await findShopifyProduct(item.product, item.size, item.color);
-  const title = (item.size ? `${(m && m.title) || item.product} - ${item.size}` : String((m && m.title) || item.product || '')).slice(0, 250);
+  const _sz = m && m.sizeMissing ? String(m.vtitle || '').split(' / ').pop() || item.size : item.size;
+  const title = (_sz ? `${(m && m.title) || item.product} - ${_sz}` : String((m && m.title) || item.product || '')).slice(0, 250);
+  const sizeNote = (m && m.sizeMissing) ? `Taille ${item.size} demandée mais absente du produit sur le site → variante ${m.vtitle} utilisée par défaut ; la taille ${item.size} est à servir/échanger AU MAGASIN (${(m && m.title) || item.product}).` : '';
   if (!m) { const price = await v2LookupPrice(item.product); return { line: { title, quantity: qty, price: price || 0, requiresShipping: true }, price: price || 0, linked: false }; }
   // MODE « image » (défaut, validé par Tahar 16/10) : ligne NON liée à la fiche eGrow mais avec la PHOTO du produit + le prix exact de la variante Shopify
   // (eGrow efface imageUrl dès qu'une ligne est liée à un produit → l'écran commande afficherait seulement des initiales). Les ids Shopify restent en metadata.
   // MODE « link » (EGROW_LINE_MODE=link) : ligne liée au produit eGrow (prix/stock suivent la fiche) mais sans photo dans l'écran commande.
   const line = { title, quantity: qty, price: m.price, requiresShipping: true, sku: m.sku || undefined, imageUrl: m.image || undefined,
-    metadata: { source: 'agent_ia_whatsapp', taille: item.size || null, shopify_product_id: String(m.pid), shopify_variant_id: m.vid ? String(m.vid) : null } };
+    metadata: { source: 'agent_ia_whatsapp', taille: item.size || null, taille_site: (m.sizeMissing ? m.vtitle : null), shopify_product_id: String(m.pid), shopify_variant_id: m.vid ? String(m.vid) : null } };
   if ((process.env.EGROW_LINE_MODE || 'image') === 'link') {
     let hit = null;
     try { hit = await pre.resolveEgrow(EGROW_V2_KEY, m.title, String(m.pid), m.vid ? String(m.vid) : undefined); } catch (e) {}
     if (hit) { line.productId = hit.productId; if (hit.variantId) line.variantId = hit.variantId; delete line.imageUrl; }
     else { line.userConnectionId = pre.SHOPIFY_CONN; line.externalProductId = String(m.pid); if (m.vid) line.externalVariantId = String(m.vid); delete line.imageUrl; }
   }
-  return { line, price: m.price, linked: (process.env.EGROW_LINE_MODE || 'image') === 'link' };
+  return { line, price: m.price, sizeNote, linked: (process.env.EGROW_LINE_MODE || 'image') === 'link' };
 }
 // Tags « bot » : on FUSIONNE avec les tags existants (orderCreateOrUpdate remplace la liste).
 async function mergeTags(orderId, add, existing) {
@@ -452,11 +461,13 @@ async function addProductsToExistingDeal(existingDeal, order) {
     ? order.products
     : [{ product: order.product, size: order.size, color: order.color, quantity: order.quantity, flocage: order.flocage }];
   const newLineItems = [];
+  const addSizeNotes = [];
   let addedValue = 0;
   const matchedNames = [];
   for (const item of items) {
     const qty = Math.max(1, parseInt(item.quantity || 1, 10) || 1);
     const bl = await buildProductLine(item, qty); const price = bl.price;
+    if (bl.sizeNote) addSizeNotes.push(bl.sizeNote);
     newLineItems.push(bl.line);
     addedValue += (price || 0) * qty;
     matchedNames.push(`${qty}x ${item.product}${item.size ? ' taille ' + item.size : ''}`);
@@ -471,7 +482,7 @@ async function addProductsToExistingDeal(existingDeal, order) {
     id: existingDeal.id,
     lineItems: [...existingLineItems, ...newLineItems],
     subtotal: mergedValue,
-    note: (`AJOUT (agent IA) : ${matchedNames.join(' + ')}` + (_oldNote ? ' | ' + _oldNote : '')).slice(0, 1500),
+    note: (`AJOUT (agent IA) : ${matchedNames.join(' + ')}` + (addSizeNotes.length ? ' — ' + addSizeNotes.join(' ') : '') + (_oldNote ? ' | ' + _oldNote : '')).slice(0, 1500),
     tags: await mergeTags(existingDeal.id, ['modification bot'], _oldTags),
   };
   const q = 'mutation($in:OrderCreateOrUpdateInput!){ orderCreateOrUpdate(input:$in){ userErrors{ field message } order{ id } } }';
@@ -663,6 +674,28 @@ function isPureThanks(text) {
   for (const w of toks) { if (THANKS.test(w)) thanks++; else if (!FILL.test(w)) return false; }
   return thanks > 0;
 }
+// ── Livreurs (Ozon Express / coursiers) : jamais traités comme des clients ──
+const COURIER_NAME = /livr|ozon|amazon|coursier|courier|delivery|transport|express|توصيل|موزع|ليفرور/i;
+async function isCourierContact(title, phone) {
+  if (COURIER_NAME.test(String(title || ''))) return true;
+  try {
+    const r = await fetch(`${SB_URL}/rest/v1/app_settings?key=eq.${encodeURIComponent('courier:' + _dg(phone))}&select=value`, { headers: supabaseHeaders(true) });
+    const j = await r.json().catch(() => []); return !!(Array.isArray(j) && j[0] && j[0].value);
+  } catch (e) { return false; }
+}
+async function setCourier(phone, on) {
+  try { await fetch(`${SB_URL}/rest/v1/app_settings`, { method: 'POST', headers: Object.assign({}, supabaseHeaders(true), { 'Content-Type': 'application/json', 'Prefer': 'resolution=merge-duplicates' }), body: JSON.stringify({ key: 'courier:' + _dg(phone), value: on ? '1' : '', updated_at: new Date().toISOString() }) }); } catch (e) {}
+}
+// Emoji d'ouverture des notifications opératrice, selon le type de demande.
+function escalationHeader(note, body, critical) {
+  const s = `${note || ''} ${body || ''}`.toLowerCase();
+  if (/livreur|ozon|amazon|transporteur|coursier|livraison.*(probl|echou|échou)|client absent/.test(s)) return '🚚 *LIVREUR*';
+  if (critical || /urgen|vite|plainte|arnaque|escroc|police|avocat|fraude|colis (perdu|non re)/.test(s)) return '🚨 *URGENT — client à gérer*';
+  if (/[ée]chang|changer (la )?taille|remplac|trop (grand|petit)|mauvaise taille|bonne taille/.test(s)) return '🔄 *ÉCHANGE — client à gérer*';
+  if (/\bavis\b|review|note google|commentaire/.test(s)) return '⭐ *AVIS CLIENT*';
+  if (/rembours|retour|annul/.test(s)) return '↩️ *RETOUR / ANNULATION — client à gérer*';
+  return '🔔 *Client à gérer (agent IA Touni)*';
+}
 // Mode du patron (persisté) : 'patron' (assistant données, défaut) ou 'client' (teste l'expérience de vente).
 async function getMerchantMode() {
   try {
@@ -739,10 +772,13 @@ async function createOrderDeal(order, contactId) {
   const digits = String(order.phone || '').replace(/\D/g, '');
   const lineItems = [];
   let value = 0;
+  const sizeNotes = [];
   const matchedNames = [];
   for (const item of items) {
     const qty = Math.max(1, parseInt(item.quantity || 1, 10) || 1);
-    const bl = await buildProductLine(item, qty); const price = bl.price;
+    const bl = await buildProductLine(item, qty); let price = bl.price;
+    if (order.exchange_of) { bl.line.price = 0; price = 0; }   // ÉCHANGE : déjà payé sur la commande d'origine → 0 DH
+    if (bl.sizeNote) sizeNotes.push(bl.sizeNote);
     lineItems.push(bl.line);
     value += (price || 0) * qty;
     matchedNames.push(`${qty}x ${item.product}${item.size ? ' taille ' + item.size : ''}`);
@@ -764,17 +800,17 @@ async function createOrderDeal(order, contactId) {
   const totalQty = items.reduce((s, i) => s + Math.max(1, parseInt(i.quantity || 1, 10) || 1), 0);
   const productSummary = matchedNames.join(' + ');
   // Note = résumé produits + couleur + flocage + remarque (l'opératrice voit tout, rien de perdu)
-  const _badPrice = lineItems.some((l) => l.requiresShipping && !(l.price > 0));
-  const noteText = [_badPrice ? '⚠️ PRIX À VÉRIFIER (produit introuvable ou prix à 0)' : '', productSummary, order.color ? `Couleur: ${order.color}` : '', flocageNote.replace(/^\s*\|\s*/, ''), order.notes || ''].filter(Boolean).join(' | ').slice(0, 1500);
+  const _badPrice = !order.exchange_of && lineItems.some((l) => l.requiresShipping && !(l.price > 0));
+  const noteText = [order.exchange_of ? `ÉCHANGE de la commande ${order.exchange_of} (déjà payée, 0 DH).` : '', _badPrice ? '⚠️ PRIX À VÉRIFIER (produit introuvable ou prix à 0)' : '', sizeNotes.join(' '), productSummary, order.color ? `Couleur: ${order.color}` : '', flocageNote.replace(/^\s*\|\s*/, ''), order.notes || ''].filter(Boolean).join(' | ').slice(0, 1500);
   const nameParts = String(order.customer_name || '').trim().split(/\s+/).filter(Boolean);
   const input = {
     phone: digits,
     customer: { firstName: nameParts[0] || order.customer_name || '', lastName: nameParts.slice(1).join(' ') || '', phone: digits },
     shippingAddress: { firstName: order.customer_name || '', phone: digits, city: order.city || '', address1: order.address || '', countryCode: 'MA' },
     lineItems,
-    pipelineId: order.pipelineId ? Number(order.pipelineId) : ((order.waiting_stock && STAGE_STOCK_WAIT) ? STAGE_STOCK_WAIT : STAGE_CONFIRM), // order.pipelineId = étape forcée (ex 70661 Attente retrait magasin)
+    pipelineId: order.pipelineId ? Number(order.pipelineId) : (((order.waiting_stock || order.exchange_of) && STAGE_STOCK_WAIT) ? STAGE_STOCK_WAIT : STAGE_CONFIRM), // order.pipelineId = étape forcée (ex 70661 Attente retrait magasin)
     note: noteText,
-    tags: lineItems.some((l) => l.requiresShipping && !(l.price > 0)) ? 'création bot,prix à vérifier' : 'création bot',
+    tags: ['création bot', order.exchange_of ? 'échange' : '', (!order.exchange_of && lineItems.some((l) => l.requiresShipping && !(l.price > 0))) ? 'prix à vérifier' : '', sizeNotes.length ? 'taille à vérifier' : ''].filter(Boolean).join(','),
     paymentMethod: 'Cash on Delivery (COD)',
     currency: 'MAD',
     subtotal: value,
@@ -1329,6 +1365,21 @@ async function runPoll(q) {
           }
         }
 
+        // LIVREUR : un coursier nous écrit (nom de contact « Livror/Ozon… » ou numéro déclaré) → PAS de réponse « client » ; on transmet à l'opératrice avec 🚚.
+        if (!_isMerchantHere) {
+          let _isCourier = false;
+          try { _isCourier = await isCourierContact(c.title || (c.contact && c.contact.name), contactWaId); } catch (e) {}
+          if (_isCourier) {
+            const _link = (lm.content && lm.content.link) || '';
+            const _what = (type === 'audio' || type === 'voice' || type === 'ptt') ? '🎤 message vocal' + (_link ? ` : ${_link}` : '') : (isCall ? '📞 appel manqué' : (body ? `« ${body.slice(0, 300)} »` : '(média)'));
+            const _msg = `🚚 *LIVREUR nous contacte* (ce n'est PAS un client)\n👤 ${c.title || contactWaId}\n📱 ${contactWaId}\n💬 ${_what}\n➡️ Aucune réponse automatique envoyée : à traiter par l'opératrice.`;
+            if (!dry) { for (const _op of OPERATOR_PHONES) { try { await sendAndQueue(integrationId, _op, _msg); } catch (e) {} } }
+            claimedMsgId = null;
+            results.push({ conv: c.id, phone: contactWaId, msgId, decision: 'livreur_transmis', dry: !!dry });
+            processed++; continue;
+          }
+        }
+
         // SILENCE : (a) demandé par le patron (« silence 06… »), (b) auto : le client parle d'un vocal de l'équipe, (c) simple merci/inchaallah → rien à répondre.
         if (!_isMerchantHere) {
           let _skipWhy = '';
@@ -1383,6 +1434,15 @@ async function runPoll(q) {
         const isMerchantPhone = MERCHANT_PHONE && contactWaId.replace(/\D/g, '') === MERCHANT_PHONE;
         let isMerchant = isMerchantPhone;
         if (isMerchantPhone) {
+          // Commande LIVREUR : « livreur 0713322861 » (déclare un numéro de coursier), « pas livreur 0713322861 » (annule)
+          const _lm = String(body || '').trim().match(/^(pas\s+)?livreur\s+(\+?[\d\s().-]{8,})\s*$/i);
+          if (_lm) {
+            await setCourier(_lm[2], !_lm[1]);
+            const msg = _lm[1] ? `✅ ${_lm[2].trim()} n'est plus considéré comme livreur.` : `🚚 ${_lm[2].trim()} déclaré LIVREUR : le bot ne lui répond plus et transmet ses messages à l'opératrice.`;
+            if (!dry) { try { await egrowSend(integrationId, contactWaId, msg, c.id); } catch (e) {} claimedMsgId = null; }
+            results.push({ conv: c.id, phone: contactWaId, decision: 'courier_set' });
+            processed++; continue;
+          }
           // Commande SILENCE / REPRISE par client : « silence 0665016186 », « silence 0665016186 6h », « reprends 0665016186 »
           const _sm = String(body || '').trim().match(/^(silence|stop|pause|tais[- ]?toi|chut)\s+(\+?[\d\s().-]{8,})(?:\s+(\d{1,2})\s*h)?\s*$/i), _rm = String(body || '').trim().match(/^(reprends?|reprise|reactive|active|play)\s+(\+?[\d\s().-]{8,})\s*$/i);
           if (_sm || _rm) {
@@ -1497,7 +1557,7 @@ async function runPoll(q) {
                 entry.escalateSkipped = 'doublon'; // même client + même sujet déjà escaladé < 6h → on ne renvoie pas
               } else {
                 const critical = isCriticalEscalation(note, body);
-                const summary = `🔔 *Client à gérer (agent IA Touni)*\n👤 ${clientName}\n📱 ${contactWaId}\n📝 ${note.slice(0, 400) || 'voir la conversation'}\n💬 « ${body.slice(0, 220)} »`;
+                const summary = `${escalationHeader(note, body, critical)}\n👤 ${clientName}\n📱 ${contactWaId}\n📝 ${note.slice(0, 400) || 'voir la conversation'}\n💬 « ${body.slice(0, 220)} »`;
                 // Opératrice : TOUTES les réclamations (elle traite tout)
                 for (const _op of OPERATOR_PHONES) {
                   try { await sendAndQueue(integrationId, _op, summary); entry.operatorNotified = true; } catch (e) { entry.operatorNotified = 'err'; }
