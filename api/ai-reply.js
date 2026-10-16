@@ -731,7 +731,8 @@ async function createOrderDeal(order, contactId) {
   const totalQty = items.reduce((s, i) => s + Math.max(1, parseInt(i.quantity || 1, 10) || 1), 0);
   const productSummary = matchedNames.join(' + ');
   // Note = résumé produits + couleur + flocage + remarque (l'opératrice voit tout, rien de perdu)
-  const noteText = [productSummary, order.color ? `Couleur: ${order.color}` : '', flocageNote.replace(/^\s*\|\s*/, ''), order.notes || ''].filter(Boolean).join(' | ').slice(0, 1500);
+  const _badPrice = lineItems.some((l) => l.requiresShipping && !(l.price > 0));
+  const noteText = [_badPrice ? '⚠️ PRIX À VÉRIFIER (produit introuvable ou prix à 0)' : '', productSummary, order.color ? `Couleur: ${order.color}` : '', flocageNote.replace(/^\s*\|\s*/, ''), order.notes || ''].filter(Boolean).join(' | ').slice(0, 1500);
   const nameParts = String(order.customer_name || '').trim().split(/\s+/).filter(Boolean);
   const input = {
     phone: digits,
@@ -740,7 +741,7 @@ async function createOrderDeal(order, contactId) {
     lineItems,
     pipelineId: order.pipelineId ? Number(order.pipelineId) : ((order.waiting_stock && STAGE_STOCK_WAIT) ? STAGE_STOCK_WAIT : STAGE_CONFIRM), // order.pipelineId = étape forcée (ex 70661 Attente retrait magasin)
     note: noteText,
-    tags: 'création bot',
+    tags: lineItems.some((l) => l.requiresShipping && !(l.price > 0)) ? 'création bot,prix à vérifier' : 'création bot',
     paymentMethod: 'Cash on Delivery (COD)',
     currency: 'MAD',
     subtotal: value,
