@@ -710,6 +710,28 @@ function cleanOpsText(b) {
   s = s.replace(/^\[Le client a envoy[ée] PLUSIEURS[\s\S]*?\]\s*/, '').replace(/^\[CONTEXTE SYST[ÈE]ME[\s\S]*?\]\s*/, '');
   return s.trim();
 }
+// Envoi d'un TEMPLATE WhatsApp (sans variable) via eGrow V2 dans le fil EXACT de la conversation (indispensable pour les leads pub dont le « numéro » est un id de référence).
+let _TPL_CACHE = {};
+async function egrowV2SendTemplate(convId, templateName) {
+  try {
+    if (!_TPL_CACHE[templateName]) {
+      const d = await egrowV2Query('query($c:ID!,$s:String){ whatsappTemplates(userConnectionId:$c, search:$s, limit:10){ items{ id name language status components } } }', { c: String(EGROW_V2_CONN), s: templateName });
+      const it = ((d && d.whatsappTemplates && d.whatsappTemplates.items) || []).find((x) => x.name === templateName && x.status === 'APPROVED');
+      if (!it) return { status: 'error', message: 'template introuvable/non approuvé' };
+      _TPL_CACHE[templateName] = it;
+    }
+    const tpl = _TPL_CACHE[templateName];
+    const body = ((tpl.components || []).find((c) => c.type === 'BODY') || {}).text || '';
+    const btns = ((tpl.components || []).find((c) => c.type === 'BUTTONS') || {}).buttons || [];
+    const input = { integrationId: EGROW_V2_INTEGRATION, userConnectionId: EGROW_V2_CONN, conversationId: Number(convId), messageType: 'template',
+      messageContent: { body, name: tpl.name, buttons: btns },
+      messageTemplate: { id: tpl.id, name: tpl.name, language: tpl.language, status: tpl.status, body: [], header: [], buttons: [], components: tpl.components, parameterFormat: 'POSITIONAL' } };
+    const d = await egrowV2Query('mutation($in:InboxSendConversationMessageInput!){ inboxSendConversationMessage(input:$in){ userErrors{field message} message{ id } } }', { in: input });
+    const node = d && d.inboxSendConversationMessage;
+    if (node && node.message && node.message.id && !((node.userErrors || []).length)) return { status: 'success', id: node.message.id };
+    return { status: 'error', userErrors: node && node.userErrors };
+  } catch (e) { return { status: 'error', message: String((e && e.message) || e) }; }
+}
 // ── PUBS MAGASIN : suivi du parcours (table ad_conversation) + accueil + relance J+1 ──────────────────────────────
 const AD_WELCOME_TEMPLATE = process.env.AD_WELCOME_TEMPLATE || 'touni_accueil_v2';      // 3 boutons statiques (site / itinéraire / autre) — déjà créé et approuvé
 const AD_VISIT_RE = /(je passe|j.arrive|jarrive|je viens|je vien\b|je serai la|ce soir|demain|aujourd.?hui|tout a l.heure|dans (une|1) heure|nji\b|غادي نجي|غدا|اليوم)/i;
@@ -1574,7 +1596,9 @@ async function runPoll(q) {
             // Accueil général (template à 3 boutons) : UNIQUEMENT 1er contact + message vague + aucune commande + jamais déjà envoyé
             if (_firstContact && !orderCtx && _intent === 'vague' && !(adRow && adRow.welcome_sent_at) && type === 'text') {
               if (dry) { results.push({ conv: c.id, phone: contactWaId, decision: 'would_send_welcome_template' }); processed++; continue; }
-              const _t = await egrowSendTemplate(integrationId, contactWaId, AD_WELCOME_TEMPLATE, 'fr', []);
+              // 1) vrai numéro WhatsApp (≤ 13 chiffres) → template 3 boutons via l'API Cloud ; 2) identifiant de référence Meta des leads pub (15 chiffres, pas un numéro) → le template ne peut pas partir : on retombe sur le texte d'accueil du bot
+              const _isPhone = /^\d{9,13}$/.test(String(contactWaId || '').replace(/\D/g, ''));
+              const _t = _isPhone ? await egrowSendTemplate(integrationId, contactWaId, AD_WELCOME_TEMPLATE, 'fr', []) : { status: 'skip' };
               if (_t && _t.status === 'success') {
                 claimedMsgId = null;
                 await adLog(c.id, { welcome_sent_at: new Date().toISOString(), intent: 'vague', ad_source_id: _ref ? String(_ref.sourceId || '') : (adRow && adRow.ad_source_id) || null, phone_hash: _sha(contactWaId) });
