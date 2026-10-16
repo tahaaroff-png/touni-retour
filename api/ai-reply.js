@@ -635,6 +635,34 @@ RÔLE : réponds à SES questions sur SON business avec ses VRAIES données : ve
 LANGUE : réponds dans la langue du patron (français ou darija), court et clair (c'est WhatsApp). Tu peux mettre 1-2 emojis.
 FORMAT DE SORTIE : réponds UNIQUEMENT avec un objet JSON valide : {"reply":"<ta réponse au patron>","intent":"answer","note":"","order":null}`;
 
+// ── SILENCE MANUEL / AUTO du bot par client (le patron peut parler depuis son téléphone sans que eGrow remonte son vocal) ──
+const _dg = (p) => String(p || '').replace(/\D/g, '').slice(-9);
+async function getSilenceUntil(phone) {
+  try {
+    const r = await fetch(`${SB_URL}/rest/v1/app_settings?key=eq.${encodeURIComponent('silence:' + _dg(phone))}&select=value`, { headers: supabaseHeaders(true) });
+    const j = await r.json().catch(() => []); return (Array.isArray(j) && j[0] && parseInt(j[0].value, 10)) || 0;
+  } catch (e) { return 0; }
+}
+async function setSilence(phone, hours) {
+  try {
+    await fetch(`${SB_URL}/rest/v1/app_settings`, { method: 'POST', headers: Object.assign({}, supabaseHeaders(true), { 'Content-Type': 'application/json', 'Prefer': 'resolution=merge-duplicates' }),
+      body: JSON.stringify({ key: 'silence:' + _dg(phone), value: String(hours > 0 ? Date.now() + hours * 3600000 : 0), updated_at: new Date().toISOString() }) });
+  } catch (e) {}
+}
+// Le client RÉFÉRENCE un vocal de l'équipe (envoyé depuis le téléphone, invisible pour eGrow) → un humain gère : le bot se tait.
+const REF_HUMAN_VOCAL = /(votre|ton|ta|ce|le)\s+(message\s+)?(vocal|audio)|(vocal|audio)\s+que\s+(vous|tu)|سمعت|الفوكال|الصوتية/i;
+// Simple remerciement / bénédiction (pas une confirmation de commande, pas une question) : inutile de répondre.
+function isPureThanks(text) {
+  const raw = String(text || '');
+  if (/\?|؟/.test(raw) || raw.length > 90) return false;
+  const toks = normTxt(raw).split(' ').filter(Boolean);
+  if (!toks.length || toks.length > 9) return false;
+  const THANKS = /^(merci|mrc|mercii+|shukran|chokran|choukran|barakallah\w*|baraka\w*|jazak\w*|inchaallah|inshallah|insha\w*|incha\w*|ان|شكرا|الله|يجازيك|بالخير|يبارك|فيك|ان|شاء|الله)$/;
+  const FILL = /^(d|dac\w*|accord|ok|oki|okay|parfait|super|top|genial|beaucoup|bcp|a|vous|toi|de|la|le|et|alors|bonne|journee|soiree|bien|recu|compris|entendu|cool)$/;
+  let thanks = 0;
+  for (const w of toks) { if (THANKS.test(w)) thanks++; else if (!FILL.test(w)) return false; }
+  return thanks > 0;
+}
 // Mode du patron (persisté) : 'patron' (assistant données, défaut) ou 'client' (teste l'expérience de vente).
 async function getMerchantMode() {
   try {
@@ -1301,6 +1329,21 @@ async function runPoll(q) {
           }
         }
 
+        // SILENCE : (a) demandé par le patron (« silence 06… »), (b) auto : le client parle d'un vocal de l'équipe, (c) simple merci/inchaallah → rien à répondre.
+        if (!_isMerchantHere) {
+          let _skipWhy = '';
+          try {
+            if ((await getSilenceUntil(contactWaId)) > Date.now()) _skipWhy = 'silence_demande';
+            else if (REF_HUMAN_VOCAL.test(body)) { await setSilence(contactWaId, 2); _skipWhy = 'humain_vocal_reference'; }
+            else if (isPureThanks(body)) _skipWhy = 'simple_remerciement';
+          } catch (e) {}
+          if (_skipWhy) {
+            claimedMsgId = null; // traité (volontairement sans réponse) : le bot ne le reprendra pas
+            results.push({ conv: c.id, phone: contactWaId, msgId, body: body.slice(0, 60), decision: 'skip:' + _skipWhy });
+            processed++; continue;
+          }
+        }
+
         // GARDE-FOU CRÉDITS : plafond de réponses du bot par conversation (anti-abuseur / blagueur / perte de temps).
         // Au-delà de MAX_REPLIES_PER_CONV réponses sur ~2h, le bot ARRÊTE de répondre (économie crédits) et prévient
         // l'opératrice UNE seule fois. Ne s'applique PAS au patron. Le bot reprend si la conv redevient calme (fenêtre 2h).
@@ -1340,6 +1383,16 @@ async function runPoll(q) {
         const isMerchantPhone = MERCHANT_PHONE && contactWaId.replace(/\D/g, '') === MERCHANT_PHONE;
         let isMerchant = isMerchantPhone;
         if (isMerchantPhone) {
+          // Commande SILENCE / REPRISE par client : « silence 0665016186 », « silence 0665016186 6h », « reprends 0665016186 »
+          const _sm = String(body || '').trim().match(/^(silence|stop|pause|tais[- ]?toi|chut)\s+(\+?[\d\s().-]{8,})(?:\s+(\d{1,2})\s*h)?\s*$/i), _rm = String(body || '').trim().match(/^(reprends?|reprise|reactive|active|play)\s+(\+?[\d\s().-]{8,})\s*$/i);
+          if (_sm || _rm) {
+            const m2 = _sm || _rm, ph = m2[2];
+            if (_sm) await setSilence(ph, parseInt(_sm[3] || '4', 10)); else await setSilence(ph, 0);
+            const msg = _sm ? `🤫 Bot en silence pendant ${parseInt(_sm[3] || '4', 10)} h pour ${ph.trim()}. Envoie « reprends ${ph.trim()} » pour le réactiver.` : `🔔 Bot réactivé pour ${ph.trim()}.`;
+            if (!dry) { try { await egrowSend(integrationId, contactWaId, msg, c.id); } catch (e) {} claimedMsgId = null; }
+            results.push({ conv: c.id, phone: contactWaId, decision: _sm ? 'silence_set' : 'silence_off' });
+            processed++; continue;
+          }
           // Commande de bascule de mode (« mode client » / « mode patron »)
           const cmd = detectModeCommand(body);
           if (cmd) {
