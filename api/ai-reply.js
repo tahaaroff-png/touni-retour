@@ -1938,6 +1938,17 @@ module.exports = async (req, res) => {
       return res.status(200).json({ items });
     } catch (e) { return res.status(200).json({ ok: false, error: String((e && e.message) || e).slice(0, 120) }); }
   }
+  // ── Test de l'accueil réel (même chemin que le bot) vers la conversation DU PATRON uniquement ──
+  if (q.diagwelcome === '1') {
+    try {
+      const convs = await egrowGetConversations(INTEGRATIONS[0], 1);
+      const mine = (convs || []).find((c) => String(c.contactWaId || '').replace(/\D/g, '') === String(MERCHANT_PHONE).replace(/\D/g, ''));
+      if (!mine) return res.status(200).json({ ok: false, error: 'conversation patron introuvable' });
+      let _t = null, used = null;
+      for (const _cand of AD_WELCOME_CANDIDATES) { _t = await egrowV2SendTemplate(mine.id, _cand, 'UTILITY'); if (_t && _t.status === 'success') { used = _cand; break; } }
+      return res.status(200).json({ ok: !!used, template: used, result: _t });
+    } catch (e) { return res.status(200).json({ ok: false, error: String((e && e.message) || e).slice(0, 120) }); }
+  }
   // ── Message d'information AU PATRON uniquement (jamais un client) : ?tellpatron=1&msg=... (POST conseillé pour les textes longs) ──
   if (q.tellpatron === '1') {
     const m = String(q.msg || (req.body && req.body.msg) || '').slice(0, 1500);
