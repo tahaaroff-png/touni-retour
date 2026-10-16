@@ -735,8 +735,8 @@ async function egrowV2SendTemplate(convId, templateName, needCategory) {
   } catch (e) { return { status: 'error', message: String((e && e.message) || e) }; }
 }
 // ── PUBS MAGASIN : suivi du parcours (table ad_conversation) + accueil + relance J+1 ──────────────────────────────
-const AD_WELCOME_TEMPLATE = process.env.AD_WELCOME_TEMPLATE || 'touni_accueil_v4';      // 3 boutons statiques (site / itinéraire / autre). v4 créé le 16/10 : tant qu'il n'est pas APPROUVÉ, l'envoi échoue et le bot répond lui-même par texte (pas de repli sur v2, jugé inadapté)
-const AD_WELCOME_CANDIDATES = (process.env.AD_WELCOME_CANDIDATES || 'touni_accueil_v5,touni_accueil_v6,touni_accueil_v7').split(',').map((x) => x.trim()).filter(Boolean);
+const AD_WELCOME_TEMPLATE = process.env.AD_WELCOME_TEMPLATE || 'touni_accueil_v8';      // 3 boutons statiques (site / itinéraire / autre). v4 créé le 16/10 : tant qu'il n'est pas APPROUVÉ, l'envoi échoue et le bot répond lui-même par texte (pas de repli sur v2, jugé inadapté)
+const AD_WELCOME_CANDIDATES = (process.env.AD_WELCOME_CANDIDATES || 'touni_accueil_v8,touni_accueil_v9,touni_accueil_v10').split(',').map((x) => x.trim()).filter(Boolean);
 const AD_VISIT_RE = /(je passe|j.arrive|jarrive|je viens|je vien\b|je serai la|ce soir|demain|aujourd.?hui|tout a l.heure|dans (une|1) heure|nji\b|غادي نجي|غدا|اليوم)/i;
 function adIntent(text) {
   const s = normTxt(String(text || ''));
@@ -1628,7 +1628,7 @@ async function runPoll(q) {
               if (dry) { results.push({ conv: c.id, phone: contactWaId, decision: 'would_send_welcome_template' }); processed++; continue; }
               let _t = null;   // d'abord les accueils « Utilité » (v5, v6, v7 : le 1er approuvé en Utilité), sinon repli sur AD_WELCOME_TEMPLATE (v4)
               for (const _cand of AD_WELCOME_CANDIDATES) { _t = await egrowV2SendTemplate(c.id, _cand, 'UTILITY'); if (_t && _t.status === 'success') break; }
-              if (!_t || _t.status !== 'success') _t = await egrowV2SendTemplate(c.id, AD_WELCOME_TEMPLATE);   // template 3 boutons envoyé dans le fil exact de la conversation (marche aussi pour les leads pub sans vrai numéro)
+              if (!_t || _t.status !== 'success') { for (const _cand of AD_WELCOME_CANDIDATES) { _t = await egrowV2SendTemplate(c.id, _cand); if (_t && _t.status === 'success') break; } }   // repli : 1er candidat approuvé quelle que soit sa catégorie   // template 3 boutons envoyé dans le fil exact de la conversation (marche aussi pour les leads pub sans vrai numéro)
               if (_t && _t.status === 'success') {
                 claimedMsgId = null;
                 await adLog(c.id, { welcome_sent_at: new Date().toISOString(), intent: 'vague', ad_source_id: _ref ? String(_ref.sourceId || '') : (adRow && adRow.ad_source_id) || null, phone_hash: _sha(contactWaId) });
