@@ -289,6 +289,9 @@ td{padding:11px 11px;vertical-align:middle}
   .qty-inp{flex:1;width:auto}
   .header-right .btn-logout{font-size:10px;padding:4px 10px}
 }
+.patchchk{display:flex;align-items:center;gap:8px;height:44px;padding:0 12px;border:1px solid var(--line,#e3e5ec);border-radius:12px;background:#f4f5f9;cursor:pointer;font-size:13px;font-weight:600;white-space:nowrap}
+.patchchk input{width:18px;height:18px;accent-color:#e4121f;cursor:pointer}
+.pbadge{display:inline-block;margin-left:8px;padding:2px 8px;border-radius:99px;background:#fde8ea;color:#e4121f;border:1px solid #f6c3c8;font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;vertical-align:middle}
 </style>
 <link rel="stylesheet" href="/retour-relook.css?v=4">
 <script src="/retour-relook.js?v=3" defer></script>
@@ -412,6 +415,7 @@ td{padding:11px 11px;vertical-align:middle}
       </div>
       <div class="fg"><label>Date sortie</label><input type="date" id="exit-date-add"></div>
       <div class="fg"><label>Notes</label><input type="text" id="ni" placeholder="Observations..."></div>
+      <div class="fg"><label>Patch</label><label class="patchchk" title="Indication seulement : un patch est collé sur ce maillot"><input type="checkbox" id="patch-add"><span>Patch collé</span></label></div>
       <div class="fg"><label>&nbsp;</label><button class="btn-add" id="btn-add" onclick="addItem()">Ajouter</button></div>
     </div>
     <div class="err" id="err"></div>
@@ -518,6 +522,7 @@ td{padding:11px 11px;vertical-align:middle}
       </div>
       <div class="mf"><label>Date sortie</label><input type="date" id="m-exit-date"></div>
       <div class="mf full"><label>Notes</label><input type="text" id="m-notes"></div>
+      <div class="mf full"><label class="patchchk" title="Indication seulement : un patch est collé sur ce maillot"><input type="checkbox" id="m-patch"><span>Patch collé sur le maillot</span></label></div>
     </div>
     <div class="modal-actions">
       <button class="btn-del-modal" id="m-del-btn" onclick="delFromModal()">🗑 Supprimer</button>
@@ -817,7 +822,8 @@ async function addItem() {
       product:name, image:pimg.value||'', size:buildSizeValue(ss.value, document.getElementById('sc').value),
       qty:parseInt(document.getElementById('qi').value)||0,
       status:document.getElementById('status-add').value,
-      exit_date:exitDate||null, notes:document.getElementById('ni').value.trim()
+      exit_date:exitDate||null, notes:document.getElementById('ni').value.trim(),
+      patch:document.getElementById('patch-add').checked
     });
     stock.unshift(newItem); render(); updateStats(); buildSizeFilter();
     pi.value=''; pv.value=''; pimg.value='';
@@ -825,7 +831,7 @@ async function addItem() {
     var scEl=document.getElementById('sc'); scEl.innerHTML='<option value="">— Couleur —</option>';
     document.getElementById('fg-color').classList.remove('visible');
     document.getElementById('qi').value=1; document.getElementById('ni').value='';
-    document.getElementById('exit-date-add').value=''; document.getElementById('status-add').value='stock';
+    document.getElementById('exit-date-add').value=''; document.getElementById('status-add').value='stock'; document.getElementById('patch-add').checked=false;
   } catch(e){ errEl.textContent="Erreur lors de l'ajout."; errEl.style.display='block'; dot('err'); }
   btn.disabled=false; btn.textContent='Ajouter';
 }
@@ -976,6 +982,7 @@ function openModal(id) {
   document.getElementById('m-qty').value=it.qty||0;
   document.getElementById('m-exit-date').value=it.exit_date?it.exit_date.split('T')[0]:'';
   document.getElementById('m-notes').value=it.notes||'';
+  document.getElementById('m-patch').checked=!!it.patch;
   qbPick(it.status||'retour');
   document.getElementById('modal').classList.add('open');
 }
@@ -993,7 +1000,8 @@ async function saveModal() {
     qty:parseInt(document.getElementById('m-qty').value)||0,
     status:document.getElementById('m-status').value,
     exit_date:document.getElementById('m-exit-date').value||null,
-    notes:document.getElementById('m-notes').value.trim()
+    notes:document.getElementById('m-notes').value.trim(),
+    patch:document.getElementById('m-patch').checked
   };
   try {
     await dbUpdate(editId,changes);
@@ -1099,7 +1107,7 @@ function render() {
     }
     return '<tr class="mob-card" id="row_'+id+'" onclick="openModal(\''+id+'\')">'
       +'<td class="nnum">'+(i+1)+'</td>'
-      +'<td data-label="Produit"><div class="prod-cell">'+imgHtml+'<span class="pname" title="'+it.product+'">'+it.product+'</span></div></td>'
+      +'<td data-label="Produit"><div class="prod-cell">'+imgHtml+'<span class="pname" title="'+it.product+'">'+it.product+'</span>'+(it.patch?'<span class="pbadge" title="Patch collé sur ce maillot">Patch</span>':'')+'</div></td>'
       +'<td data-label="Taille">'+szDisplay+'</td>'
       +'<td data-label="Qté"><b style="font-size:15px;font-family:Jost,sans-serif">'+it.qty+'</b></td>'
       +'<td data-label="Stock">'+badge+'</td>'
