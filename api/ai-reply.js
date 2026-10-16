@@ -783,7 +783,7 @@ async function runAdMaintenance(integrationId, dry) {
       if (lastMine && (lastMine.sentAt || 0) > (lastIn.sentAt || 0) && (Math.floor(Date.now() / 1000) - lastMine.sentAt) < 4 * 3600) continue;  // un humain/bot vient d'écrire
       if (dry) { out.followups++; continue; }
       const to = lastIn.waFrom || '';
-      const res = await egrowSend(integrationId, to, 'Vous passez aujourd’hui au magasin ? 😊 On est ouverts jusqu’à 22h (Sidi Maârouf).', row.conv_id);
+      const res = await egrowSend(integrationId, to, 'Salam 👋 Petit rappel : le magasin est ouvert tous les jours jusqu’à 22h (Sidi Maârouf), avec une sélection de maillots dès 279 DH exclusivement sur place et un flocage offert. Tu peux aussi commander sur touni.ma : livraison gratuite, paiement à la livraison. Dis-nous si tu as une question 😊', row.conv_id);
       if (res && res.status === 'success') { await adLog(row.conv_id, { followup_sent_at: new Date().toISOString() }); out.followups++; }
       if (out.followups >= 12) break;
     }
