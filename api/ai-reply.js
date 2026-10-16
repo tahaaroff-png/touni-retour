@@ -675,6 +675,7 @@ function isPureThanks(text) {
   return thanks > 0;
 }
 // ── Livreurs (Ozon Express / coursiers) : jamais traités comme des clients ──
+const OZON_TPL = /ozon\s*-?express|ozonexpress|tflex\s*shop|لم نتمكن من الاتصال|المرجو المتابعة|رجل (ال)?توصيل|\bEGR\d{4,}\b|\bRABT\d+|livreur ozon/i;
 const COURIER_NAME = /livr|ozon|amazon|coursier|courier|delivery|transport|express|توصيل|موزع|ليفرور/i;
 async function isCourierContact(title, phone) {
   if (COURIER_NAME.test(String(title || ''))) return true;
@@ -696,6 +697,8 @@ function escalationHeader(note, body, critical) {
   if (/rembours|retour|annul/.test(s)) return '↩️ *RETOUR / ANNULATION — client à gérer*';
   return '🔔 *Client à gérer (agent IA Touni)*';
 }
+// Notification aux OPÉRATRICES uniquement (le patron ne reçoit que : avis clients, urgences/réclamations graves, nouvelles commandes WhatsApp).
+async function notifyOps(integrationId, msg) { for (const _op of OPERATOR_PHONES) { try { await sendAndQueue(integrationId, _op, msg); } catch (e) {} } }
 // Mode du patron (persisté) : 'patron' (assistant données, défaut) ou 'client' (teste l'expérience de vente).
 async function getMerchantMode() {
   try {
@@ -810,7 +813,7 @@ async function createOrderDeal(order, contactId) {
     lineItems,
     pipelineId: order.pipelineId ? Number(order.pipelineId) : (((order.waiting_stock || order.exchange_of) && STAGE_STOCK_WAIT) ? STAGE_STOCK_WAIT : STAGE_CONFIRM), // order.pipelineId = étape forcée (ex 70661 Attente retrait magasin)
     note: noteText,
-    tags: ['création bot', order.exchange_of ? 'échange' : '', (!order.exchange_of && lineItems.some((l) => l.requiresShipping && !(l.price > 0))) ? 'prix à vérifier' : '', sizeNotes.length ? 'taille à vérifier' : ''].filter(Boolean).join(','),
+    tags: ['nouvelle commande WhatsApp', order.waiting_stock ? 'attente stock' : '', order.exchange_of ? 'échange' : '', (!order.exchange_of && lineItems.some((l) => l.requiresShipping && !(l.price > 0))) ? 'prix à vérifier' : '', sizeNotes.length ? 'taille à vérifier' : ''].filter(Boolean).join(','),
     paymentMethod: 'Cash on Delivery (COD)',
     currency: 'MAD',
     subtotal: value,
@@ -1368,12 +1371,25 @@ async function runPoll(q) {
         // LIVREUR : un coursier nous écrit (nom de contact « Livror/Ozon… » ou numéro déclaré) → PAS de réponse « client » ; on transmet à l'opératrice avec 🚚.
         if (!_isMerchantHere) {
           let _isCourier = false;
-          try { _isCourier = await isCourierContact(c.title || (c.contact && c.contact.name), contactWaId); } catch (e) {}
+          const _ozon = OZON_TPL.test(String(body || ''));           // message-type d'Ozon Express (« لم نتمكن من الاتصال بالزبون… طلبية: EGR10645 »)
+          try { _isCourier = _ozon || await isCourierContact(c.title || (c.contact && c.contact.name), contactWaId); } catch (e) {}
+          if (_ozon) { try { await setCourier(contactWaId, true); } catch (e) {} }   // ce numéro est désormais connu comme livreur
           if (_isCourier) {
+            let _info = '';
+            if (_ozon) {
+              try {
+                const _num = (String(body).match(/(?:EGR|RABT|CASA)?\s*#?(\d{4,6})\b/i) || [])[1];
+                const _cph = (String(body).match(/0[5-7]\d{8}/) || [])[0];
+                let _ord = null;
+                if (_num) { const d = await egrowV2Query('query($s:String){ orders(perPage:5, query:$s){ nodes{ orderNumber pipeline{ name } customer{ firstName lastName phone } } } }', { s: 'EGR' + _num }); _ord = ((d && d.orders && d.orders.nodes) || []).find((o) => String(o.orderNumber).replace(/\D/g, '') === _num) || null; }
+                _info = `\n🧾 Commande ${_num ? '#' + _num : '?'}${_ord ? ` — ${[_ord.customer && _ord.customer.firstName, _ord.customer && _ord.customer.lastName].filter(Boolean).join(' ')} · étape « ${_ord.pipeline && _ord.pipeline.name} »` : ''}${_cph || (_ord && _ord.customer && _ord.customer.phone) ? `\n📞 Client à rappeler : ${_cph || _ord.customer.phone}` : ''}`;
+              } catch (e) {}
+            }
             const _link = (lm.content && lm.content.link) || '';
             const _what = (type === 'audio' || type === 'voice' || type === 'ptt') ? '🎤 message vocal' + (_link ? ` : ${_link}` : '') : (isCall ? '📞 appel manqué' : (body ? `« ${body.slice(0, 300)} »` : '(média)'));
-            const _msg = `🚚 *LIVREUR nous contacte* (ce n'est PAS un client)\n👤 ${c.title || contactWaId}\n📱 ${contactWaId}\n💬 ${_what}\n➡️ Aucune réponse automatique envoyée : à traiter par l'opératrice.`;
+            const _msg = `🚚 *LIVREUR nous contacte* (ce n'est PAS un client)\n👤 ${c.title || contactWaId}\n📱 ${contactWaId}\n💬 ${_what}${_info}\n➡️ ${_ozon ? 'Accusé de réception envoyé au livreur ; l\'opératrice rappelle le client.' : 'Aucune réponse automatique : à traiter par l\'opératrice.'}`;
             if (!dry) { for (const _op of OPERATOR_PHONES) { try { await sendAndQueue(integrationId, _op, _msg); } catch (e) {} } }
+            if (_ozon && !dry) { try { await egrowSend(integrationId, contactWaId, 'شكراً على التواصل 🙏 تم استلام المعلومة، سنتابع مع الزبون مباشرة.', c.id); } catch (e) {} }   // accusé court au livreur (message Ozon uniquement)
             claimedMsgId = null;
             results.push({ conv: c.id, phone: contactWaId, msgId, decision: 'livreur_transmis', dry: !!dry });
             processed++; continue;
@@ -1657,7 +1673,7 @@ async function runPoll(q) {
                     const noteText = `Ajout produit par l'agent IA (WhatsApp). ${prodDesc} ajouté à la commande #${r.existingDealNumber}.`;
                     if (r.dealId) await addDealNote(r.dealId, noteText);
                     const addMsg = `➕ *Ajout sur commande existante (agent IA)*\n👤 ${o.customer_name || c.title || contactWaId} (${contactWaId})\n📦 ${prodDesc} ajouté à commande #${r.existingDealNumber}\n💵 +${r.value} dh`;
-                    try { if (MERCHANT_PHONE) await sendAndQueue(integrationId, MERCHANT_PHONE, addMsg); } catch (e) {}
+                    await notifyOps(integrationId, addMsg);
                   } else {
                   const telNote = o.phone || contactWaId;
                   const noteText = isStockWait
@@ -1668,10 +1684,11 @@ async function runPoll(q) {
                     // Sauvegarder dans la waitlist Supabase pour surveillance automatique du stock
                     await saveStockWaitlist(contactWaId, o);
                     const waitMsg = `📋 *Attente stock (agent IA)*\n👤 ${o.customer_name} (${o.phone || contactWaId})\n📦 ${o.product}${o.size ? ' taille ' + o.size : ' ⚠️ taille non précisée'}${o.notes ? '\n📝 ' + o.notes : ''}\n📍 ${o.city}\n→ créé dans « Rappeler le stock » — notif auto quand dispo`;
-                    try { if (MERCHANT_PHONE) await sendAndQueue(integrationId, MERCHANT_PHONE, waitMsg); } catch (e) {}
+                    await notifyOps(integrationId, waitMsg);
                   } else {
-                  const saleMsg = `💰 *Nouvelle commande (agent IA)*\n👤 ${o.customer_name} (${contactWaId})\n📦 ${prodDesc}${r.flocageNote || ''}\n💵 ${r.value} dh · 📍 ${o.city}\n→ créée dans « Confirmer Wtsp »`;
+                  const saleMsg = `💰 *Nouvelle commande WhatsApp*\n👤 ${o.customer_name} (${contactWaId})\n📦 ${prodDesc}${r.flocageNote || ''}\n💵 ${r.value} dh · 📍 ${o.city}\n→ créée dans « Confirmer Wtsp »`;
                   try { if (MERCHANT_PHONE) await sendAndQueue(integrationId, MERCHANT_PHONE, saleMsg); } catch (e) {}
+                  if (!OPERATOR_PHONES.includes(MERCHANT_PHONE)) await notifyOps(integrationId, saleMsg);
                   }
                   }
                 } else {
@@ -1681,14 +1698,14 @@ async function runPoll(q) {
                     ? o.products.map((p) => `${p.quantity || 1}x ${p.product}${p.size ? ' (' + p.size + ')' : ''}`).join(' + ')
                     : `${o.quantity || 1}x ${o.product}${o.size ? ' (' + o.size + ')' : ''}${o.color ? ' ' + o.color : ''}`;
                   const failMsg = `⚠️ *Commande à créer manuellement dans eGrow*\n❌ Raison : ${r.reason || 'produit introuvable dans le catalogue'}\n\n👤 *Client :* ${o.customer_name} (${contactWaId})\n📦 *Produit :* ${failProdDesc}${fl}\n📍 *Adresse :* ${o.address || ''}, ${o.city}\n\n👉 *À faire :* Aller dans eGrow → Nouveau deal → saisir ces infos manuellement. Le client a déjà confirmé.`;
-                  try { if (MERCHANT_PHONE) await sendAndQueue(integrationId, MERCHANT_PHONE, failMsg); } catch (e) {}
+                  await notifyOps(integrationId, failMsg);
                 }
               } catch (e) {
                 entry.orderCreated = 'err:' + String(e).slice(0, 80);
                 // exception → on prévient quand même le marchand avec ce qu'on a
                 try {
                   const o = decision.order; const fl = o.flocage && (o.flocage.name || o.flocage.number) ? `\n🖊️ Flocage: ${[o.flocage.name, o.flocage.number].filter(Boolean).join(' ')}` : '';
-                  if (MERCHANT_PHONE) await sendAndQueue(integrationId, MERCHANT_PHONE, `⚠️ *Commande à créer à la main (erreur)*\n👤 ${o.customer_name} (${contactWaId})\n📦 ${o.quantity || 1}x ${o.product}${o.size ? ' (' + o.size + ')' : ''}${fl}\n📍 ${o.address || ''}, ${o.city}`);
+                  await notifyOps(integrationId, `⚠️ *Commande à créer à la main (erreur)*\n👤 ${o.customer_name} (${contactWaId})\n📦 ${o.quantity || 1}x ${o.product}${o.size ? ' (' + o.size + ')' : ''}${fl}\n📍 ${o.address || ''}, ${o.city}`);
                 } catch (e2) {}
               }
             }
@@ -1892,7 +1909,7 @@ module.exports = async (req, res) => {
       const sendRes = await egrowSend(integrationId, phone, msg);
       // Notifier patron uniquement
       const notifMsg = `✅ *Commande confirmée (stock)*\n👤 ${(deal.contact && deal.contact.name) || phone}\n📦 ${prodName}\n→ déplacée en Confirmer Wtsp`;
-      try { if (MERCHANT_PHONE) await sendAndQueue(integrationId, MERCHANT_PHONE, notifMsg); } catch (e) {}
+      await notifyOps(integrationId, notifMsg);
       return res.status(200).json({ ok: true, deal: deal.id, from: curStage, to: STAGE_CONFIRM, moved: moveResult && moveResult.status, msgSent: sendRes && sendRes.status });
     } catch (e) { return res.status(500).json({ error: String(e) }); }
   }
@@ -1928,7 +1945,7 @@ module.exports = async (req, res) => {
         } catch (e) {}
         // Notifier patron uniquement
         const notifMsg = `📋 *Attente stock (manuel)*\n👤 ${name} (${phone})\n📦 ${r.product}${size ? ' taille ' + size : ''}\n📍 ${city}\n→ créé dans « Rappeler le stock »`;
-        try { if (MERCHANT_PHONE) await sendAndQueue(integrationId, MERCHANT_PHONE, notifMsg); } catch (e) {}
+        await notifyOps(integrationId, notifMsg);
       }
       return res.status(200).json({ ok: r.ok, dealId: r.dealId, product: r.product, reason: r.reason, contact: contactId });
     } catch (e) { return res.status(500).json({ error: String(e) }); }
