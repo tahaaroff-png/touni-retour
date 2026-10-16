@@ -744,8 +744,11 @@ async function reopenWindow(convId) {
   return { status: 'error', message: 'aucun template de reprise approuvé' };
 }
 const AD_VISIT_RE = /(je passe|j.arrive|jarrive|je viens|je vien\b|je serai la|ce soir|demain|aujourd.?hui|tout a l.heure|dans (une|1) heure|nji\b|غادي نجي|غدا|اليوم)/i;
+const _GREET_TOK = new Set(['bonjour','bonsoir','salut','salam','salamou','salem','slm','slt','salamalaykoum','alaykoum','aleykoum','alikom','alykom','aleikoum','assalam','assalamou','wa','cc','coucou','hello','helo','hi','hey','hola','ahlan','marhba','bjr','bsr','info','infos','touni','touni.ma','ca','va','cv','cava','sava','labas','la','bas','comment','tu','allez','vous','bien','ok','svp','stp','sv','merci','alors','hh','hhh','السلام','عليكم','سلام','مرحبا','اهلا','أهلا','هلا','لاباس','واش','صباح','الخير','مساء','ورحمة','الله','وبركاته']);
 function adIntent(text) {
   const s = normTxt(String(text || ''));
+  const _tk = s.split(/\s+/).filter(Boolean);
+  if (_tk.length && _tk.length <= 6 && _tk.every((w) => _GREET_TOK.has(w)) && !/itiner|horaire|adresse|offre|279|promo/.test(s)) return 'vague';   // salutations seules (« Slm », « Salam wa alaykoum », « Bonjour ça va »…)
   if (/itiner|horaire|adresse|localisation|emplacement|ou est le magasin|ou se trouve|fin kayn|فين|العنوان|الموقع/.test(s) || /itiner/.test(s)) return 'itineraire';
   if (/vu votre pub/.test(s)) return 'itineraire';   // anciens messages de pub : même logique que l'itinéraire
   if (/offre d.?ouverture|offre|279|profiter|maider a choisir|m aider a choisir|promo/.test(s)) return 'offre';
