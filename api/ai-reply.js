@@ -1427,10 +1427,12 @@ async function runPoll(q) {
         const imageBase64 = images[0] ? images[0].base64 : null; // rétro-compat (1ʳᵉ image)
         const imageMime = images[0] ? images[0].mime : null;
         // Message VOCAL → transcrire (Groq Whisper) puis traiter comme du texte normal
+        let audioUnreadable = false;   // vocal dont la transcription a échoué : traité comme un message vague (template d'accueil si 1er contact)
         if (isAudio) {
           const aurl = (lm.content && (lm.content.url || lm.content.link)) || '';
           const txt = aurl ? await transcribeAudio(aurl) : '';
           if (!txt) {
+            audioUnreadable = true;
             // Vocal illisible (transcription vide) → on RÉPOND quand même (on ne boucle pas en silence).
             // L'agent demande de reformuler ; s'il a DÉJÀ demandé une fois dans l'historique → il escalade vers l'opératrice.
             body = "🎤 [VOCAL ILLISIBLE : la transcription du message vocal du client a échoué (audio incompréhensible). Si tu as DÉJÀ demandé une fois de reformuler dans l'historique récent → NE redemande PAS, transfère directement à l'opératrice (escalate) avec une note « client envoie des vocaux illisibles, le rappeler ». Sinon : demande gentiment, en une phrase, de réécrire en texte ou de renvoyer un vocal plus court/plus clair.]";
@@ -1629,11 +1631,11 @@ async function runPoll(q) {
             const _ref = (raw || []).map((m) => m.content && m.content.referral).find(Boolean);
             adRow = await adGet(c.id);
             const _firstContact = (raw || []).length < HISTORY_LIMIT && !(raw || []).some((m) => m.mine === true || m.mine === 'true') && !(botSent && botSent.ids && botSent.ids.size);
-            const _intent = adIntent(_clean);
+            const _intent = audioUnreadable ? 'vague' : adIntent(_clean.replace(/^[^\n]*?\(message vocal du client, transcrit\)\s*/i, ''));
             if (_ref && !adRow && !dry) { adRow = { conv_id: String(c.id), intent: _intent }; await adLog(c.id, { ad_source_id: String((_ref && _ref.sourceId) || ''), intent: _intent, phone_hash: _sha(contactWaId), first_msg_at: new Date().toISOString() }); }
             if ((adRow || _ref) && AD_VISIT_RE.test(_clean) && !dry) { await adLog(c.id, { intent_visit: /demain/i.test(_clean) ? 'tomorrow' : (/ce soir|aujourd|tout a l|heure/i.test(normTxt(_clean)) ? 'today' : 'soon'), intent_visit_at: new Date().toISOString() }); }
             // Accueil général (template à 3 boutons) : UNIQUEMENT 1er contact + message vague + aucune commande + jamais déjà envoyé
-            if ((process.env.AD_WELCOME_TEMPLATE_DISABLED || '') !== '1' && _firstContact && !orderCtx && _intent === 'vague' && !(adRow && adRow.welcome_sent_at) && type === 'text') {
+            if ((process.env.AD_WELCOME_TEMPLATE_DISABLED || '') !== '1' && _firstContact && !orderCtx && _intent === 'vague' && !(adRow && adRow.welcome_sent_at) && (type === 'text' || audioUnreadable)) {
               if (dry) { results.push({ conv: c.id, phone: contactWaId, decision: 'would_send_welcome_template' }); processed++; continue; }
               let _t = null;   // d'abord les accueils « Utilité » (v5, v6, v7 : le 1er approuvé en Utilité), sinon repli sur AD_WELCOME_TEMPLATE (v4)
               for (const _cand of AD_WELCOME_CANDIDATES) { _t = await egrowV2SendTemplate(c.id, _cand, 'UTILITY'); if (_t && _t.status === 'success') break; }
