@@ -215,4 +215,4 @@ async function runAdsMonitor({ token, accountId, dry, force, send, store, now, t
   return out;
 }
 
-module.exports = { checkAdsAccount, buildAlertMessage, runAdsMonitor, evaluate, THRESHOLDS: T, BILLING_URL, ACCOUNT_ID_DEFAULT };
+module.exports = { __store: defaultStore, checkAdsAccount, buildAlertMessage, runAdsMonitor, evaluate, THRESHOLDS: T, BILLING_URL, ACCOUNT_ID_DEFAULT };

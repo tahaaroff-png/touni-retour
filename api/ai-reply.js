@@ -825,6 +825,23 @@ async function runAdsBillingWatch(integrationId, dry, force) {
   }
   return outAll.length ? { accounts: outAll } : null;
 }
+// Garde-fou publications : à 20h et 22h (Maroc), si les 2 posts + 2 stories du jour ne sont pas partis (PC éteint, tâche bloquée…), WhatsApp au patron.
+async function runPubWatchdog(integrationId, dry) {
+  try {
+    const hr = maroccoHourLocal(); if (hr !== 20 && hr !== 22) return null;
+    const d = new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Casablanca' }).format(new Date());
+    const st = require('./_ads_monitor.js').__store();
+    let hb = null; try { hb = JSON.parse(await st.get('ig_pub:' + d) || 'null'); } catch (e) {}
+    const posts = hb ? hb.posts : 0, stories = hb ? hb.stories : 0;
+    if (posts >= 2 && stories >= 2) return null;
+    const slot = 'ig_pub_alert:' + d + ':' + hr; if (await st.get(slot)) return null;
+    if (dry) return { watchdog: 'would_alert', posts, stories };
+    await st.set(slot, '1');
+    const msg = `⚠️ Publications du jour INCOMPLÈTES (${d}) : ${posts}/2 posts, ${stories}/2 stories sur Instagram + Facebook.${hb ? '' : ' Aucun signal de ton Mac aujourd\'hui.'}\nCause probable : PC éteint ou en veille. Allume-le : la publication part automatiquement (toutes les 30 min).`;
+    if (MERCHANT_PHONE) await sendAndQueue(integrationId, MERCHANT_PHONE, msg);
+    return { watchdog: 'alerted', posts, stories };
+  } catch (e) { return null; }
+}
 function maroccoHourLocal() { try { return parseInt(new Intl.DateTimeFormat('en-GB', { timeZone: 'Africa/Casablanca', hour: '2-digit', hour12: false }).format(new Date()), 10); } catch (e) { return 12; } }
 // Mode du patron (persisté) : 'patron' (assistant données, défaut) ou 'client' (teste l'expérience de vente).
 async function getMerchantMode() {
@@ -1340,6 +1357,7 @@ async function runPoll(q) {
   const results = [];
   let processed = 0;
   try { const _m = await runAdMaintenance(INTEGRATIONS[0], dry); if (_m.followups || _m.visited) results.push({ decision: 'ad_maintenance', ..._m }); } catch (e) {}
+  try { const _pw = await runPubWatchdog(INTEGRATIONS[0], dry); if (_pw) results.push({ decision: 'pub_watchdog', ..._pw }); } catch (e) {}
   try { const _ab = await runAdsBillingWatch(INTEGRATIONS[0], dry); if (_ab) results.push({ decision: 'ads_billing_watch', ..._ab }); } catch (e) {}
 
   for (const integrationId of INTEGRATIONS) {
@@ -1973,6 +1991,12 @@ module.exports = async (req, res) => {
       for (const _cand of AD_WELCOME_CANDIDATES) { _t = await egrowV2SendTemplate(mine.id, _cand, 'UTILITY'); if (_t && _t.status === 'success') { used = _cand; break; } }
       return res.status(200).json({ ok: !!used, template: used, result: _t });
     } catch (e) { return res.status(200).json({ ok: false, error: String((e && e.message) || e).slice(0, 120) }); }
+  }
+  // ── Battement de cœur des publications Instagram/Facebook (envoyé par le Mac après chaque passage) : ?pubheartbeat=1&posts=N&stories=M ──
+  if (q.pubheartbeat === '1') {
+    const _d = new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Casablanca' }).format(new Date());
+    try { await require('./_ads_monitor.js').__store().set('ig_pub:' + _d, JSON.stringify({ posts: parseInt(q.posts, 10) || 0, stories: parseInt(q.stories, 10) || 0, at: new Date().toISOString() })); } catch (e) {}
+    return res.status(200).json({ ok: true, date: _d });
   }
   // ── Message d'information AU PATRON uniquement (jamais un client) : ?tellpatron=1&msg=... (POST conseillé pour les textes longs) ──
   if (q.tellpatron === '1') {
