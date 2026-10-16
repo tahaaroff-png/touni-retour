@@ -1348,8 +1348,17 @@ async function runPoll(q) {
           // Sinon, applique le mode mémorisé (le patron peut être passé en mode client pour tester)
           if ((await getMerchantMode()) === 'client') isMerchant = false;
         }
+        // CLIENT AVEC COMMANDE RÉCENTE : garde-fou côté code (le prompt seul ne suffit pas) → jamais l'accueil « Bienvenue » à quelqu'un qui vient de commander.
+        let orderCtx = '';
+        if (!isMerchant) {
+          try {
+            const _ords = await v2OrdersByPhone(contactWaId);
+            const _rec = _ords.find((o) => (Date.now() - (Date.parse(o.createdAt || '') || 0)) < 14 * 86400000 || STAGE_CAT[(o.pipeline && o.pipeline.id) || 0] === 'avant_envoi');
+            if (_rec) orderCtx = `[CONTEXTE SYSTÈME — NE PAS CITER : ce client a DÉJÀ une commande #${String(_rec.orderNumber || _rec.id).replace(/^#/, '')} (étape « ${(_rec.pipeline && _rec.pipeline.name) || '?'} », ${((_rec.lineItems || []).map((l) => l.title).join(' + ') || 'produits')} ${String(_rec.createdAt || '').slice(0, 10)}). Ce n'est PAS un nouveau contact : N'ENVOIE JAMAIS le message d'accueil « Bienvenue chez Touni ». S'il dit juste « ok / oki / salam / merci / wah », réponds en UNE courte phrase liée à sa commande (elle est bien prise en compte, l'équipe l'appelle pour la confirmation, ou un simple remerciement) sans reposer de question de bienvenue ; s'il demande autre chose, réponds normalement.]`;
+          } catch (e) {}
+        }
         const decision = await handleIncoming(
-          { text: body, name: c.title || (c.contact && c.contact.name) || '', city: (c.contact && c.contact.city) || '', history,
+          { text: (orderCtx ? orderCtx + '\n' : '') + body, name: c.title || (c.contact && c.contact.name) || '', city: (c.contact && c.contact.city) || '', history,
             catalog: isMerchant ? '' : catalog, collectionsBlock: isMerchant ? '' : collectionsBlock, imageBase64, imageMime, images,
             tools: isMerchant ? MERCHANT_TOOLS : AGENT_TOOLS,
             runTool: isMerchant ? ((n, i) => runMerchantTool(n, i)) : ((n, i) => runAgentTool(n, i, contactWaId)),
