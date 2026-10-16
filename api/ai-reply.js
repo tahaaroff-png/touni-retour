@@ -397,13 +397,18 @@ async function buildProductLine(item, qty) {
   const m = await findShopifyProduct(item.product, item.size, item.color);
   const title = (item.size ? `${(m && m.title) || item.product} - ${item.size}` : String((m && m.title) || item.product || '')).slice(0, 250);
   if (!m) { const price = await v2LookupPrice(item.product); return { line: { title, quantity: qty, price: price || 0, requiresShipping: true }, price: price || 0, linked: false }; }
+  // MODE « image » (défaut, validé par Tahar 16/10) : ligne NON liée à la fiche eGrow mais avec la PHOTO du produit + le prix exact de la variante Shopify
+  // (eGrow efface imageUrl dès qu'une ligne est liée à un produit → l'écran commande afficherait seulement des initiales). Les ids Shopify restent en metadata.
+  // MODE « link » (EGROW_LINE_MODE=link) : ligne liée au produit eGrow (prix/stock suivent la fiche) mais sans photo dans l'écran commande.
   const line = { title, quantity: qty, price: m.price, requiresShipping: true, sku: m.sku || undefined, imageUrl: m.image || undefined,
-    metadata: { source: 'agent_ia_whatsapp', taille: item.size || null } };
-  let hit = null;
-  try { hit = await pre.resolveEgrow(EGROW_V2_KEY, m.title, String(m.pid), m.vid ? String(m.vid) : undefined); } catch (e) {}
-  if (hit) { line.productId = hit.productId; if (hit.variantId) line.variantId = hit.variantId; }
-  else { line.userConnectionId = pre.SHOPIFY_CONN; line.externalProductId = String(m.pid); if (m.vid) line.externalVariantId = String(m.vid); }
-  return { line, price: m.price, linked: true };
+    metadata: { source: 'agent_ia_whatsapp', taille: item.size || null, shopify_product_id: String(m.pid), shopify_variant_id: m.vid ? String(m.vid) : null } };
+  if ((process.env.EGROW_LINE_MODE || 'image') === 'link') {
+    let hit = null;
+    try { hit = await pre.resolveEgrow(EGROW_V2_KEY, m.title, String(m.pid), m.vid ? String(m.vid) : undefined); } catch (e) {}
+    if (hit) { line.productId = hit.productId; if (hit.variantId) line.variantId = hit.variantId; delete line.imageUrl; }
+    else { line.userConnectionId = pre.SHOPIFY_CONN; line.externalProductId = String(m.pid); if (m.vid) line.externalVariantId = String(m.vid); delete line.imageUrl; }
+  }
+  return { line, price: m.price, linked: (process.env.EGROW_LINE_MODE || 'image') === 'link' };
 }
 // Tags « bot » : on FUSIONNE avec les tags existants (orderCreateOrUpdate remplace la liste).
 async function mergeTags(orderId, add, existing) {
