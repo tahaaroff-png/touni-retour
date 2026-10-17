@@ -21,7 +21,7 @@ const EGROW_V2_CONN        = parseInt(process.env.EGROW_V2_CONN        || '7887'
 const EGROW_V2_INTEGRATION = parseInt(process.env.EGROW_V2_INTEGRATION || '59', 10);   // integrationId (Whatsapp API)
 const FRESH_WINDOW_SEC = parseInt(process.env.EGROW_FRESH_SEC || '600', 10); // ne répond qu'aux messages des 10 dernières min
 const HUMAN_HANDOVER_SEC = parseInt(process.env.EGROW_HUMAN_HANDOVER_SEC || '7200', 10); // si un humain (équipe) a répondu il y a < 2h, le bot se tait ; il ne reprend qu'à un NOUVEAU message du client après 2h sans réponse humaine
-const MIN_AGE_SEC = parseInt(process.env.EGROW_MIN_AGE_SEC || '150', 10); // laisse 2 min30 à l'équipe pour répondre en premier (texte/vocal) avant que le bot ne réponde
+const MIN_AGE_SEC = parseInt(process.env.EGROW_MIN_AGE_SEC || '75', 10); // laisse 2 min30 à l'équipe pour répondre en premier (texte/vocal) avant que le bot ne réponde
 const HISTORY_LIMIT = parseInt(process.env.EGROW_HISTORY_LIMIT || '8', 10);  // nb de messages d'historique lus (8 = suffisant, 20 = trop coûteux)
 const MAX_PER_RUN = parseInt(process.env.EGROW_MAX_PER_RUN || '8', 10);      // garde-fou anti-blast
 const MAX_REPLIES_PER_CONV = parseInt(process.env.EGROW_MAX_REPLIES_PER_CONV || '12', 10); // plafond de réponses du bot par conv (~2h) → anti-abuseur/blagueur, protège les crédits
