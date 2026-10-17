@@ -346,6 +346,11 @@ async function generateReply({ text, name, orderItems, total, city, history, cat
       const dd = await rr.json().catch(() => ({}));
       if (rr.ok) return dd;
       if ([429, 500, 502, 503, 529].includes(rr.status) && attempt < 2) { await new Promise((res) => setTimeout(res, 700 * (attempt + 1))); continue; }
+      try {   // Crédit épuisé / clé invalide : on le signale au patron (WhatsApp via le contrôle ai-reply, même PC éteint)
+        const _txt = JSON.stringify((dd && dd.error) || dd || {});
+        if (/credit balance|billing|insufficient|purchase credits/i.test(_txt)) await require('./_ads_monitor.js').__store().set('anthropic_alert', JSON.stringify({ kind: 'credit', t: Date.now() }));
+        else if (rr.status === 401 || /authentication_error|invalid x-api-key/i.test(_txt)) await require('./_ads_monitor.js').__store().set('anthropic_alert', JSON.stringify({ kind: 'auth', t: Date.now() }));
+      } catch (e2) {}
       const e = new Error('claude_error'); e.detail = dd; e.status = rr.status; throw e;
     }
   }

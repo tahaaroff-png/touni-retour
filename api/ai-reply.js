@@ -853,6 +853,23 @@ async function runPubWatchdog(integrationId, dry) {
     return { watchdog: 'alerted', posts, stories };
   } catch (e) { return null; }
 }
+// Alerte crédit Anthropic : _agent.js dépose un drapeau quand l'API répond « crédit épuisé » ou « clé invalide » ; on prévient le patron (1 fois / 6 h).
+async function runAnthropicWatch(integrationId, dry) {
+  try {
+    const st = require('./_ads_monitor.js').__store();
+    const f = JSON.parse((await st.get('anthropic_alert')) || 'null'); if (!f || !f.t) return null;
+    const last = parseInt(await st.get('anthropic_alert_sent'), 10) || 0;
+    if (Date.now() - last < 6 * 3600000) return null;
+    if (dry) return { anthropic: 'would_alert', kind: f.kind };
+    const msg = f.kind === 'credit'
+      ? '🚨 CRÉDIT ANTHROPIC ÉPUISÉ : le bot WhatsApp ne peut plus répondre aux clients. Recharge tout de suite sur console.anthropic.com > Billing (et active la recharge automatique).'
+      : '🚨 CLÉ ANTHROPIC REFUSÉE : le bot WhatsApp ne peut plus répondre. Vérifie la clé ANTHROPIC_API_KEY dans Vercel.';
+    if (MERCHANT_PHONE) await sendAndQueue(integrationId, MERCHANT_PHONE, msg);
+    for (const _op of OPERATOR_PHONES) { if (_op !== MERCHANT_PHONE) { try { await sendAndQueue(integrationId, _op, msg); } catch (e) {} } }
+    await st.set('anthropic_alert_sent', String(Date.now())); await st.set('anthropic_alert', '');
+    return { anthropic: 'alerted', kind: f.kind };
+  } catch (e) { return null; }
+}
 function maroccoHourLocal() { try { return parseInt(new Intl.DateTimeFormat('en-GB', { timeZone: 'Africa/Casablanca', hour: '2-digit', hour12: false }).format(new Date()), 10); } catch (e) { return 12; } }
 // Mode du patron (persisté) : 'patron' (assistant données, défaut) ou 'client' (teste l'expérience de vente).
 async function getMerchantMode() {
@@ -1368,6 +1385,7 @@ async function runPoll(q) {
   const results = [];
   let processed = 0;
   try { const _m = await runAdMaintenance(INTEGRATIONS[0], dry); if (_m.followups || _m.visited) results.push({ decision: 'ad_maintenance', ..._m }); } catch (e) {}
+  try { const _aw = await runAnthropicWatch(INTEGRATIONS[0], dry); if (_aw) results.push({ decision: 'anthropic_watch', ..._aw }); } catch (e) {}
   try { const _pw = await runPubWatchdog(INTEGRATIONS[0], dry); if (_pw) results.push({ decision: 'pub_watchdog', ..._pw }); } catch (e) {}
   try { const _ab = await runAdsBillingWatch(INTEGRATIONS[0], dry); if (_ab) results.push({ decision: 'ads_billing_watch', ..._ab }); } catch (e) {}
 
