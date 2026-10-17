@@ -9,7 +9,7 @@ const { SB_URL, supabaseHeaders, shopifyAdminHeaders, SHOPIFY_DOMAIN, SHOPIFY_AP
 
 // Authentification de l'API du bot : AI_REPLY_SECRET (env Vercel) ou, pour les crons Vercel, l'en-tête « Authorization: Bearer CRON_SECRET ».
 // TRANSITION : l'ancien mot de passe (public sur GitHub) est encore accepté tant que ALLOW_OLD_SECRET n'est pas retiré.
-const ALLOW_OLD_SECRET = true;
+const ALLOW_OLD_SECRET = false;
 function secretOk(q, req) {
   const s = String((q && q.secret) || ''), n = process.env.AI_REPLY_SECRET || '', c = process.env.CRON_SECRET || '';
   if (n && s === n) return true;
