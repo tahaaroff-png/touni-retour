@@ -1935,7 +1935,10 @@ async function runPoll(q) {
 
 module.exports = async (req, res) => {
   const q = req.query || {};
-  if (!secretOk(q, req)) return res.status(401).json({ error: 'unauthorized' });
+  // Jeton « sondage seulement » (POLL_TOKEN) : permet au planificateur cloud (Supabase pg_cron) de déclencher UNIQUEMENT ?poll=1, rien d'autre.
+  const _pollTok = q.poll === '1' && !!process.env.POLL_TOKEN && String(q.pt || '') === process.env.POLL_TOKEN;
+  if (!secretOk(q, req) && !_pollTok) return res.status(401).json({ error: 'unauthorized' });
+  if (_pollTok && !secretOk(q, req)) { delete q.catchup; delete q.wake; delete q.only; delete q.force; }
   // ── Fiche globale des avis clients (texte + vocaux) — ?reviews_fiche=1 ──
   if (q.reviews_fiche === '1') {
     try {
