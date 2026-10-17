@@ -2546,6 +2546,8 @@ module.exports = async (req, res) => {
     const orderItems = body.order_items || body.products || body.items || '';
     const total = body.total || body.order_total || body.amount || '';
     const city = body.city || body.ville || '';
+    // Observation (sans effet sur le bot) : trace des appels POST pour savoir si une automatisation eGrow utilise ce mode.
+    try { const _st = require('./_ads_monitor.js').__store(); const _prev = JSON.parse((await _st.get('post_hits')) || '[]'); _prev.unshift({ t: new Date().toISOString(), ua: String((req.headers || {})['user-agent'] || '').slice(0, 60), keys: Object.keys(body || {}).slice(0, 8) }); await _st.set('post_hits', JSON.stringify(_prev.slice(0, 20))); } catch (e) {}
     console.log('[ai-reply] IN method=%s ct=%s keys=%j text=%j', req.method, (req.headers || {})['content-type'], Object.keys(body || {}), String(text).slice(0, 80));
     const opts = {
       bypassTime: q.test === '1' || q.force === '1' || body.test === true,
