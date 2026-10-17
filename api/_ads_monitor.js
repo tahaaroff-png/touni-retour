@@ -18,10 +18,11 @@ const BILLING_URL = (id) => `https://business.facebook.com/billing_hub/payment_a
 
 // ───────── Seuils retenus ─────────
 const T = {
-  PRECHARGE_RATIO: 0.85,        // balance >= 85 % du seuil de facturation -> prélèvement imminent (warning, 1 fois par cycle)
+  PRECHARGE_RATIO: 0.70,        // balance >= 70 % du seuil de facturation RÉEL (déduit des derniers prélèvements) -> prélèvement imminent (warning, 1 fois par cycle)
+  PRECHARGE_HOURS: 6,           // ... ou prélèvement estimé dans moins de 6 h (dès que le solde dépasse 50 % du seuil)
   OVERDUE_RATIO: 1.15,          // balance >= 115 % du seuil ET dernier prélèvement réussi > OVERDUE_HOURS -> prélèvement probablement refusé (critical)
   OVERDUE_HOURS: 6,
-  DEFAULT_THRESHOLD_USD: 225,   // repli si le journal n'a aucun prélèvement ; surchargeable : ADS_BILLING_THRESHOLD_USD
+  DEFAULT_THRESHOLD_USD: 100,   // repli PRUDENT (seuil Meta de départ) si le journal n'a aucun prélèvement récent ; surchargeable : ADS_BILLING_THRESHOLD_USD
   SPEND_CAP_WARN: 0.10,         // spend cap : < 10 % restant ou < 1 jour de dépense -> warning
   SPEND_CAP_CRIT_DAYS: 0.5,     // < 0,5 jour de dépense restant -> critical
   ZERO_SPEND_AFTER_HOUR: 12,    // Maroc : 0 $ dépensé aujourd'hui passé midi alors que des pubs tournent -> warning
@@ -50,7 +51,7 @@ async function fetchAccountData({ token, accountId }) {
   const acc = await gget(token, id, { fields: 'name,account_status,disable_reason,balance,amount_spent,spend_cap,currency,timezone_name,funding_source,funding_source_details,is_prepay_account' });
   let activities = [], insights = [];
   try {
-    const since = Math.floor(Date.now() / 1000) - 6 * 86400;
+    const since = Math.floor(Date.now() / 1000) - 14 * 86400;
     const a = await gget(token, `${id}/activities`, { fields: 'event_type,event_time,extra_data', since: String(since), limit: '500' });
     activities = (a.data || []).filter((x) => /ad_account_billing_charge|ad_account_update_status|billing|payment|spend_cap|funding/i.test(x.event_type));
   } catch (e) { activities = null; }   // non bloquant (rate limit) : on décide sur account_status/balance seuls
@@ -91,8 +92,10 @@ function evaluate(data, opts) {
     .map((x) => { let e = x.extra_data; if (typeof e === 'string') { try { e = JSON.parse(e); } catch (er) { e = {}; } } return { t: Date.parse(x.event_time), usd: usd(e && e.new_value) }; })
     .filter((c) => c.usd > 0).sort((a, b) => b.t - a.t);
   const envThr = parseFloat(process.env.ADS_BILLING_THRESHOLD_USD || '');
-  const baseThr = envThr || T.DEFAULT_THRESHOLD_USD;   // /activities est tronqué (beaucoup d'événements de pubs) : on prend le plus haut entre le seuil par défaut et les prélèvements vus
-  const threshold = charges.length ? Math.max(baseThr, ...charges.map((c) => c.usd)) : baseThr;
+  // Seuil RÉEL du compte : Meta le fait varier par compte (ex. Touni 225 $, Le Vestiaire ~100-180 $). On le déduit des 3 derniers prélèvements « réguliers » (>= 60 $),
+  // en prenant le PLUS PETIT (prudent : l'alerte part avant). Avant (max avec 225 $) l'alerte « presque à la limite » ne partait jamais pour Le Vestiaire.
+  const regular = charges.filter((c) => c.usd >= 60 && (now.getTime() - c.t) < 14 * 86400000).slice(0, 3);
+  const threshold = envThr || (regular.length ? Math.min(...regular.map((c) => c.usd)) : T.DEFAULT_THRESHOLD_USD);
   m.threshold_usd = threshold; m.last_charge_at = charges[0] ? new Date(charges[0].t).toISOString() : null; m.last_charge_usd = charges[0] ? charges[0].usd : null;
   m.ratio = threshold ? Math.round((balance / threshold) * 100) / 100 : null;
   const hoursSinceCharge = charges[0] ? (now.getTime() - charges[0].t) / 3600000 : null;
@@ -108,7 +111,7 @@ function evaluate(data, opts) {
     const cycle = m.last_charge_at || 'nocharge';
     if (m.ratio >= T.OVERDUE_RATIO && (hoursSinceCharge == null || hoursSinceCharge > T.OVERDUE_HOURS)) {
       bump('critical', `Le solde à prélever (${balance.toFixed(0)} $) dépasse le seuil de facturation estimé (~${threshold.toFixed(0)} $) sans prélèvement récent : le prélèvement est probablement refusé (carte vide / plafond).`); m.signature = 'overdue:' + cycle;
-    } else if (m.ratio >= T.PRECHARGE_RATIO) {
+    } else if (m.ratio >= T.PRECHARGE_RATIO || (m.next_charge_in_hours != null && m.next_charge_in_hours <= T.PRECHARGE_HOURS && m.ratio >= 0.5)) {
       bump('warning', `Prélèvement imminent : ${balance.toFixed(0)} $ à régler sur un seuil estimé de ~${threshold.toFixed(0)} $${m.next_charge_in_hours != null ? ` (dans ~${Math.max(1, Math.round(m.next_charge_in_hours))} h)` : ''}. La carte doit avoir au moins ${threshold.toFixed(0)} $ disponibles.`); m.signature = 'precharge:' + cycle;
     }
   }
