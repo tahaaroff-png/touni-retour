@@ -7,7 +7,15 @@ const pre = require('./_precommande.js');
 const adsMonitor = require('./_ads_monitor.js');
 const { SB_URL, supabaseHeaders, shopifyAdminHeaders, SHOPIFY_DOMAIN, SHOPIFY_API_VERSION } = require('./_shopify-helpers.js');
 
-const SECRET = 'touni-sync-2026';
+// Authentification de l'API du bot : AI_REPLY_SECRET (env Vercel) ou, pour les crons Vercel, l'en-tête « Authorization: Bearer CRON_SECRET ».
+// TRANSITION : l'ancien mot de passe (public sur GitHub) est encore accepté tant que ALLOW_OLD_SECRET n'est pas retiré.
+const ALLOW_OLD_SECRET = true;
+function secretOk(q, req) {
+  const s = String((q && q.secret) || ''), n = process.env.AI_REPLY_SECRET || '', c = process.env.CRON_SECRET || '';
+  if (n && s === n) return true;
+  if (c && String(((req && req.headers) || {}).authorization || '') === 'Bearer ' + c) return true;
+  return ALLOW_OLD_SECRET && s === 'touni-sync-2026';
+}
 const EGROW_ME = process.env.EGROW_ME || '';
 const EGROW_AK = process.env.EGROW_AK || '';
 const EGROW_BASE = 'https://api.egrow.com';
@@ -21,7 +29,7 @@ const EGROW_V2_CONN        = parseInt(process.env.EGROW_V2_CONN        || '7887'
 const EGROW_V2_INTEGRATION = parseInt(process.env.EGROW_V2_INTEGRATION || '59', 10);   // integrationId (Whatsapp API)
 const FRESH_WINDOW_SEC = parseInt(process.env.EGROW_FRESH_SEC || '600', 10); // ne répond qu'aux messages des 10 dernières min
 const HUMAN_HANDOVER_SEC = parseInt(process.env.EGROW_HUMAN_HANDOVER_SEC || '7200', 10); // si un humain (équipe) a répondu il y a < 2h, le bot se tait ; il ne reprend qu'à un NOUVEAU message du client après 2h sans réponse humaine
-const MIN_AGE_SEC = parseInt(process.env.EGROW_MIN_AGE_SEC || '75', 10); // laisse 2 min30 à l'équipe pour répondre en premier (texte/vocal) avant que le bot ne réponde
+const MIN_AGE_SEC = parseInt(process.env.EGROW_MIN_AGE_SEC || '15', 10); // laisse 2 min30 à l'équipe pour répondre en premier (texte/vocal) avant que le bot ne réponde
 const HISTORY_LIMIT = parseInt(process.env.EGROW_HISTORY_LIMIT || '8', 10);  // nb de messages d'historique lus (8 = suffisant, 20 = trop coûteux)
 const MAX_PER_RUN = parseInt(process.env.EGROW_MAX_PER_RUN || '8', 10);      // garde-fou anti-blast
 const MAX_REPLIES_PER_CONV = parseInt(process.env.EGROW_MAX_REPLIES_PER_CONV || '12', 10); // plafond de réponses du bot par conv (~2h) → anti-abuseur/blagueur, protège les crédits
@@ -1906,7 +1914,7 @@ async function runPoll(q) {
 
 module.exports = async (req, res) => {
   const q = req.query || {};
-  if (q.secret !== SECRET) return res.status(401).json({ error: 'unauthorized' });
+  if (!secretOk(q, req)) return res.status(401).json({ error: 'unauthorized' });
   // ── Fiche globale des avis clients (texte + vocaux) — ?reviews_fiche=1 ──
   if (q.reviews_fiche === '1') {
     try {
