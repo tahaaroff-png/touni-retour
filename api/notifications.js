@@ -963,6 +963,7 @@ async function authLogin(req, res) {
   if (code) {
     if (boss && code === boss) { role = 'admin'; key = boss; }
     else if (team && code === team) { role = 'staff'; key = team; }
+    else if (process.env.TEAM_LOGIN_CODE && code === process.env.TEAM_LOGIN_CODE && team) { role = 'staff'; key = team; }   // code de connexion équipe choisi par le patron (la clé API reste forte et n'est jamais exposée en clair)
     else {
       try { const ok = await getOwnerKey(); if (ok && code === ok) { role = 'admin'; key = boss || legacy; owner = true; } } catch (e) {}
       if (!role && process.env.SYNC_ALLOW_OLD !== '0') {     // anciens mots de passe de l'écran de connexion (transition)
