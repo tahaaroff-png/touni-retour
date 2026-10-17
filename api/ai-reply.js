@@ -31,6 +31,9 @@ const FRESH_WINDOW_SEC = parseInt(process.env.EGROW_FRESH_SEC || '600', 10); // 
 const HUMAN_HANDOVER_SEC = parseInt(process.env.EGROW_HUMAN_HANDOVER_SEC || '7200', 10); // si un humain (équipe) a répondu il y a < 2h, le bot se tait ; il ne reprend qu'à un NOUVEAU message du client après 2h sans réponse humaine
 const MIN_AGE_SEC = parseInt(process.env.EGROW_MIN_AGE_SEC || '15', 10); // laisse 2 min30 à l'équipe pour répondre en premier (texte/vocal) avant que le bot ne réponde
 const HISTORY_LIMIT = parseInt(process.env.EGROW_HISTORY_LIMIT || '8', 10);  // nb de messages d'historique lus (8 = suffisant, 20 = trop coûteux)
+// Rattrapage : ?poll=1&catchup=H (H heures, max 20) élargit TEMPORAIREMENT (2 min) la fenêtre des messages « frais » pour répondre à ceux qui ont été ratés.
+let _catchupSec = 0, _catchupUntil = 0;
+function freshSec() { return Date.now() < _catchupUntil ? Math.max(_catchupSec, FRESH_WINDOW_SEC) : FRESH_WINDOW_SEC; }
 const MAX_PER_RUN = parseInt(process.env.EGROW_MAX_PER_RUN || '8', 10);      // garde-fou anti-blast
 const MAX_REPLIES_PER_CONV = parseInt(process.env.EGROW_MAX_REPLIES_PER_CONV || '12', 10); // plafond de réponses du bot par conv (~2h) → anti-abuseur/blagueur, protège les crédits
 // #4 — stages pipeline : commande en attente → Confirmer Wtsp (confirm) / Annuler Wtsp (cancel)
@@ -148,7 +151,7 @@ async function egrowGetConversations(integrationId, page) {
   for (const n of nodes) {
     const updSec = Math.floor(Date.parse(n.updatedAt || '') / 1000) || 0;
     if (!updSec) continue;
-    if ((nowSec - updSec) > (FRESH_WINDOW_SEC + 180)) break; // trié desc → au-delà de la fenêtre, plus rien de frais
+    if ((nowSec - updSec) > (freshSec() + 180)) break; // trié desc → au-delà de la fenêtre, plus rien de frais
     if (scanned >= 20) break;
     scanned++;
     let lastArr = [];
@@ -1385,7 +1388,7 @@ async function runPoll(q) {
         if (onlyPhone && contactWaId !== onlyPhone) continue;
         const incoming = senderWaId && contactWaId && senderWaId === contactWaId; // dernier msg = du client (sans réponse)
         if (!incoming) continue;
-        if (!lastTime || (nowSec - lastTime) > FRESH_WINDOW_SEC) continue;        // frais uniquement (jamais le backlog)
+        if (!lastTime || (nowSec - lastTime) > freshSec()) continue;        // frais uniquement (jamais le backlog)
         if (!msgId) continue;
         if (!onlyPhone && (nowSec - lastTime) < MIN_AGE_SEC && !(MERCHANT_PHONE && contactWaId.replace(/\D/g, '') === MERCHANT_PHONE)) continue; // trop frais : l'humain a peut-être déjà commencé à répondre (vocal en cours) → repris au prochain passage
         const isImage = type === 'image';
@@ -2530,6 +2533,7 @@ module.exports = async (req, res) => {
 
   // ── Mode POLLER ──
   if (q.poll === '1') {
+    if (q.catchup) { _catchupSec = Math.min(parseFloat(q.catchup) || 0, 20) * 3600; _catchupUntil = Date.now() + 110000; }
     if (!EGROW_ME || !EGROW_AK) return res.status(503).json({ error: 'egrow_tokens_missing' });
     try { return res.status(200).json(await runPoll(q)); }
     catch (e) { return res.status(500).json({ error: String(e), stack: (e && e.stack || '').split('\n').slice(0, 3) }); }
