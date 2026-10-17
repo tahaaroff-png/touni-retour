@@ -2533,6 +2533,7 @@ module.exports = async (req, res) => {
 
   // ── Mode POLLER ──
   if (q.poll === '1') {
+    if (q.wake === '1') await new Promise((r) => setTimeout(r, 17000));   // déclenché par le webhook eGrow MESSAGES_CREATE : on laisse passer l'âge minimal (regroupe les rafales) puis on traite
     if (q.catchup) { _catchupSec = Math.min(parseFloat(q.catchup) || 0, 20) * 3600; _catchupUntil = Date.now() + 110000; }
     if (!EGROW_ME || !EGROW_AK) return res.status(503).json({ error: 'egrow_tokens_missing' });
     try { return res.status(200).json(await runPoll(q)); }
