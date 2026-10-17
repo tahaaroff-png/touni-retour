@@ -1,6 +1,7 @@
 <!doctype html>
 <html lang="fr">
 <head>
+<script src="/auth.js"></script>
 
 <meta charset="utf-8">
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
@@ -86,7 +87,7 @@ h1{font-size:21px;display:flex;align-items:center;gap:8px}
 <div class="lb" id="lb" onclick="closeLb()"><span class="x" onclick="closeLb()">&times;</span><img id="lb-img" src="" alt=""></div>
 
 <script>
-var SECRET='touni-sync-2026';
+var SECRET=touniKey();
 var DATA=null;
 function dot(s){document.getElementById('dot').style.background=s==='ok'?'var(--green)':s==='err'?'var(--red)':'var(--muted)';}
 function fmt(n){return Number(n||0).toLocaleString('fr-FR');}

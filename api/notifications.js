@@ -4,6 +4,7 @@
 // PATCH /api/notifications?secret=...&id=XXX → marquer comme lu/archivé
 // DELETE /api/notifications?secret=...&id=XXX → supprimer
 
+const { syncOk } = require('./_auth.js');
 const { SB_URL, supabaseHeaders, shopifyAdminHeaders, SHOPIFY_DOMAIN, SHOPIFY_API_VERSION, normalizeSize, normalizeColor, fetchShopifyProductsAdmin } = require('./_shopify-helpers.js');
 // Réutilise le parsing du webhook (fonction exportée) — pour rester sous la limite de 12 fonctions Vercel
 const { parseVariantTitle } = require('./shopify-order-webhook.js');
@@ -1007,7 +1008,7 @@ module.exports = async function handler(req, res) {
   // FIX: Auth guard — protect all methods (not just mutation) to avoid exposing order data
   const expectedSecret = process.env.SYNC_SECRET || 'touni-sync-2026';
   const providedSecret = req.query?.secret || req.headers['x-sync-secret'];
-  if (providedSecret !== expectedSecret) {
+  if (!syncOk(providedSecret)) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
@@ -1027,7 +1028,7 @@ module.exports = async function handler(req, res) {
   // ── SYNC LE VESTIAIRE ─────────────────────────────────────────────────────
   // Resync manuelle/complète (secret-gated) : totaux stock → inventaires LV + Touni
   if (req.method === 'POST' && req.query?.action === 'lv_sync') {
-    if ((req.query?.secret || '') !== (process.env.SYNC_SECRET || '')) return res.status(401).json({ error: 'unauthorized' });
+    if (!syncOk(req.query?.secret || '')) return res.status(401).json({ error: 'unauthorized' });
     try { return res.status(200).json({ ok: true, ...(await lv.reconcileInventory()) }); }
     catch (e) { return res.status(500).json({ ok: false, error: e.message }); }
   }

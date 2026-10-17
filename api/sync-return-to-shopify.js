@@ -17,6 +17,7 @@
 // - GET  → dry-run (analyse seulement, pas de push)
 // - POST → exécute les pushs
 
+const { syncOk } = require('./_auth.js');
 const {
   SHOPIFY_CLIENT_ID, SHOPIFY_LOCATION_ID, SB_URL,
   shopifyAdminHeaders, supabaseHeaders,
@@ -241,7 +242,7 @@ module.exports = async function handler(req, res) {
 
   const expectedSecret = process.env.SYNC_SECRET || 'touni-sync-2026';
   const providedSecret = req.query?.secret || req.headers['x-sync-secret'];
-  if (providedSecret !== expectedSecret) return res.status(401).json({ error: 'Unauthorized' });
+  if (!syncOk(providedSecret)) return res.status(401).json({ error: 'Unauthorized' });
 
   const isDryRun = req.method === 'GET';
 

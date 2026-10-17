@@ -11,6 +11,7 @@
 //   5. Efface shopify_pushed_at, shopify_variant_id, shopify_qty_pushed,
 //      shopify_inventory_item_id dans Supabase
 
+const { syncOk } = require('./_auth.js');
 const {
   SHOPIFY_CLIENT_ID, SHOPIFY_LOCATION_ID, SB_URL,
   shopifyAdminHeaders, supabaseHeaders,
@@ -46,7 +47,7 @@ module.exports = async function handler(req, res) {
 
   const expectedSecret = process.env.SYNC_SECRET || 'touni-sync-2026';
   const providedSecret = req.query?.secret || req.headers['x-sync-secret'];
-  if (providedSecret !== expectedSecret) {
+  if (!syncOk(providedSecret)) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 

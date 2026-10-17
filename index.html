@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
+<script src="/auth.js"></script>
 
 <meta charset="UTF-8">
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
@@ -599,7 +600,7 @@ function sortSizes(arr){
 // (sauf si le patron définit OWNER_PRICE_KEY = Fitfat25!).
 async function verifyOwnerCode(code) {
   try {
-    var r = await fetch('/api/notifications?action=cat_price_set&secret=touni-sync-2026',
+    var r = await fetch('/api/notifications?action=cat_price_set&secret='+touniKey(),
       { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ pin: code, verify: true }) });
     return r.ok;
   } catch(e) { return false; }
@@ -1502,7 +1503,7 @@ async function markAllNotifsRead(){
 }
 
 // ── Sync Shopify (push retours disponibles) ──
-var SYNC_SECRET='touni-sync-2026';
+var SYNC_SECRET=touniKey();
 // ── Sync unifié : push retours EN RUPTURE + mise à 0 des vendus/mystère pushés ──
 async function syncAll(){
   var btn=document.getElementById('btn-sync-shopify');
@@ -1514,7 +1515,7 @@ async function syncAll(){
     var d1; try{ d1=await r1.json(); }catch(je){ throw new Error('Sync timeout — la synchronisation a pris trop de temps. Réessayez dans quelques secondes.'); }
     if(!r1.ok) throw new Error((d1&&d1.error)||'Erreur sync retours');
     // Réconciliation totale des quantités : Touni Shopify + Le Vestiaire
-    await fetch('/api/notifications?action=lv_sync&secret=touni-sync-2026',{method:'POST'}).catch(function(){});
+    await fetch('/api/notifications?action=lv_sync&secret='+touniKey(),{method:'POST'}).catch(function(){});
     // Rafraîchir le stock local (shopify_pushed_at peut avoir changé)
     await dbLoad();
     await loadNotifications();

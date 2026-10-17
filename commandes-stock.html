@@ -1,6 +1,7 @@
 <!doctype html>
 <html lang="fr">
 <head>
+<script src="/auth.js"></script>
 
 <meta charset="utf-8">
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
@@ -154,7 +155,7 @@ h1{font-size:20px;display:flex;align-items:center;gap:8px}
 <script>
 const SB_URL='https://dwjjrgjbkftejdcmwpgc.supabase.co';
 const SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR3ampyZ2pia2Z0ZWpkY213cGdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU0NzI2MDYsImV4cCI6MjA5MTA0ODYwNn0.6GxM9u1Om7zP-_MEYVhdtHBESyGLDZGFofxSKGwixPo';
-const SECRET='touni-sync-2026';
+const SECRET=touniKey();
 let RANGE='today', notifs=[], imgMap={}, prevCount=-1, audioCtx=null, DFROM=null, DTO=null;
 
 function toast(m){var t=document.getElementById('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2200);}
@@ -267,7 +268,7 @@ function applyCustom(){ DFROM=document.getElementById('dfrom').value||null; DTO=
 function clearCustom(){ DFROM=DTO=null; document.getElementById('dfrom').value=''; document.getElementById('dto').value=''; render(); }
 async function syncNow(){
   var b=document.getElementById('syncBtn'); b.disabled=true; var o=b.textContent; b.textContent='⏳…';
-  try{ await fetch('/api/notifications?action=scan&secret='+SECRET,{method:'POST'}).catch(function(){}); await fetch('/api/notifications?action=lv_sync&secret=touni-sync-2026',{method:'POST'}).catch(function(){}); await load(); toast('🔄 Synchronisé (Touni + Le Vestiaire)'); }
+  try{ await fetch('/api/notifications?action=scan&secret='+SECRET,{method:'POST'}).catch(function(){}); await fetch('/api/notifications?action=lv_sync&secret='+touniKey(),{method:'POST'}).catch(function(){}); await load(); toast('🔄 Synchronisé (Touni + Le Vestiaire)'); }
   catch(e){ toast('⚠️ '+e.message); }
   finally{ b.disabled=false; b.textContent=o; }
 }

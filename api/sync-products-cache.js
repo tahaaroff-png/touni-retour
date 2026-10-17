@@ -2,6 +2,7 @@
 // Appelé manuellement (depuis le dashboard) ou via cron quotidien
 // Auth: client_credentials via touni-master-api (auto-renouvelé)
 
+const { syncOk } = require('./_auth.js');
 const {
   SHOPIFY_CLIENT_ID, SHOPIFY_LOCATION_ID, SB_URL,
   shopifyAdminHeaders, supabaseHeaders,
@@ -53,7 +54,7 @@ module.exports = async function handler(req, res) {
   // Auth simple via secret query param ou header
   const expectedSecret = process.env.SYNC_SECRET || 'touni-sync-2026';
   const providedSecret = req.query?.secret || req.headers['x-sync-secret'];
-  if (providedSecret !== expectedSecret) {
+  if (!syncOk(providedSecret)) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
   if (!SHOPIFY_CLIENT_ID) {

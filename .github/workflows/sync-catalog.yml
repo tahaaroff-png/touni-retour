@@ -21,9 +21,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Resynchroniser le catalogue Shopify vers Supabase
+        env:
+          SYNC_SECRET: ${{ secrets.SYNC_SECRET }}
         run: |
           RESP=$(curl -s -w "\n%{http_code}" --max-time 120 \
-            "https://touni-retour.vercel.app/api/sync-products-cache?secret=touni-sync-2026")
+            "https://touni-retour.vercel.app/api/sync-products-cache?secret=${SYNC_SECRET}")
           CODE=$(echo "$RESP" | tail -1)
           BODY=$(echo "$RESP" | sed '$d')
           echo "HTTP $CODE"
@@ -40,11 +42,13 @@ jobs:
           }
 
       - name: Vérifier que les webhooks Shopify sont toujours enregistrés
+        env:
+          SYNC_SECRET: ${{ secrets.SYNC_SECRET }}
         run: |
           # Recrée les webhooks manquants. products/update avait disparu une fois,
           # ce qui figeait les photos et les prix dans le cache.
           RESP=$(curl -s --max-time 60 \
-            "https://touni-retour.vercel.app/api/setup-webhooks?secret=touni-sync-2026")
+            "https://touni-retour.vercel.app/api/setup-webhooks?secret=${SYNC_SECRET}")
           echo "$RESP"
           echo "$RESP" | grep -q '"success":true' || {
             echo "::error::Vérification des webhooks KO"

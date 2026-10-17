@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
+<script src="/auth.js"></script>
 
 <meta charset="UTF-8">
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
@@ -1261,7 +1262,7 @@ function renderReleveResults(){
 const SB_URL = 'https://dwjjrgjbkftejdcmwpgc.supabase.co';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR3ampyZ2pia2Z0ZWpkY213cGdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU0NzI2MDYsImV4cCI6MjA5MTA0ODYwNn0.6GxM9u1Om7zP-_MEYVhdtHBESyGLDZGFofxSKGwixPo';
 const PWD_ADMIN = 'Fitfat25!';
-const SYNC_SECRET = 'touni-sync-2026';
+const SYNC_SECRET=touniKey();
 const H = {'Content-Type':'application/json','apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Prefer':'return=representation'};
 const EGROW_ME  = 'b1561dd7a5bf51060e3ef52084b3cc5fc0e23f6b0430c4523e8cd48e8b16542c';
 const EGROW_KEY = '11aaf7ee-c8e5-11f0-8839-9c6b003e9239';

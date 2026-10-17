@@ -1,7 +1,8 @@
 // Setup webhooks : enregistre orders/create + products/* sur Shopify
-// GET /api/setup-webhooks?secret=touni-sync-2026  → liste + crée si absent
+// GET /api/setup-webhooks?secret=<SYNC_SECRET>  → liste + crée si absent
 // GET /api/setup-webhooks?secret=...&delete=ID     → supprime un webhook par ID
 
+const { syncOk } = require('./_auth.js');
 const {
   SHOPIFY_DOMAIN, SHOPIFY_API_VERSION,
   shopifyAdminHeaders,
@@ -24,7 +25,7 @@ module.exports = async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(204).end();
 
   const expectedSecret = process.env.SYNC_SECRET || 'touni-sync-2026';
-  if ((req.query?.secret || req.headers['x-sync-secret']) !== expectedSecret) {
+  if (!syncOk(req.query?.secret || req.headers['x-sync-secret'])) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 

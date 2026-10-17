@@ -1,6 +1,7 @@
 // OAuth callback pour installer l'app Dev Dashboard sur la boutique
 // Visiter /api/oauth-install?secret=touni-sync-2026 pour lancer l'installation
 
+const { syncOk } = require('./_auth.js');
 const CLIENT_ID = process.env.SHOPIFY_CLIENT_ID || '65e7c4bb41dec7a0383faf39512459da';
 const CLIENT_SECRET = process.env.SHOPIFY_CLIENT_SECRET || '';
 const SHOP = process.env.SHOPIFY_DOMAIN || 'bjuanm-1r.myshopify.com';
@@ -16,7 +17,7 @@ module.exports = async function handler(req, res) {
   // Step 1: Initiate install (GET /api/oauth-callback?secret=xxx)
   if (secret) {
     const expectedSecret = process.env.SYNC_SECRET || 'touni-sync-2026';
-    if (secret !== expectedSecret) return res.status(401).json({ error: 'Unauthorized' });
+    if (!syncOk(secret)) return res.status(401).json({ error: 'Unauthorized' });
     const installUrl = `https://${SHOP}/admin/oauth/authorize?client_id=${CLIENT_ID}&scope=${encodeURIComponent(SCOPES)}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}`;
     return res.redirect(installUrl);
   }

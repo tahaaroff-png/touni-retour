@@ -27,7 +27,7 @@
 - ✅ Chaque notification montre : numéro commande, client+ville, produit, taille, qty dispo, boutons Voir/Lu/Archiver
 
 ### Sécurité
-- ✅ Endpoints sensibles protégés par `?secret=touni-sync-2026`
+- ✅ Endpoints sensibles protégés par `?secret=<SYNC_SECRET>`
 - ✅ Webhook Shopify protégé par HMAC SHA256 (vérification signature)
 - ✅ Endpoints retournent **HTTP 503 explicite** si les variables d'env ne sont pas définies (pas de crash silencieux)
 
@@ -61,7 +61,7 @@ Ajoutez ces 4 variables (toutes en Production) :
 |---|---|---|
 | `SHOPIFY_ADMIN_TOKEN` | `shpat_xxxxxxx` | Le token de l'étape 1 |
 | `SHOPIFY_LOCATION_ID` | `(vide pour l'instant)` | On le remplit en étape 3 |
-| `SYNC_SECRET` | `touni-sync-2026` | Ou un mot de passe random, ce que vous voulez |
+| `SYNC_SECRET` | `<SYNC_SECRET>` | Ou un mot de passe random, ce que vous voulez |
 | `SHOPIFY_ORDER_WEBHOOK_SECRET` | `(vide pour l'instant)` | On le remplit après création du webhook |
 
 Cliquez **Save** pour chaque. Puis **Redeploy** la dernière build (Vercel propose un bouton "Redeploy with latest env").
@@ -72,7 +72,7 @@ Cliquez **Save** pour chaque. Puis **Redeploy** la dernière build (Vercel propo
 
 Après le redeploy, ouvrez dans le navigateur :
 ```
-https://touni-retour.vercel.app/api/list-shopify-locations?secret=touni-sync-2026
+https://touni-retour.vercel.app/api/list-shopify-locations?secret=<SYNC_SECRET>
 ```
 
 Vous verrez une réponse JSON avec vos locations. Copiez l'ID de votre location principale (celle où vous gérez votre stock).
@@ -98,12 +98,12 @@ Shopify affiche un secret (commence par `hmac_...` ou similaire). Copiez-le, ret
 
 Ouvrez dans le navigateur :
 ```
-https://touni-retour.vercel.app/api/sync-products-cache?secret=touni-sync-2026
+https://touni-retour.vercel.app/api/sync-products-cache?secret=<SYNC_SECRET>
 ```
 Mais en **POST** (avec un outil comme Postman/Insomnia, ou via terminal :)
 
 ```bash
-curl -X POST "https://touni-retour.vercel.app/api/sync-products-cache?secret=touni-sync-2026"
+curl -X POST "https://touni-retour.vercel.app/api/sync-products-cache?secret=<SYNC_SECRET>"
 ```
 
 Vous devriez voir une réponse comme :
@@ -152,7 +152,7 @@ L'opératrice reste **maîtresse des statuts** (vendu / mystère / retour) — p
 
 ### Re-sync du cache Shopify (si nouveaux produits ajoutés)
 ```bash
-curl -X POST "https://touni-retour.vercel.app/api/sync-products-cache?secret=touni-sync-2026"
+curl -X POST "https://touni-retour.vercel.app/api/sync-products-cache?secret=<SYNC_SECRET>"
 ```
 À faire **1× par semaine** ou après ajout de nouveaux produits Shopify. (Le cache local sinon devient obsolète.)
 
@@ -161,7 +161,7 @@ Cliquez le bouton **🔄 Sync Shopify** sur Stock Retours quand vous voulez.
 
 ### Dry-run (voir ce qui serait pushé sans pousser)
 ```bash
-curl "https://touni-retour.vercel.app/api/sync-return-to-shopify?secret=touni-sync-2026"
+curl "https://touni-retour.vercel.app/api/sync-return-to-shopify?secret=<SYNC_SECRET>"
 # (GET = dry-run, POST = vrai push)
 ```
 

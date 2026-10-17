@@ -1,11 +1,12 @@
 // snapshot-inventory.js — capture l'état inventaire LIVE dans inventory_snapshots
 // Permet de revenir en arrière plus tard (restauration par label).
 //
-// Capturer : ?secret=touni-sync-2026&label=mon-label[&cursor=CURSOR]
+// Capturer : ?secret=<SYNC_SECRET>&label=mon-label[&cursor=CURSOR]
 //            (appeler en boucle jusqu'à done:true)
 // Restaurer un label : ?secret=...&restore=mon-label[&cursor=CURSOR]
 // Lister les labels :  ?secret=...&list=1
 
+const { syncOk } = require('./_auth.js');
 const {
   shopifyAdminHeaders, SHOPIFY_DOMAIN, SHOPIFY_API_VERSION,
   SB_URL, SB_ANON_KEY,
@@ -60,7 +61,7 @@ async function loadCacheQty() {
 }
 
 module.exports = async function handler(req, res) {
-  if ((req.query?.secret || req.headers['x-sync-secret']) !== (process.env.SYNC_SECRET || 'touni-sync-2026')) {
+  if (!syncOk(req.query?.secret || req.headers['x-sync-secret'])) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
