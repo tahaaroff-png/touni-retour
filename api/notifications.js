@@ -4,7 +4,7 @@
 // PATCH /api/notifications?secret=...&id=XXX → marquer comme lu/archivé
 // DELETE /api/notifications?secret=...&id=XXX → supprimer
 
-const { syncOk } = require('./_auth.js');
+const { syncOk, bossOk } = require('./_auth.js');
 const { SB_URL, supabaseHeaders, shopifyAdminHeaders, SHOPIFY_DOMAIN, SHOPIFY_API_VERSION, normalizeSize, normalizeColor, fetchShopifyProductsAdmin } = require('./_shopify-helpers.js');
 // Réutilise le parsing du webhook (fonction exportée) — pour rester sous la limite de 12 fonctions Vercel
 const { parseVariantTitle } = require('./shopify-order-webhook.js');
@@ -949,6 +949,32 @@ async function catPriceGet(req, res) {
   } catch (e) { return res.status(200).json({ overrides: {}, error: e.message }); }
 }
 
+
+// Connexion (équipe / patron) : le code saisi est vérifié CÔTÉ SERVEUR ; renvoie le rôle et la clé API à utiliser.
+const _loginFails = {};
+async function authLogin(req, res) {
+  let b = req.body; if (typeof b === 'string') { try { b = JSON.parse(b); } catch (e) { b = {}; } } b = b || {};
+  const code = String(b.code || '');
+  const ip = String(((req.headers || {})['x-forwarded-for'] || '').split(',')[0] || 'x'); const now = Date.now();
+  const fails = (_loginFails[ip] || []).filter((t) => now - t < 600000);
+  if (fails.length >= 10) return res.status(429).json({ ok: false, error: 'trop_de_tentatives' });
+  const team = process.env.SYNC_SECRET_NEW || '', boss = process.env.SYNC_SECRET_BOSS || '', legacy = process.env.SYNC_SECRET || 'touni-sync-2026';
+  let role = null, key = '', owner = false;
+  if (code) {
+    if (boss && code === boss) { role = 'admin'; key = boss; }
+    else if (team && code === team) { role = 'staff'; key = team; }
+    else {
+      try { const ok = await getOwnerKey(); if (ok && code === ok) { role = 'admin'; key = boss || legacy; owner = true; } } catch (e) {}
+      if (!role && process.env.SYNC_ALLOW_OLD !== '0') {     // anciens mots de passe de l'écran de connexion (transition)
+        if (code === 'Fitfat25!') { role = 'admin'; key = boss || legacy; }
+        else if (code === 'touni123') { role = 'staff'; key = team || legacy; }
+      }
+    }
+  }
+  if (!role) { fails.push(now); _loginFails[ip] = fails; await new Promise((r) => setTimeout(r, 500)); return res.status(401).json({ ok: false }); }
+  return res.status(200).json({ ok: true, role, key, owner });
+}
+
 // Code propriétaire : priorité à la valeur en base (app_config.owner_price_key),
 // sinon fallback sur l'env OWNER_PRICE_KEY (compat). Permet de poser la clé sans Vercel.
 async function getOwnerKey() {
@@ -1002,6 +1028,9 @@ module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Sync-Secret');
   if (req.method === 'OPTIONS') return res.status(204).end();
 
+  // Connexion équipe/patron (PUBLIC : c'est elle qui vérifie le code)
+  if (req.method === 'POST' && req.query?.action === 'auth_login') return authLogin(req, res);
+
   // Inscription newsletter (PUBLIC — appelé par le footer du site, avant le guard secret)
   if (req.query?.newsletter) return newsletterSignup(req, res);
 
@@ -1012,8 +1041,8 @@ module.exports = async function handler(req, res) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  // Vue Directeur Meta Ads (live)
-  if (req.method === 'GET' && req.query?.meta) return metaMetrics(req, res);
+  // Vue Directeur Meta Ads (live) — PATRON uniquement
+  if (req.method === 'GET' && req.query?.meta) { if (!bossOk(providedSecret)) return res.status(401).json({ error: 'Unauthorized' }); return metaMetrics(req, res); }
 
   // Produits en rupture de stock (live Shopify)
   if (req.method === 'GET' && req.query?.rupture) return ruptureStock(req, res);

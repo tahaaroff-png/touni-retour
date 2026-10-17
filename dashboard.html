@@ -1261,8 +1261,7 @@ function renderReleveResults(){
 
 const SB_URL = 'https://dwjjrgjbkftejdcmwpgc.supabase.co';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR3ampyZ2pia2Z0ZWpkY213cGdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU0NzI2MDYsImV4cCI6MjA5MTA0ODYwNn0.6GxM9u1Om7zP-_MEYVhdtHBESyGLDZGFofxSKGwixPo';
-const PWD_ADMIN = 'Fitfat25!';
-const SYNC_SECRET=touniKey();
+var SYNC_SECRET=touniKey(true);
 const H = {'Content-Type':'application/json','apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Prefer':'return=representation'};
 const EGROW_ME  = 'b1561dd7a5bf51060e3ef52084b3cc5fc0e23f6b0430c4523e8cd48e8b16542c';
 const EGROW_KEY = '11aaf7ee-c8e5-11f0-8839-9c6b003e9239';
@@ -1355,8 +1354,12 @@ function inDateRange(dateStr){
 }
 
 // ── Auth ──
-function login(){
-  if(document.getElementById('pwd-input').value===PWD_ADMIN){
+async function login(){
+  var val=document.getElementById('pwd-input').value, j=null;
+  try{ var r=await fetch('/api/notifications?action=auth_login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:val})}); j=await r.json().catch(function(){return null;}); }catch(e){}
+  if(j&&j.ok&&j.role==='admin'){
+    try{ localStorage.setItem('touni_key',j.key); }catch(e){}
+    SYNC_SECRET=j.key;
     localStorage.setItem('touni_role','admin');
     document.getElementById('login-page').style.display='none';
     document.getElementById('app-page').style.display='block';
@@ -1365,7 +1368,7 @@ function login(){
     document.getElementById('login-err').style.display='block';
   }
 }
-function logout(){localStorage.removeItem('touni_role');location.reload();}
+function logout(){localStorage.removeItem('touni_role');localStorage.removeItem('touni_key');location.reload();}
 document.getElementById('pwd-input').addEventListener('keydown',function(e){if(e.key==='Enter')login();});
 
 // ── eGrow — Mapping stages business ──────────────────────────────────────────
@@ -2795,7 +2798,7 @@ function restoreFinTab(){
 function fmtDate(d){if(!d) return '—';return new Date(d+'T12:00:00').toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'2-digit'});}
 
 // ── Start ──
-if(localStorage.getItem('touni_role')==='admin'){
+if(localStorage.getItem('touni_role')==='admin' && touniKey(true)){
   document.getElementById('login-page').style.display='none';
   document.getElementById('app-page').style.display='block';
   initApp();

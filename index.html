@@ -542,8 +542,6 @@ function closeImg(){ document.getElementById('lightbox').classList.remove('show'
 document.addEventListener('keydown',function(e){ if(e.key==='Escape')closeImg(); });
 const SB_URL = 'https://dwjjrgjbkftejdcmwpgc.supabase.co';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR3ampyZ2pia2Z0ZWpkY213cGdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU0NzI2MDYsImV4cCI6MjA5MTA0ODYwNn0.6GxM9u1Om7zP-_MEYVhdtHBESyGLDZGFofxSKGwixPo';
-const PWD_ADMIN = 'Fitfat25!';
-const PWD_STAFF = 'touni123';
 const H = {'Content-Type':'application/json','apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Prefer':'return=representation'};
 
 var stock=[], CAT=[], filter='all', editId=null;
@@ -593,11 +591,10 @@ function sortSizes(arr){
 }
 
 // AUTH
-// Rôles : opératrice (touni123) = staff, aucune édition de prix ;
+// Rôles : équipe (code équipe) = staff, aucune édition de prix ;
 // propriétaire = son code perso (= env OWNER_PRICE_KEY), validé CÔTÉ SERVEUR,
 // déverrouille l'édition des prix sur /catalogue (pin propagé en localStorage).
-// 'Fitfat25!' reste un accès admin historique au dashboard, sans édition de prix
-// (sauf si le patron définit OWNER_PRICE_KEY = Fitfat25!).
+// Le code patron donne l'accès admin au dashboard ; l'édition des prix reste réservée au code propriétaire.
 async function verifyOwnerCode(code) {
   try {
     var r = await fetch('/api/notifications?action=cat_price_set&secret='+touniKey(),
@@ -615,19 +612,25 @@ function afterLogin(){
   startApp();
 }
 async function login() {
+  // Le code (équipe ou patron) est vérifié CÔTÉ SERVEUR ; le serveur renvoie le rôle et la clé d'accès à utiliser.
   var btn = document.querySelector('.btn-login');
   var val = document.getElementById('pwd-input').value;
-  if (val === PWD_STAFF) { enterStaff(); afterLogin(); return; }
-  // Code propriétaire = OWNER_PRICE_KEY (vérifié serveur) → accès amplifié + édition prix
   if (btn) { btn.disabled = true; }
-  var isOwner = (val && val !== PWD_ADMIN) ? await verifyOwnerCode(val) : false;
-  if (!isOwner && val === PWD_ADMIN) { isOwner = await verifyOwnerCode(val); } // Fitfat25! = owner si OWNER_PRICE_KEY=Fitfat25!
+  var j = null;
+  try {
+    var r = await fetch('/api/notifications?action=auth_login', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ code: val }) });
+    j = await r.json().catch(function(){ return null; });
+  } catch(e) {}
   if (btn) { btn.disabled = false; }
-  if (isOwner) { enterOwner(val); afterLogin(); return; }
-  if (val === PWD_ADMIN) { enterAdmin(); afterLogin(); return; }
+  if (j && j.ok) {
+    try { localStorage.setItem('touni_key', j.key); } catch(e) {}
+    SYNC_SECRET = j.key;
+    if (j.owner) enterOwner(val); else if (j.role === 'admin') enterAdmin(); else enterStaff();
+    afterLogin(); return;
+  }
   document.getElementById('login-err').style.display = 'block';
 }
-function logout() { sessionStorage.removeItem('role'); try{ localStorage.removeItem('touni_owner_pin'); }catch(e){} location.reload(); }
+function logout() { sessionStorage.removeItem('role'); try{ localStorage.removeItem('touni_owner_pin'); localStorage.removeItem('touni_key'); }catch(e){} location.reload(); }
 function applyRole() {
   var role = sessionStorage.getItem('role');
   document.getElementById('stock-orders-btn').style.display = ''; // utile aux 2 rôles
@@ -1503,7 +1506,7 @@ async function markAllNotifsRead(){
 }
 
 // ── Sync Shopify (push retours disponibles) ──
-var SYNC_SECRET=touniKey();
+var SYNC_SECRET=touniKey(true);
 // ── Sync unifié : push retours EN RUPTURE + mise à 0 des vendus/mystère pushés ──
 async function syncAll(){
   var btn=document.getElementById('btn-sync-shopify');
@@ -1579,7 +1582,7 @@ document.addEventListener('click',function(e){
 
 // CHECK SESSION AU CHARGEMENT
 var _role = sessionStorage.getItem('role');
-if (_role === 'admin' || _role === 'staff') {
+if ((_role === 'admin' || _role === 'staff') && touniKey(true)) {
   document.getElementById('login-page').style.display = 'none';
   document.getElementById('app-page').style.display = 'flex';
   applyRole();

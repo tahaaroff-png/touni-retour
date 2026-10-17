@@ -2,9 +2,9 @@
 (function () {
   var K = 'touni_key';
   function get() { try { return localStorage.getItem(K) || ''; } catch (e) { return ''; } }
-  window.touniKey = function () {
+  window.touniKey = function (quiet) {
     var k = get();
-    if (!k) {
+    if (!k && !quiet) {
       k = (window.prompt("Code d'accès Touni (donné par la direction) :") || '').trim();
       if (k) { try { localStorage.setItem(K, k); } catch (e) {} }
     }
@@ -18,7 +18,7 @@
       return of.apply(this, a).then(function (r) {
         try {
           var u = String((a[0] && a[0].url) || a[0] || '');
-          if (r && r.status === 401 && had && u.indexOf('/api/') >= 0 && !window.__touniReload) {
+          if (r && r.status === 401 && had && u.indexOf('/api/') >= 0 && u.indexOf('auth_login') < 0 && !window.__touniReload) {
             window.__touniReload = 1; try { localStorage.removeItem(K); } catch (e) {}
             setTimeout(function () { alert("Code d'accès incorrect ou expiré. Entre le nouveau code."); location.reload(); }, 50);
           }
