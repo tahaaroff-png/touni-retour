@@ -174,7 +174,7 @@ async function gget(token, path, params = {}) {
 async function metaMetrics(req, res) {
   const token = process.env.META_ADS_TOKEN;
   if (!token) return res.status(500).json({ error: 'META_ADS_TOKEN non configuré dans Vercel' });
-  const ACT = process.env.META_AD_ACCOUNT || 'act_178386983599000';
+  const ACT = process.env.META_AD_ACCOUNT || 'act_1404371898503365';
   const rate = parseFloat(req.query?.rate || '10');
   // Période : défaut 7 jours glissants ; personnalisable via preset (last_7d/last_14d/last_30d/today) ou since+until
   const since = req.query?.since, until = req.query?.until;
